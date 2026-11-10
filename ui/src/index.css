@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+:root {
+  color-scheme: light dark;
+  scrollbar-width: thin;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html:not(.dark) {
+  color-scheme: light;
+}
+
 @layer base {
   body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;

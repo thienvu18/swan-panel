@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
   <title>SwanPanel - Modern Zero-Trust Control Plane for strongSwan VPN</title>
-  <meta name="description" content="Modern, enterprise-grade, zero-trust web control plane for strongSwan IKEv2/IPsec VPNs with native client provisioning, embedded PKI, Split-DNS, and zero-downtime policy engine.">
+  <meta name="description" content="Enterprise-grade, zero-trust web control plane for strongSwan IKEv2/IPsec VPNs with 100% native client provisioning, automated PKI, Split-DNS, and zero-downtime RAM reloads.">
   <link rel="stylesheet" href="assets/style.css">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230284c7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/></svg>">
 </head>
 <body>
 
-  <!-- Site Header -->
-  <header class="site-header">
+  <!-- Site Header (Consistent across all pages) -->
+  <header class="site-header is-wide">
     <div class="header-container">
       <a href="index.html" class="logo-group">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -23,51 +23,90 @@
         <span class="logo-badge">v0.0.1</span>
       </a>
 
-      <ul class="nav-links">
-        <li><a href="#features" class="nav-link">Features</a></li>
-        <li><a href="#architecture" class="nav-link">Architecture</a></li>
-        <li><a href="#comparison" class="nav-link">Comparison</a></li>
-        <li><a href="guide.html" class="nav-link">User Guide</a></li>
-        <li><a href="https://github.com/thienvu18/swan-panel/wiki" class="nav-link">Wiki</a></li>
-      </ul>
-
-      <div class="nav-actions">
-        <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle theme">
+      <!-- Primary Navigation Landmark -->
+      <nav class="site-nav" aria-label="Primary">
+        <!-- Modern Web Guidance: Popover trigger button for narrow viewports -->
+        <button
+          class="menu-button"
+          type="button"
+          popovertarget="site-menu"
+          popovertargetaction="toggle"
+          aria-controls="site-menu"
+          aria-label="Toggle navigation menu"
+        >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+          <span data-i18n="nav.menu">Menu</span>
+        </button>
+
+        <!-- Popover list in narrow view, inline row in wide view -->
+        <ul id="site-menu" class="site-menu">
+          <li><a href="#why-swanpanel" class="nav-link" data-i18n="nav.why">Why SwanPanel</a></li>
+          <li><a href="#features" class="nav-link" data-i18n="nav.features">Features</a></li>
+          <li><a href="#architecture" class="nav-link" data-i18n="nav.architecture">Architecture</a></li>
+          <li><a href="#comparison" class="nav-link" data-i18n="nav.comparison">Comparison</a></li>
+          <li><a href="guide.html" class="nav-link" data-i18n="nav.guide">User Guide</a></li>
+          <li><a href="https://github.com/thienvu18/swan-panel/wiki" class="nav-link" target="_blank" rel="noopener" data-i18n="nav.wiki">Wiki</a></li>
+        </ul>
+      </nav>
+
+      <!-- Action Buttons -->
+      <div class="nav-actions">
+        <!-- Language Switcher -->
+        <button id="lang-toggle" class="control-btn" aria-label="Switch language">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          <span class="lang-text">EN</span>
+        </button>
+
+        <!-- Theme Toggle -->
+        <button id="theme-toggle" class="control-btn" aria-label="Toggle theme">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"></circle>
             <line x1="12" y1="1" x2="12" y2="3"></line>
             <line x1="12" y1="21" x2="12" y2="23"></line>
           </svg>
         </button>
-        <a href="https://github.com/thienvu18/swan-panel" class="btn btn-secondary" target="_blank" rel="noopener">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+
+        <!-- GitHub Star Button -->
+        <a href="https://github.com/thienvu18/swan-panel" class="btn btn-star-gold" target="_blank" rel="noopener">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
           </svg>
-          <span>GitHub</span>
+          <span data-i18n="nav.star">Star on GitHub</span>
         </a>
+
+        <!-- Read Docs CTA -->
         <a href="guide.html" class="btn btn-primary">
-          <span>Read Docs</span>
+          <span data-i18n="nav.read_docs">Read Docs</span>
         </a>
       </div>
     </div>
   </header>
 
-  <!-- Hero Section -->
+  <!-- Main Hero Section -->
   <main>
     <section class="hero-section">
       <div class="hero-tag">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="20 6 9 17 4 12"></polyline>
         </svg>
-        <span>v0.0.1 Released & Open Source</span>
+        <span data-i18n="hero.badge">Open Source & Non-Profit • Free under AGPL-3.0</span>
       </div>
 
       <h1 class="hero-title">
-        Enterprise Zero-Trust Control Plane for <span>strongSwan IPsec</span>
+        <span data-i18n="hero.title_start">Enterprise Zero-Trust Remote Access.</span><br>
+        <span data-i18n="hero.title_accent">100% Native Clients. Zero 3rd-Party Apps.</span>
       </h1>
 
-      <p class="hero-desc">
-        Deliver hardware-accelerated, zero-trust remote access with 100% native client profiles (Apple, Windows, Linux, Android), automated internal PKI, and zero-SSH VICI daemon management in a single self-contained binary.
+      <p class="hero-desc" data-i18n="hero.desc">
+        Stop forcing employees to install bulky, battery-draining VPN apps. SwanPanel brings modern zero-trust control, automated PKI, Split-DNS, and zero-downtime dynamic reloads to strongSwan IPsec in a single self-contained binary.
       </p>
 
       <!-- Terminal Install Box -->
@@ -78,13 +117,13 @@
             <div class="terminal-dot" style="background: #eab308;"></div>
             <div class="terminal-dot" style="background: #10b981;"></div>
           </div>
-          <span class="terminal-title">Quickstart 1-Line Installer (Linux)</span>
+          <span class="terminal-title" data-i18n="hero.install_title">Quickstart 1-Line Installer (Ubuntu, Debian, RHEL, Rocky, Fedora)</span>
           <button class="copy-btn" data-target="quickstart-cmd" aria-label="Copy installation command">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
             </svg>
-            <span>Copy</span>
+            <span data-i18n="hero.copy">Copy</span>
           </button>
         </div>
         <div class="terminal-body">
@@ -94,20 +133,133 @@
 
       <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
         <a href="guide.html" class="btn btn-primary" style="padding: 0.75rem 1.5rem; font-size: 1rem;">
-          <span>Explore User Guide</span>
+          <span data-i18n="hero.btn_deploy">Explore User Guide</span>
         </a>
         <a href="https://github.com/thienvu18/swan-panel/releases/tag/v0.0.1" class="btn btn-secondary" style="padding: 0.75rem 1.5rem; font-size: 1rem;" target="_blank" rel="noopener">
-          <span>Download v0.0.1 Binary</span>
+          <span data-i18n="hero.btn_download">Download Binary (v0.0.1)</span>
+        </a>
+        <a href="https://github.com/thienvu18/swan-panel" class="btn btn-star-gold" style="padding: 0.75rem 1.5rem; font-size: 1rem;" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+          <span data-i18n="hero.btn_star">Star on GitHub</span>
         </a>
       </div>
     </section>
 
-    <!-- Key Features Section -->
-    <section id="features" class="features-section">
+    <!-- SECTION 2: PAIN POINTS VS SOLUTION -->
+    <section id="why-swanpanel" class="content-section" tabindex="-1">
       <div class="section-header">
-        <div class="section-tag">Capabilities</div>
-        <h2 class="section-title">Engineered for Sovereign Zero-Trust Infrastructure</h2>
-        <p class="section-subtitle">No proprietary clients. No mandatory SaaS cloud subscriptions. No complex orchestration clusters.</p>
+        <div class="section-tag" data-i18n="pains.tag">The Problems We Solve</div>
+        <h2 class="section-title" data-i18n="pains.title">Say Goodbye to VPN Friction & SaaS Extortion</h2>
+        <p class="section-subtitle" data-i18n="pains.subtitle">Why traditional VPN administration and commercial Zero-Trust SaaS fail modern engineering teams.</p>
+      </div>
+
+      <div class="pains-grid">
+        <!-- Card 1 -->
+        <div class="pain-card">
+          <div class="pain-box">
+            <div class="pain-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+              </svg>
+              <span data-i18n="pains.pain1_title">Arcane Config Files & Risky Downtime</span>
+            </div>
+            <p class="pain-desc" data-i18n="pains.pain1_desc">Editing raw swanctl.conf or ipsec.conf text files over SSH is error-prone. A single syntax mistake crashes the daemon, and reloading static files drops active tunnels for all connected engineers.</p>
+          </div>
+          <div class="sol-box">
+            <div class="sol-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>SwanPanel Solution</span>
+            </div>
+            <p class="sol-desc" data-i18n="pains.pain1_sol">Zero-SSH management via /var/run/charon.vici. Dynamic in-memory reloads execute in RAM with zero tunnel interruptions, live session termination, and real-time telemetry.</p>
+          </div>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="pain-card">
+          <div class="pain-box">
+            <div class="pain-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+              </svg>
+              <span data-i18n="pains.pain2_title">The 3rd-Party VPN Client Nightmare</span>
+            </div>
+            <p class="pain-desc" data-i18n="pains.pain2_desc">Users hate installing clunky 3rd-party apps (OpenVPN, WireGuard client, Cisco AnyConnect) that consume RAM, drain laptop batteries, and conflict with native OS networking.</p>
+          </div>
+          <div class="sol-box">
+            <div class="sol-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>SwanPanel Solution</span>
+            </div>
+            <p class="sol-desc" data-i18n="pains.pain2_sol">100% Native OS profiles. Apple .mobileconfig (1-click install in macOS/iOS Settings), Windows PowerShell Add-VpnConnection, Linux NetworkManager, and Android IKEv2. Zero software to install.</p>
+          </div>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="pain-card">
+          <div class="pain-box">
+            <div class="pain-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+              </svg>
+              <span data-i18n="pains.pain3_title">Manual PKI & Certificate Mismatches</span>
+            </div>
+            <p class="pain-desc" data-i18n="pains.pain3_desc">Generating X.509 Root CAs, signing client certificates, and bundling password-protected PKCS#12 (.p12) archives with OpenSSL command lines requires deep crypto expertise and hours of manual labor.</p>
+          </div>
+          <div class="sol-box">
+            <div class="sol-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>SwanPanel Solution</span>
+            </div>
+            <p class="sol-desc" data-i18n="pains.pain3_sol">Autonomous internal PKI. SwanPanel automatically provisions 4096-bit RSA Root CAs, issues client certificates, and packages encrypted .p12 bundles with one click.</p>
+          </div>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="pain-card">
+          <div class="pain-box">
+            <div class="pain-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+              </svg>
+              <span data-i18n="pains.pain4_title">Expensive SaaS Lock-In & Privacy Leaks</span>
+            </div>
+            <p class="pain-desc" data-i18n="pains.pain4_desc">Commercial platforms (Tailscale, Cloudflare Zero Trust, Twingate) charge high per-seat monthly subscriptions, lock you into proprietary closed-source controllers, and route metadata through external clouds.</p>
+          </div>
+          <div class="sol-box">
+            <div class="sol-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>SwanPanel Solution</span>
+            </div>
+            <p class="sol-desc" data-i18n="pains.pain4_sol">100% Self-Hosted, Sovereign, and Non-Profit. Free forever under AGPL-3.0. Your keys, access policies, and traffic stay entirely on your servers.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: CORE CAPABILITIES -->
+    <section id="features" class="content-section" tabindex="-1">
+      <div class="section-header">
+        <div class="section-tag" data-i18n="features.tag">Core Capabilities</div>
+        <h2 class="section-title" data-i18n="features.title">Engineered for Sovereign Zero-Trust Infrastructure</h2>
+        <p class="section-subtitle" data-i18n="features.subtitle">Enterprise-grade performance without bloat, subscriptions, or external dependencies.</p>
       </div>
 
       <div class="feature-grid">
@@ -119,8 +271,8 @@
               <line x1="12" y1="18" x2="12.01" y2="18"></line>
             </svg>
           </div>
-          <h3 class="feature-title">100% Native Client Provisioning</h3>
-          <p class="feature-desc">Generate native Apple <code>.mobileconfig</code>, Windows PowerShell <code>Add-VpnConnection</code>, Linux NetworkManager, and Android IKEv2 profiles with embedded PKCS#12 client certificates. Users never install third-party background software.</p>
+          <h3 class="feature-title" data-i18n="features.f1_title">100% Native Client Provisioning</h3>
+          <p class="feature-desc" data-i18n="features.f1_desc">Deliver signed Apple .mobileconfig profiles, Windows PowerShell scripts, Linux NetworkManager files, and Android IKEv2 profiles with embedded PKCS#12 certificates. Users connect directly from OS system settings.</p>
         </div>
 
         <!-- Feature 2 -->
@@ -131,8 +283,8 @@
               <path d="M12 19h8"></path>
             </svg>
           </div>
-          <h3 class="feature-title">Zero-SSH strongSwan Control</h3>
-          <p class="feature-desc">Manage the daemon dynamically via UNIX socket <code>/var/run/charon.vici</code> using the official <code>govici</code> IPC protocol. Reload connections in RAM without dropping active tunnels, terminate sessions, and monitor SA states live.</p>
+          <h3 class="feature-title" data-i18n="features.f2_title">Zero-SSH strongSwan Control</h3>
+          <p class="feature-desc" data-i18n="features.f2_desc">Communicate directly with strongSwan's charon daemon via UNIX socket /var/run/charon.vici using the binary govici protocol. Reload connections in RAM without dropping active tunnels and terminate sessions instantly.</p>
         </div>
 
         <!-- Feature 3 -->
@@ -142,8 +294,8 @@
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
             </svg>
           </div>
-          <h3 class="feature-title">Automated Internal PKI</h3>
-          <p class="feature-desc">Zero-touch autonomous X.509 Certificate Authority. Automatically provisions 4096-bit RSA Root CAs, signs client certificates, and packages password-protected PKCS#12 bundles without OpenSSL CLI steps.</p>
+          <h3 class="feature-title" data-i18n="features.f3_title">Automated Internal PKI</h3>
+          <p class="feature-desc" data-i18n="features.f3_desc">Autonomous X.509 Certificate Authority. Automatically provisions 4096-bit RSA Root CAs, signs client certificates, and packages password-protected PKCS#12 bundles without OpenSSL CLI steps.</p>
         </div>
 
         <!-- Feature 4 -->
@@ -155,8 +307,8 @@
               <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
             </svg>
           </div>
-          <h3 class="feature-title">Configurable Split-DNS & MagicDNS</h3>
-          <p class="feature-desc">Integrated high-performance DNS server (<code>miekg/dns</code>). Automatically maps internal hostnames (e.g. <code>.strongnet</code>, <code>.internal</code>) directly to assigned virtual IPs, with support for custom DNS overrides and recursive upstream forwarding.</p>
+          <h3 class="feature-title" data-i18n="features.f4_title">Configurable Split-DNS & MagicDNS</h3>
+          <p class="feature-desc" data-i18n="features.f4_desc">Integrated high-performance DNS server (miekg/dns). Dynamically resolves internal device hostnames (.strongnet, .internal), supports custom DNS overrides, and recursively forwards queries upstream.</p>
         </div>
 
         <!-- Feature 5 -->
@@ -167,8 +319,8 @@
               <polyline points="8 6 2 12 8 18"></polyline>
             </svg>
           </div>
-          <h3 class="feature-title">Dynamic Zero-Trust Policy Engine</h3>
-          <p class="feature-desc">Define granular access rules mapping User Groups to Resource Groups. SwanPanel compiles policies dynamically into kernel traffic selectors and explicit DROP filters, eliminating lateral movement.</p>
+          <h3 class="feature-title" data-i18n="features.f5_title">Dynamic Zero-Trust Policies</h3>
+          <p class="feature-desc" data-i18n="features.f5_desc">Define granular access control rules mapping User Groups to Resource Groups. SwanPanel compiles policies dynamically into kernel traffic selectors and explicit DROP filters, eliminating lateral movement.</p>
         </div>
 
         <!-- Feature 6 -->
@@ -180,18 +332,18 @@
               <line x1="12" y1="17" x2="12" y2="21"></line>
             </svg>
           </div>
-          <h3 class="feature-title">Single Self-Contained Binary</h3>
-          <p class="feature-desc">The entire control plane—Go backend, SQLite database with auto-migration, embedded React 19 SPA, PKI, and DNS engine—compiles into a pure Go static executable with zero CGO dependencies.</p>
+          <h3 class="feature-title" data-i18n="features.f6_title">Single Self-Contained Binary</h3>
+          <p class="feature-desc" data-i18n="features.f6_desc">The entire control plane—Go backend, SQLite database with auto-migration, embedded React 19 SPA, PKI, and DNS engine—compiles into a pure Go static executable with zero CGO dependencies.</p>
         </div>
       </div>
     </section>
 
-    <!-- Architecture Section -->
-    <section id="architecture" class="features-section" style="background: var(--bg-surface); border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle);">
+    <!-- SECTION 4: DECOUPLED ARCHITECTURE -->
+    <section id="architecture" class="content-section" style="background: var(--bg-surface); border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle);" tabindex="-1">
       <div class="section-header">
-        <div class="section-tag">Architecture</div>
-        <h2 class="section-title">Zero-Downtime Decoupled Control Plane</h2>
-        <p class="section-subtitle">SwanPanel decouples high-level web administration from the kernel-level strongSwan data plane.</p>
+        <div class="section-tag" data-i18n="arch.tag">Architecture</div>
+        <h2 class="section-title" data-i18n="arch.title">Zero-Downtime Decoupled Control Plane</h2>
+        <p class="section-subtitle" data-i18n="arch.subtitle">SwanPanel completely decouples high-level web administration from the kernel-level strongSwan data plane.</p>
       </div>
 
       <div style="max-width: 900px; margin: 0 auto; background: var(--bg-code); padding: 2rem; border-radius: var(--radius-md); border: 1px solid var(--border-strong); overflow-x: auto;">
@@ -219,63 +371,144 @@
       </div>
     </section>
 
-    <!-- Comparison Section -->
-    <section id="comparison" class="comparison-section">
+    <!-- SECTION 5: COMPARISON MATRIX -->
+    <section id="comparison" class="content-section" tabindex="-1">
       <div class="section-header">
-        <div class="section-tag">Comparison Matrix</div>
-        <h2 class="section-title">How SwanPanel Compares</h2>
-        <p class="section-subtitle">Comparing native OS enterprise connectivity versus alternative architectures.</p>
+        <div class="section-tag" data-i18n="comparison.tag">Comparison Matrix</div>
+        <h2 class="section-title" data-i18n="comparison.title">How SwanPanel Compares</h2>
+        <p class="section-subtitle" data-i18n="comparison.subtitle">Comparing native OS enterprise connectivity versus traditional alternatives.</p>
       </div>
 
       <div class="comparison-table-wrapper">
         <table class="comparison-table">
           <thead>
             <tr>
-              <th>Feature</th>
-              <th>SwanPanel + strongSwan</th>
-              <th>Raw strongSwan CLI</th>
-              <th>WireGuard / OpenVPN</th>
+              <th data-i18n="comparison.col_feature">Feature</th>
+              <th data-i18n="comparison.col_swan">SwanPanel + strongSwan</th>
+              <th data-i18n="comparison.col_raw">Raw strongSwan CLI</th>
+              <th data-i18n="comparison.col_wire">WireGuard / OpenVPN</th>
+              <th data-i18n="comparison.col_saas">Commercial SaaS (Tailscale)</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td><strong>3rd-Party Client App Required</strong></td>
-              <td><span class="badge-check">No (100% Native OS)</span></td>
-              <td><span class="badge-check">No (Native OS)</span></td>
-              <td><span class="badge-cross">Yes (Always Required)</span></td>
+              <td><strong data-i18n="comparison.r1_title">3rd-Party Client App Required</strong></td>
+              <td><span class="badge-check" data-i18n="comparison.r1_swan">No (100% Native OS)</span></td>
+              <td><span class="badge-check" data-i18n="comparison.r1_raw">No (Native OS)</span></td>
+              <td><span class="badge-cross" data-i18n="comparison.r1_wire">Yes (Always Required)</span></td>
+              <td><span class="badge-cross" data-i18n="comparison.r1_saas">Yes (Proprietary Agent)</span></td>
             </tr>
             <tr>
-              <td><strong>Web Management Interface</strong></td>
-              <td><span class="badge-check">Yes (Single Binary)</span></td>
-              <td><span class="badge-cross">No (CLI / SSH only)</span></td>
-              <td><span class="badge-cross">Requires 3rd party tool</span></td>
+              <td><strong data-i18n="comparison.r2_title">Web Management Interface</strong></td>
+              <td><span class="badge-check" data-i18n="comparison.r2_swan">Yes (Single Binary)</span></td>
+              <td><span class="badge-cross" data-i18n="comparison.r2_raw">No (CLI / SSH only)</span></td>
+              <td><span class="badge-cross" data-i18n="comparison.r2_wire">Requires 3rd party tool</span></td>
+              <td><span class="badge-check" data-i18n="comparison.r2_saas">Yes (Closed-source cloud)</span></td>
             </tr>
             <tr>
-              <td><strong>Dynamic RAM Reload (Zero Downtime)</strong></td>
-              <td><span class="badge-check">Yes (VICI IPC)</span></td>
-              <td><span class="badge-cross">Manual swanctl commands</span></td>
-              <td>Varies by daemon</td>
+              <td><strong data-i18n="comparison.r3_title">Dynamic RAM Reload (Zero Downtime)</strong></td>
+              <td><span class="badge-check" data-i18n="comparison.r3_swan">Yes (VICI IPC)</span></td>
+              <td><span class="badge-cross" data-i18n="comparison.r3_raw">Manual swanctl commands</span></td>
+              <td><span data-i18n="comparison.r3_wire">Varies by daemon</span></td>
+              <td><span data-i18n="comparison.r3_saas">Proprietary protocol</span></td>
             </tr>
             <tr>
-              <td><strong>Automated PKI & .mobileconfig</strong></td>
-              <td><span class="badge-check">Yes (Built-in)</span></td>
-              <td><span class="badge-cross">Manual OpenSSL / CFSSL</span></td>
-              <td><span class="badge-cross">Manual key generation</span></td>
+              <td><strong data-i18n="comparison.r4_title">Automated PKI & .mobileconfig</strong></td>
+              <td><span class="badge-check" data-i18n="comparison.r4_swan">Yes (Built-in)</span></td>
+              <td><span class="badge-cross" data-i18n="comparison.r4_raw">Manual OpenSSL / CFSSL</span></td>
+              <td><span class="badge-cross" data-i18n="comparison.r4_wire">Manual key generation</span></td>
+              <td><span data-i18n="comparison.r4_saas">Managed in vendor cloud</span></td>
             </tr>
             <tr>
-              <td><strong>Split-DNS & MagicDNS Server</strong></td>
-              <td><span class="badge-check">Yes (Embedded miekg/dns)</span></td>
-              <td><span class="badge-cross">External BIND/dnsmasq</span></td>
-              <td><span class="badge-cross">Requires external setup</span></td>
+              <td><strong data-i18n="comparison.r5_title">Split-DNS & MagicDNS Server</strong></td>
+              <td><span class="badge-check" data-i18n="comparison.r5_swan">Yes (Embedded miekg/dns)</span></td>
+              <td><span class="badge-cross" data-i18n="comparison.r5_raw">External BIND/dnsmasq</span></td>
+              <td><span class="badge-cross" data-i18n="comparison.r5_wire">Requires external setup</span></td>
+              <td><span class="badge-check" data-i18n="comparison.r5_saas">Yes (Vendor hosted)</span></td>
             </tr>
             <tr>
-              <td><strong>Zero-Trust Dynamic Policies</strong></td>
-              <td><span class="badge-check">Yes (RBAC & CIDR Rules)</span></td>
-              <td><span class="badge-cross">Manual iptables / conf</span></td>
-              <td>Manual firewall tables</td>
+              <td><strong data-i18n="comparison.r6_title">Cost / Seat</strong></td>
+              <td><span class="badge-check" data-i18n="comparison.r6_swan">100% Free (AGPL-3.0)</span></td>
+              <td><span class="badge-check" data-i18n="comparison.r6_raw">100% Free</span></td>
+              <td><span data-i18n="comparison.r6_wire">Free / Community</span></td>
+              <td><span class="badge-cross" data-i18n="comparison.r6_saas">$5 - $20 / user / month</span></td>
             </tr>
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- SECTION 6: 60 SECONDS QUICKSTART -->
+    <section id="quickstart" class="content-section" tabindex="-1">
+      <div class="section-header">
+        <div class="section-tag" data-i18n="steps.tag">Get Started in 60 Seconds</div>
+        <h2 class="section-title" data-i18n="steps.title">Deploying SwanPanel is Ridiculously Simple</h2>
+        <p class="section-subtitle" data-i18n="steps.subtitle">From a bare Linux VPS to a production-ready zero-trust VPN in three quick steps.</p>
+      </div>
+
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-num" data-i18n="steps.s1_num">01</div>
+          <h3 class="step-title" data-i18n="steps.s1_title">Run 1-Line Installer</h3>
+          <p class="step-desc" data-i18n="steps.s1_desc">Run curl -sSL https://raw.githubusercontent.com/thienvu18/swan-panel/main/install.sh | sudo bash. The script installs strongSwan, tunes kernel forwarding, and starts the systemd service.</p>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num" data-i18n="steps.s2_num">02</div>
+          <h3 class="step-title" data-i18n="steps.s2_title">Open Web Control Plane</h3>
+          <p class="step-desc" data-i18n="steps.s2_desc">Navigate to http://&lt;SERVER_IP&gt;:8080. Log in with the default administrator credentials, configure your external hostname, and invite your team.</p>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num" data-i18n="steps.s3_num">03</div>
+          <h3 class="step-title" data-i18n="steps.s3_title">Download Native Profiles & Connect</h3>
+          <p class="step-desc" data-i18n="steps.s3_desc">Add personal or company devices with one click. Download Apple .mobileconfig, Windows PowerShell, or Linux profiles and connect directly from OS settings.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 7: OPEN SOURCE, NON-PROFIT & GITHUB STAR -->
+    <section id="community" class="content-section" tabindex="-1">
+      <div class="community-card">
+        <div class="section-tag" data-i18n="community.tag">Open Source & Non-Profit</div>
+        <h2 data-i18n="community.title">Built for the Community. Free Forever.</h2>
+        <p data-i18n="community.desc1">
+          SwanPanel was created by Thái Thiên Vũ as an open-source, non-profit community project. We believe secure network access should be sovereign, fast, and free from recurring corporate SaaS subscriptions.
+        </p>
+        <p data-i18n="community.desc2">
+          There are no artificial limits, no paid enterprise editions, and no user tracking. SwanPanel is 100% free under the GNU AGPL-3.0 license.
+        </p>
+
+        <!-- Star CTA Highlight Box -->
+        <div class="star-highlight-box">
+          <h3 data-i18n="community.cta_star_title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+            <span>Show Your Support: Star on GitHub</span>
+          </h3>
+          <p data-i18n="community.cta_star_desc">
+            If SwanPanel helps you save time, reduce infrastructure costs, or streamline VPN management, please give us a Star on GitHub! Your star helps more developers discover the project and motivates ongoing open-source maintenance.
+          </p>
+          <a href="https://github.com/thienvu18/swan-panel" class="btn btn-star-gold" style="padding: 0.75rem 1.75rem; font-size: 1rem; font-weight: 700;" target="_blank" rel="noopener">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+            <span data-i18n="community.btn_star_github">Star SwanPanel on GitHub</span>
+          </a>
+        </div>
+
+        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+          <a href="https://github.com/thienvu18/swan-panel/blob/main/CONTRIBUTING.md" class="btn btn-secondary" target="_blank" rel="noopener">
+            <span data-i18n="community.btn_contribute">Contribute Code</span>
+          </a>
+          <a href="https://github.com/thienvu18/swan-panel/discussions" class="btn btn-secondary" target="_blank" rel="noopener">
+            <span data-i18n="community.btn_discussions">Join Discussions</span>
+          </a>
+          <a href="https://github.com/thienvu18/swan-panel/blob/main/CONTRIBUTING.md#internationalization-i18n" class="btn btn-secondary" target="_blank" rel="noopener">
+            <span data-i18n="community.btn_translate">Submit a Translation</span>
+          </a>
+        </div>
       </div>
     </section>
   </main>
@@ -283,16 +516,17 @@
   <!-- Site Footer -->
   <footer class="site-footer">
     <div class="footer-links">
-      <a href="index.html">Home</a>
-      <a href="guide.html">User Guide</a>
-      <a href="https://github.com/thienvu18/swan-panel/wiki" target="_blank" rel="noopener">Wiki</a>
-      <a href="https://github.com/thienvu18/swan-panel" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/thienvu18/swan-panel/releases" target="_blank" rel="noopener">Releases</a>
-      <a href="https://github.com/thienvu18/swan-panel/blob/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0 License</a>
+      <a href="index.html" data-i18n="footer.home">Home</a>
+      <a href="guide.html" data-i18n="footer.guide">User Guide</a>
+      <a href="https://github.com/thienvu18/swan-panel/wiki" target="_blank" rel="noopener" data-i18n="footer.wiki">Wiki</a>
+      <a href="https://github.com/thienvu18/swan-panel" target="_blank" rel="noopener" data-i18n="footer.github">GitHub</a>
+      <a href="https://github.com/thienvu18/swan-panel/releases" target="_blank" rel="noopener" data-i18n="footer.releases">Releases</a>
+      <a href="https://github.com/thienvu18/swan-panel/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="footer.license">AGPL-3.0 License</a>
     </div>
-    <p>SwanPanel is open-source software created by <a href="https://github.com/thienvu18" target="_blank" rel="noopener">Thái Thiên Vũ</a>. Licensed under GNU AGPL-3.0.</p>
+    <p data-i18n="footer.credit">SwanPanel is open-source software created by Thái Thiên Vũ. Licensed under GNU AGPL-3.0.</p>
   </footer>
 
+  <script src="assets/i18n.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>

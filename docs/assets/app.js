@@ -1,9 +1,21 @@
 // SwanPanel Documentation & Landing Application
+// Fully compliant with Modern Web Guidance (dark-mode, navbar, scrollspy, accessibility)
 
 (function () {
   'use strict';
 
-  // 1. Theme Management (Modern Web Guidance compliant)
+  // 1. Initialize i18n
+  if (window.SwanI18n) {
+    window.SwanI18n.init();
+    const langToggleBtn = document.getElementById('lang-toggle');
+    if (langToggleBtn) {
+      langToggleBtn.addEventListener('click', function () {
+        window.SwanI18n.toggleLanguage();
+      });
+    }
+  }
+
+  // 2. Theme Management (Modern Web Guidance compliant)
   const themeToggleBtn = document.getElementById('theme-toggle');
   const storedTheme = localStorage.getItem('swanpanel-theme');
   const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)');
@@ -22,7 +34,7 @@
     const currentTheme = document.documentElement.getAttribute('data-theme') || 
       (systemPrefersDark.matches ? 'dark' : 'light');
     
-    // SVG icons (zero unicode emojis)
+    // Clean SVG icons (zero unicode emojis)
     if (currentTheme === 'dark') {
       themeToggleBtn.innerHTML = `
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -55,7 +67,7 @@
   }
 
   // Handle system preference changes dynamically
-  systemPrefersDark.addEventListener('change', function (e) {
+  systemPrefersDark.addEventListener('change', function () {
     if (!localStorage.getItem('swanpanel-theme')) {
       updateThemeIcon();
     }
@@ -71,7 +83,48 @@
     });
   }
 
-  // 2. Interactive Terminal Copy Button
+  // 3. Responsive Popover Site Navigation (Modern Web Guidance navbar spec)
+  const siteHeader = document.querySelector('.site-header');
+  const headerInner = document.querySelector('.header-container');
+  const siteMenu = document.getElementById('site-menu');
+
+  if (siteHeader && headerInner && siteMenu) {
+    function updateNavbarLayout() {
+      // Temporarily mark measuring
+      siteHeader.classList.add('is-measuring');
+      siteHeader.classList.add('is-wide');
+      const wide = headerInner.scrollWidth <= headerInner.clientWidth;
+      
+      if (wide) {
+        siteHeader.classList.add('is-wide');
+        siteMenu.removeAttribute('popover');
+      } else {
+        siteHeader.classList.remove('is-wide');
+        siteMenu.setAttribute('popover', 'auto');
+      }
+      
+      requestAnimationFrame(() => {
+        siteHeader.classList.remove('is-measuring');
+      });
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateNavbarLayout();
+    });
+    resizeObserver.observe(headerInner);
+    updateNavbarLayout();
+
+    // Close menu when a link is clicked on mobile
+    siteMenu.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => {
+        if (siteMenu.hasAttribute('popover') && typeof siteMenu.hidePopover === 'function') {
+          try { siteMenu.hidePopover(); } catch(e) {}
+        }
+      });
+    });
+  }
+
+  // 4. Interactive Terminal Copy Button
   const copyButtons = document.querySelectorAll('.copy-btn');
   copyButtons.forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -82,11 +135,13 @@
       const text = targetEl.textContent.trim();
       navigator.clipboard.writeText(text).then(function () {
         const originalHtml = btn.innerHTML;
+        const currentLang = window.SwanI18n ? window.SwanI18n.currentLang : 'en';
+        const copiedText = currentLang === 'vi' ? 'Đã chép!' : 'Copied!';
         btn.innerHTML = `
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
-          <span style="color: #10b981;">Copied!</span>
+          <span style="color: #10b981;">${copiedText}</span>
         `;
         setTimeout(function () {
           btn.innerHTML = originalHtml;
@@ -97,32 +152,45 @@
     });
   });
 
-  // 3. Documentation Scroll Spy & Sidebar Active Highlighting
-  const docLinks = document.querySelectorAll('.doc-nav-link');
-  if (docLinks.length > 0) {
-    const sections = Array.from(docLinks).map(function (link) {
-      const href = link.getAttribute('href');
-      return href && href.startsWith('#') ? document.querySelector(href) : null;
-    }).filter(Boolean);
+  // 5. Scrollspy & IntersectionObserver Fallback (Modern Web Guidance scrollspy spec)
+  const navLinks = document.querySelectorAll('.site-nav a[href^="#"], .doc-nav-link[href^="#"]');
+  const sectionIds = Array.from(navLinks).map(link => link.getAttribute('href').substring(1)).filter(Boolean);
+  const sections = sectionIds.map(id => document.getElementById(id)).filter(Boolean);
 
-    window.addEventListener('scroll', function () {
-      let currentSection = '';
-      const scrollPos = window.scrollY + 120;
+  if (sections.length > 0 && navLinks.length > 0) {
+    const supportsScrollTargetGroup = CSS.supports && CSS.supports('scroll-target-group: auto');
 
-      sections.forEach(function (section) {
-        if (section.offsetTop <= scrollPos) {
-          currentSection = '#' + section.getAttribute('id');
-        }
+    const updateActiveLinks = (activeId) => {
+      navLinks.forEach(link => {
+        const href = link.getAttribute('href');
+        const isActive = href === `#${activeId}`;
+        link.classList.toggle('target-current', isActive);
+        link.classList.toggle('active', isActive);
+        link.setAttribute('aria-current', isActive ? 'true' : 'false');
       });
+    };
 
-      docLinks.forEach(function (link) {
-        if (link.getAttribute('href') === currentSection) {
-          link.classList.add('active');
-        } else {
-          link.classList.remove('active');
-        }
-      });
-    }, { passive: true });
+    if (!supportsScrollTargetGroup) {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            updateActiveLinks(entry.target.id);
+          }
+        });
+      }, { rootMargin: '-20% 0px -60% 0px', threshold: 0 });
+
+      sections.forEach(sec => observer.observe(sec));
+    } else {
+      const syncAriaCurrent = () => {
+        const current = document.querySelector('nav a:target-current, .doc-sidebar a:target-current');
+        navLinks.forEach(link => {
+          const isActive = link === current;
+          link.setAttribute('aria-current', isActive ? 'true' : 'false');
+        });
+      };
+      syncAriaCurrent();
+      document.addEventListener('scrollend', syncAriaCurrent, { passive: true });
+    }
   }
 
 })();
