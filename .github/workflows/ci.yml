@@ -44,3 +44,6 @@ jobs:
         run: |
           CGO_ENABLED=0 go build -ldflags="-s -w" -o swan-panel ./cmd/server
           ls -lh swan-panel
+
+      - name: Verify Docker Build
+        run: docker build -t swan-panel:ci .

@@ -1,0 +1,65 @@
+# ==============================================================================
+# SwanPanel - Production Docker Compose Deployment
+# https://github.com/thienvu18/swan-panel
+# ==============================================================================
+
+services:
+  swan-panel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: swan-panel:latest
+    container_name: swan-panel
+    restart: unless-stopped
+
+    # Kernel capabilities required for IPsec packet routing and iptables/nftables
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+    # Port mappings for Web UI, Split-DNS, and native IKEv2/IPsec VPN
+    # NOTE: On production Linux VPS, you may alternatively use `network_mode: host`
+    # for direct kernel ESP (Protocol 50) handling.
+    ports:
+      - "8080:8080/tcp"   # SwanPanel Web Control Plane UI & REST API
+      - "53:53/udp"       # Internal Split-DNS Engine
+      - "53:53/tcp"       # Split-DNS TCP Fallback
+      - "500:500/udp"     # strongSwan IKEv2 Key Exchange
+      - "4500:4500/udp"   # strongSwan IPsec NAT-Traversal
+
+    # Host IPC socket mount and persistent volumes
+    volumes:
+      # Mount host strongSwan VICI socket (if strongSwan runs on host systemd)
+      # If omitted or not found, SwanPanel starts its internal strongSwan daemon automatically
+      - /var/run/charon.vici:/var/run/charon.vici
+      - swanpanel_data:/var/lib/swan-panel
+      - swanpanel_config:/etc/swan-panel
+
+    environment:
+      - PORT=8080
+      - DNS_PORT=53
+      - ENABLE_DNS=true
+      - DB_PATH=/var/lib/swan-panel/swanpanel.db
+      - VICI_SOCKET=/var/run/charon.vici
+      - ENVIRONMENT=production
+      - LOG_LEVEL=info
+      - JWT_SECRET=${JWT_SECRET:-swanpanel-change-in-production-random-secret-key}
+
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+volumes:
+  swanpanel_data:
+    driver: local
+  swanpanel_config:
+    driver: local

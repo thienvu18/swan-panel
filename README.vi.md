@@ -154,47 +154,62 @@ Truy cập bảng điều khiển tại: `http://localhost:8080`.
 
 ---
 
-## Triển khai Production dưới dạng Service (systemd)
+## Triển Khai Production
 
-Trên máy chủ Linux quản lý strongSwan, bạn có thể thiết lập SwanPanel hoạt động liên tục như một `systemd` daemon:
+SwanPanel hỗ trợ hai phương thức triển khai chính trên máy chủ Linux/VPS:
+* **Docker & Docker Compose** (Được đóng gói sẵn kèm strongSwan, Split-DNS, iptables/nftables)
+* **Native Systemd Daemon** (Chạy trực tiếp binary đơn tĩnh trên hệ điều hành)
 
-1. Sao chép file thực thi vào `/usr/local/bin/swan-panel`:
+Tài liệu chi tiết về cấu hình tường lửa và biến môi trường có tại [deploy/README.md](deploy/README.md).
+
+### Lựa Chọn 1: Triển Khai Bằng Docker Compose (Khuyến nghị)
+
+1. Clone kho lưu trữ mã nguồn:
    ```bash
-   sudo cp swan-panel /usr/local/bin/swan-panel
-   sudo chmod +x /usr/local/bin/swan-panel
+   git clone https://github.com/thienvu18/swan-panel.git
+   cd swan-panel
    ```
 
-2. Tạo tệp dịch vụ `/etc/systemd/system/swan-panel.service`:
-   ```ini
-   [Unit]
-   Description=SwanPanel strongSwan Web Control Plane
-   After=network.target strongswan.service strongswan-starter.service
-   Requires=strongswan.service
-
-   [Service]
-   Type=simple
-   User=root
-   WorkingDirectory=/var/lib/swan-panel
-   ExecStart=/usr/local/bin/swan-panel
-   Restart=always
-   RestartSec=5s
-   Environment="PORT=8080"
-   Environment="DB_PATH=/var/lib/swan-panel/swanpanel.db"
-   Environment="JWT_SECRET=khoa-bi-mat-ngau-nhien-rat-dai-cho-production"
-   Environment="LOG_LEVEL=info"
-   Environment="VICI_SOCKET=/var/run/charon.vici"
-   Environment="DNS_PORT=53"
-   Environment="APP_ENV=production"
-
-   [Install]
-   WantedBy=multi-user.target
+2. Khởi động hệ thống với Docker Compose:
+   ```bash
+   docker compose up -d
    ```
 
-3. Kích hoạt và khởi động dịch vụ:
+3. Kiểm tra nhật ký và trạng thái container:
    ```bash
-   sudo mkdir -p /var/lib/swan-panel
+   docker compose ps
+   docker compose logs -f
+   ```
+
+*(Container đã cấu hình sẵn quyền `cap_add: [NET_ADMIN, NET_RAW]`, gắn volume `/var/run/charon.vici` và phơi các cổng UDP 500, 4500, DNS 53, HTTP 8080)*.
+
+### Lựa Chọn 2: Triển Khai Native Service (systemd)
+
+Dành cho quản trị viên muốn chạy trực tiếp trên hệ điều hành Linux:
+
+1. Tải và cài đặt binary vào `/usr/local/bin/swan-panel`:
+   ```bash
+   sudo install -m 755 swan-panel /usr/local/bin/swan-panel
+   ```
+
+2. Thiết lập tệp cấu hình môi trường và dịch vụ systemd:
+   ```bash
+   sudo mkdir -p /etc/swan-panel /var/lib/swan-panel
+   sudo cp deploy/swan-panel.env.example /etc/swan-panel/swan-panel.env
+   sudo chmod 600 /etc/swan-panel/swan-panel.env
+   sudo cp deploy/systemd/swan-panel.service /etc/systemd/system/swan-panel.service
+   ```
+
+3. Nạp lại systemd và kích hoạt dịch vụ:
+   ```bash
    sudo systemctl daemon-reload
+   sudo systemctl enable --now strongswan-starter || sudo systemctl enable --now strongswan
    sudo systemctl enable --now swan-panel
+   ```
+
+4. Theo dõi nhật ký hoạt động:
+   ```bash
+   sudo journalctl -u swan-panel -f
    ```
 
 ---

@@ -1,0 +1,25 @@
+# Git and local configs
+.git
+.gitignore
+.github
+.gemini
+
+# Go build artifacts
+swan-panel
+server
+*.db
+*.db-wal
+*.db-shm
+/tmp
+
+# UI build artifacts and dependencies
+ui/node_modules
+ui/dist
+ui/.vite
+
+# Documentation & Wiki
+docs
+wiki
+*.md
+LICENSE
+Makefile

@@ -154,47 +154,62 @@ Access the control plane at `http://localhost:8080`.
 
 ---
 
-## Production Deployment (systemd)
+## Production Deployment
 
-For a production Linux server running strongSwan, deploy SwanPanel as a managed `systemd` service:
+SwanPanel provides two production deployment options for Linux servers:
+* **Docker & Docker Compose** (Containerized with automated strongSwan integration)
+* **Native Systemd Daemon** (Bare-metal single binary execution)
 
-1. Move the binary to `/usr/local/bin/swan-panel`:
+For a complete guide with firewall configurations and architecture details, see [deploy/README.md](deploy/README.md).
+
+### Option 1: Docker Compose Deployment (Recommended)
+
+1. Clone the repository:
    ```bash
-   sudo cp swan-panel /usr/local/bin/swan-panel
-   sudo chmod +x /usr/local/bin/swan-panel
+   git clone https://github.com/thienvu18/swan-panel.git
+   cd swan-panel
    ```
 
-2. Create `/etc/systemd/system/swan-panel.service`:
-   ```ini
-   [Unit]
-   Description=SwanPanel strongSwan Web Control Plane
-   After=network.target strongswan.service strongswan-starter.service
-   Requires=strongswan.service
-
-   [Service]
-   Type=simple
-   User=root
-   WorkingDirectory=/var/lib/swan-panel
-   ExecStart=/usr/local/bin/swan-panel
-   Restart=always
-   RestartSec=5s
-   Environment="PORT=8080"
-   Environment="DB_PATH=/var/lib/swan-panel/swanpanel.db"
-   Environment="JWT_SECRET=your-strong-random-production-secret"
-   Environment="LOG_LEVEL=info"
-   Environment="VICI_SOCKET=/var/run/charon.vici"
-   Environment="DNS_PORT=53"
-   Environment="APP_ENV=production"
-
-   [Install]
-   WantedBy=multi-user.target
+2. Start the service with Docker Compose:
+   ```bash
+   docker compose up -d
    ```
 
-3. Enable and start the service:
+3. Check container logs and status:
    ```bash
-   sudo mkdir -p /var/lib/swan-panel
+   docker compose ps
+   docker compose logs -f
+   ```
+
+*(The container includes strongSwan, iptables, and Split-DNS, running with `cap_add: [NET_ADMIN, NET_RAW]` and mounting `/var/run/charon.vici`)*.
+
+### Option 2: Native Systemd Daemon
+
+For servers running strongSwan natively on the host:
+
+1. Download and install the precompiled binary to `/usr/local/bin/swan-panel`:
+   ```bash
+   sudo install -m 755 swan-panel /usr/local/bin/swan-panel
+   ```
+
+2. Copy the sample environment file and systemd service:
+   ```bash
+   sudo mkdir -p /etc/swan-panel /var/lib/swan-panel
+   sudo cp deploy/swan-panel.env.example /etc/swan-panel/swan-panel.env
+   sudo chmod 600 /etc/swan-panel/swan-panel.env
+   sudo cp deploy/systemd/swan-panel.service /etc/systemd/system/swan-panel.service
+   ```
+
+3. Enable and start services:
+   ```bash
    sudo systemctl daemon-reload
+   sudo systemctl enable --now strongswan-starter || sudo systemctl enable --now strongswan
    sudo systemctl enable --now swan-panel
+   ```
+
+4. Stream live logs:
+   ```bash
+   sudo journalctl -u swan-panel -f
    ```
 
 ---

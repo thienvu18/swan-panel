@@ -1,4 +1,4 @@
-.PHONY: all build-ui build-backend build test clean run
+.PHONY: all build-ui build-backend build test clean run docker-build docker-up docker-down
 
 BINARY_NAME=swan-panel
 
@@ -17,6 +17,15 @@ test:
 
 run: build
 	./$(BINARY_NAME)
+
+docker-build:
+	docker build -t swan-panel:latest .
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
 
 clean:
 	rm -f $(BINARY_NAME)

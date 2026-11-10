@@ -41,6 +41,9 @@ func Load() *Config {
 
 	env := os.Getenv("APP_ENV")
 	if env == "" {
+		env = os.Getenv("ENVIRONMENT")
+	}
+	if env == "" {
 		env = "development"
 	}
 
