@@ -4,13 +4,14 @@
 
 **Modern web control plane for strongSwan Remote Access VPN with 100% native client provisioning**
 
+[![GitHub Release](https://img.shields.io/github/v/release/thienvu18/swan-panel?style=flat-square)](https://github.com/thienvu18/swan-panel/releases)
+[![CI](https://github.com/thienvu18/swan-panel/actions/workflows/ci.yml/badge.svg)](https://github.com/thienvu18/swan-panel/actions/workflows/ci.yml)
+[![Pages](https://img.shields.io/badge/docs-GitHub_Pages-blue?style=flat-square)](https://thienvu18.github.io/swan-panel/)
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square)](https://golang.org)
 [![strongSwan](https://img.shields.io/badge/strongSwan-VICI_IPC-crimson?style=flat-square)](https://github.com/strongswan/strongswan)
-[![React](https://img.shields.io/badge/React-19-blue?style=flat-square)](https://react.dev)
-[![Tailwind](https://img.shields.io/badge/Tailwind-v4_/_v5-38B2AC?style=flat-square)](https://tailwindcss.com)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-gray?style=flat-square)](LICENSE)
 
-[English](README.md) • [Tiếng Việt](README.vi.md)
+[Website & Docs](https://thienvu18.github.io/swan-panel/) • [English](README.md) • [Tiếng Việt](README.vi.md) • [Wiki](https://github.com/thienvu18/swan-panel/wiki)
 
 </div>
 
