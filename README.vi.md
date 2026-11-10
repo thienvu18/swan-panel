@@ -251,17 +251,17 @@ SwanPanel là dự án mã nguồn mở vì cộng đồng. Chúng tôi luôn ho
 ## Tác giả & Người đóng góp (Authors & Contributors)
 
 ### Tác giả & Quản trị Dự án
-* **Thái Thiên Vũ** ([@thienvu1802](https://github.com/thienvu1802))
+* **Thái Thiên Vũ** ([@thienvu18](https://github.com/thienvu18))
 
-<a href="https://github.com/thienvu1802">
-  <img src="https://github.com/thienvu1802.png?size=80" width="80" height="80" alt="Thái Thiên Vũ" style="border-radius: 50%;" />
+<a href="https://github.com/thienvu18">
+  <img src="https://github.com/thienvu18.png?size=80" width="80" height="80" alt="Thái Thiên Vũ" style="border-radius: 50%;" />
 </a>
 
 ### Người đóng góp (Contributors)
 Cảm ơn tất cả các thành viên cộng đồng đã tham gia đóng góp phát triển SwanPanel!
 
-<a href="https://github.com/swan-panel/swan-panel/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=swan-panel/swan-panel" alt="Contributors" />
+<a href="https://github.com/thienvu18/swan-panel/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=thienvu18/swan-panel" alt="Contributors" />
 </a>
 
 ---
