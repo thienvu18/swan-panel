@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <!-- Cyber Beak pointing forward (Left) -->
+  <polygon points="27,26 17,29 27,32" fill="#3b82f6" />
+  <!-- Swan Head & S-Neck -->
+  <path d="M 27 26 C 29 17, 44 17, 46 26 C 48 36, 39 45, 36 54 C 33 62, 35 68, 42 74 L 32 74 C 23 66, 23 53, 28 43 C 31 36, 29 31, 27 26 Z" fill="#f8fafc" />
+  <!-- 3 Modular Wings / Control Sliders -->
+  <rect x="44" y="39" width="38" height="7" rx="3.5" fill="#2563eb" />
+  <circle cx="75" cy="42.5" r="2.2" fill="#10b981" />
+  <rect x="40" y="50" width="46" height="7" rx="3.5" fill="#3b82f6" />
+  <rect x="35" y="61" width="41" height="7" rx="3.5" fill="#60a5fa" />
+</svg>

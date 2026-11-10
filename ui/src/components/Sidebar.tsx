@@ -13,6 +13,7 @@ import {
   Moon,
   X
 } from 'lucide-react';
+import { SwanLogo } from './SwanLogo';
 
 interface SidebarProps {
   currentTab: string;
@@ -69,8 +70,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Header & Controls */}
           <div className="h-14 flex items-center justify-between px-4 border-b subtle-border">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white text-xs shadow-xs">
-                <ShieldCheck className="w-4 h-4" />
+              <div className="w-8 h-8 rounded-lg surface-header border subtle-border flex items-center justify-center p-1 shadow-xs shrink-0">
+                <SwanLogo className="w-6 h-6" />
               </div>
               <div>
                 <span className="font-bold text-sm tracking-tight">SwanPanel</span>
