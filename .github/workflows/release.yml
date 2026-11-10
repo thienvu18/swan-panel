@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish Release Binaries
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build Frontend SPA
+        run: |
+          cd ui
+          npm ci
+          npm run build
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          check-latest: true
+
+      - name: Cross-Compile Binaries
+        run: |
+          mkdir -p dist
+          LDFLAGS="-s -w -X main.version=${{ github.ref_name }}"
+
+          echo "Compiling linux/amd64..."
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o dist/swan-panel-linux-amd64 ./cmd/server
+
+          echo "Compiling linux/arm64..."
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o dist/swan-panel-linux-arm64 ./cmd/server
+
+          echo "Compiling darwin/amd64..."
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o dist/swan-panel-darwin-amd64 ./cmd/server
+
+          echo "Compiling darwin/arm64..."
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o dist/swan-panel-darwin-arm64 ./cmd/server
+
+      - name: Generate SHA256 Checksums
+        run: |
+          cd dist
+          sha256sum swan-panel-* > checksums.txt
+          cat checksums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "SwanPanel ${{ github.ref_name }}"
+          files: |
+            dist/swan-panel-linux-amd64
+            dist/swan-panel-linux-arm64
+            dist/swan-panel-darwin-amd64
+            dist/swan-panel-darwin-arm64
+            dist/checksums.txt
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

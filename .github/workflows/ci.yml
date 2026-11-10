@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build Frontend SPA
+        run: |
+          cd ui
+          npm ci
+          npm run build
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          check-latest: true
+
+      - name: Go Vet
+        run: go vet ./...
+
+      - name: Run Test Suite (Race Detector Enabled)
+        run: go test -v -race ./...
+
+      - name: Compile Single Binary
+        run: |
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o swan-panel ./cmd/server
+          ls -lh swan-panel
