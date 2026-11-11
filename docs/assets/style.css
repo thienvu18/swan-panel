@@ -89,7 +89,7 @@ a:hover {
 }
 
 .header-container {
-  max-width: 1200px;
+  max-width: 1280px;
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -171,6 +171,31 @@ a:hover {
   backdrop-filter: blur(2px);
 }
 
+@media (min-width: 1024px) {
+  .menu-button {
+    display: none !important;
+  }
+  .site-menu,
+  .site-menu[popover] {
+    position: static !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 1.25rem !important;
+    list-style: none !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    width: auto !important;
+    inset: auto !important;
+    overflow: visible !important;
+  }
+  .site-menu[popover]::backdrop {
+    display: none !important;
+  }
+}
+
 .site-header.is-wide .menu-button {
   display: none;
 }
@@ -178,7 +203,7 @@ a:hover {
   position: static;
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1.25rem;
   list-style: none;
   background: transparent;
   border: none;

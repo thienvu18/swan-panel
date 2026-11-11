@@ -222,6 +222,7 @@ const translations = {
     },
     footer: {
       github: "GitHub Repository",
+      wiki: "Wiki",
       releases: "Release v0.0.2",
       guide: "Interactive Guide",
       admin_guide: "Admin Guide",
@@ -451,6 +452,7 @@ const translations = {
     },
     footer: {
       github: "GitHub Repository",
+      wiki: "Tài liệu Wiki",
       releases: "Bản phát hành v0.0.2",
       guide: "Hướng Dẫn Trực Quan",
       admin_guide: "Cẩm Nang Quản Trị",

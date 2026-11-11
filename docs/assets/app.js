@@ -83,36 +83,31 @@
     });
   }
 
-  // 3. Responsive Popover Site Navigation (Modern Web Guidance navbar spec)
-  const siteHeader = document.querySelector('.site-header');
-  const headerInner = document.querySelector('.header-container');
+  // 3. Responsive Popover Site Navigation (Zero-flicker CSS + matchMedia sync)
   const siteMenu = document.getElementById('site-menu');
 
-  if (siteHeader && headerInner && siteMenu) {
-    function updateNavbarLayout() {
-      // Temporarily mark measuring
-      siteHeader.classList.add('is-measuring');
-      siteHeader.classList.add('is-wide');
-      const wide = headerInner.scrollWidth <= headerInner.clientWidth;
-      
-      if (wide) {
-        siteHeader.classList.add('is-wide');
-        siteMenu.removeAttribute('popover');
+  if (siteMenu) {
+    const desktopQuery = window.matchMedia('(min-width: 1024px)');
+    
+    function syncPopoverState(e) {
+      if (e.matches) {
+        if (siteMenu.hasAttribute('popover')) {
+          try { siteMenu.hidePopover(); } catch(err) {}
+          siteMenu.removeAttribute('popover');
+        }
       } else {
-        siteHeader.classList.remove('is-wide');
-        siteMenu.setAttribute('popover', 'auto');
+        if (!siteMenu.hasAttribute('popover')) {
+          siteMenu.setAttribute('popover', 'auto');
+        }
       }
-      
-      requestAnimationFrame(() => {
-        siteHeader.classList.remove('is-measuring');
-      });
     }
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateNavbarLayout();
-    });
-    resizeObserver.observe(headerInner);
-    updateNavbarLayout();
+    
+    syncPopoverState(desktopQuery);
+    if (typeof desktopQuery.addEventListener === 'function') {
+      desktopQuery.addEventListener('change', syncPopoverState);
+    } else if (typeof desktopQuery.addListener === 'function') {
+      desktopQuery.addListener(syncPopoverState);
+    }
 
     // Close menu when a link is clicked on mobile
     siteMenu.querySelectorAll('a').forEach(link => {
