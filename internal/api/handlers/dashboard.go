@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/vici"
 )
 
 type DashboardHandler struct {
@@ -37,12 +38,19 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 		slog.Error("Failed to query recent devices for dashboard", "error", err)
 	}
 
+	// Fetch live active VPN tunnels from strongSwan VICI socket
+	viciClient := vici.GetClient("")
+	activeSessionsCount := 0
+	if liveSAs, err := viciClient.ListSAs(c.Request.Context()); err == nil {
+		activeSessionsCount = len(liveSAs)
+	}
+
 	uptimeSeconds := int64(time.Since(h.startTime).Seconds())
-	slog.Debug("Dashboard stats retrieved", "devices", totalDevices, "users", totalUsers, "uptime", uptimeSeconds)
+	slog.Debug("Dashboard stats retrieved", "devices", totalDevices, "users", totalUsers, "active_sessions", activeSessionsCount, "uptime", uptimeSeconds)
 
 	c.JSON(http.StatusOK, gin.H{
 		"stats": gin.H{
-			"active_sessions": 2, // Connected directly to VICI list-sas in runtime
+			"active_sessions": activeSessionsCount,
 			"total_devices":   totalDevices,
 			"total_users":     totalUsers,
 			"pending_users":   pendingUsers,

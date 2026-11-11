@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./docs/assets/logo.svg" width="96" height="96" alt="SwanPanel Logo" />
+
 # SwanPanel
 
 **Bảng điều khiển Web hiện đại cho strongSwan Remote Access VPN với cấu hình 100% native client**

@@ -1,0 +1,19 @@
+# ==============================================================================
+# SwanPanel - Host strongSwan Daemon Override
+# https://github.com/thienvu18/swan-panel
+#
+# Use this compose override when strongSwan runs directly on the host (e.g. systemd).
+# This bind-mounts the host VICI UNIX socket into the SwanPanel container.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f deploy/docker/docker-compose.host-swan.yml up -d
+#
+# Or copy to docker-compose.override.yml in project root for automatic loading:
+#   cp deploy/docker/docker-compose.host-swan.yml docker-compose.override.yml
+# ==============================================================================
+
+services:
+  swan-panel:
+    volumes:
+      # Bind-mount host strongSwan VICI IPC socket
+      - /var/run/charon.vici:/var/run/charon.vici

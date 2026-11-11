@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, X, Shield, Trash2, Plus, Users as UsersIcon } from 'lucide-react';
+import { Check, X, Shield, Trash2, Plus, Users as UsersIcon, Search } from 'lucide-react';
+import { Modal } from '../components/Modal';
+import { CopyButton } from '../components/CopyButton';
+import { EmptyState } from '../components/EmptyState';
 
 interface UserItem {
   id: string;
@@ -27,6 +30,7 @@ export const UsersPage: React.FC = () => {
   const [activeSubView, setActiveSubView] = useState<'directory' | 'usergroups'>('directory');
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Form states for Add User
   const [userName, setUserName] = useState('');
@@ -45,51 +49,7 @@ export const UsersPage: React.FC = () => {
       const res = await fetch('/api/users', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
       });
-      if (!res.ok) {
-        return {
-          users: [
-            {
-              id: 'usr_bao',
-              name: 'Hoang Bao',
-              email: 'bao.hoang@company.com',
-              auth_type: 'oidc',
-              is_admin: false,
-              status: 'PENDING',
-              idp_provider: { name: 'Google Workspace' },
-              user_groups: [],
-            },
-            {
-              id: 'usr_thienvu',
-              name: 'Thien Vu',
-              email: 'thienvu@company.com',
-              auth_type: 'oidc',
-              is_admin: true,
-              status: 'ACTIVE',
-              idp_provider: { name: 'Google Workspace' },
-              user_groups: [{ id: 'ug_1', name: 'DevOps' }, { id: 'ug_2', name: 'Backend' }],
-            },
-            {
-              id: 'usr_nam',
-              name: 'Nam Nguyen',
-              email: 'nam@company.com',
-              auth_type: 'oidc',
-              is_admin: false,
-              status: 'ACTIVE',
-              idp_provider: { name: 'Microsoft Entra ID' },
-              user_groups: [{ id: 'ug_2', name: 'Backend' }],
-            },
-            {
-              id: 'usr_alex',
-              name: 'Alex Contractor',
-              email: 'alex@partner.io',
-              auth_type: 'local',
-              is_admin: false,
-              status: 'ACTIVE',
-              user_groups: [{ id: 'ug_3', name: 'Sales' }],
-            },
-          ],
-        };
-      }
+      if (!res.ok) throw new Error('Failed to fetch users');
       return res.json();
     },
   });
@@ -101,15 +61,7 @@ export const UsersPage: React.FC = () => {
       const res = await fetch('/api/user-groups', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
       });
-      if (!res.ok) {
-        return {
-          user_groups: [
-            { id: 'ug_1', name: 'DevOps', description: 'DevOps & Infrastructure Team', member_count: 1 },
-            { id: 'ug_2', name: 'Backend', description: 'Backend Engineering Team', member_count: 2 },
-            { id: 'ug_3', name: 'Sales', description: 'Commercial & Sales', member_count: 1 },
-          ],
-        };
-      }
+      if (!res.ok) throw new Error('Failed to fetch user groups');
       return res.json();
     },
   });
@@ -117,8 +69,25 @@ export const UsersPage: React.FC = () => {
   const users = usersData?.users || [];
   const userGroups = groupsData?.user_groups || [];
 
-  const pendingUsers = users.filter((u) => u.status === 'PENDING');
-  const activeUsers = users.filter((u) => u.status === 'ACTIVE');
+  const filteredUsers = users.filter((u) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      u.name.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      u.status.toLowerCase().includes(q) ||
+      (u.user_groups && u.user_groups.some((g) => g.name.toLowerCase().includes(q)))
+    );
+  });
+
+  const filteredGroups = userGroups.filter((g) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return g.name.toLowerCase().includes(q) || g.description.toLowerCase().includes(q);
+  });
+
+  const pendingUsers = filteredUsers.filter((u) => u.status === 'PENDING');
+  const activeUsers = filteredUsers.filter((u) => u.status === 'ACTIVE');
 
   // Approve Mutation
   const approveMutation = useMutation({
@@ -182,12 +151,16 @@ export const UsersPage: React.FC = () => {
           is_admin: userIsAdmin,
         }),
       });
-      if (!res.ok) throw new Error('Failed to create user');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || t('common.error_occurred') || 'Failed to create user');
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setIsAddUserOpen(false);
+      createUserMutation.reset();
       setUserName('');
       setUserEmail('');
       setUserPassword('');
@@ -205,21 +178,40 @@ export const UsersPage: React.FC = () => {
         },
         body: JSON.stringify({ name: grpName, description: grpDesc }),
       });
-      if (!res.ok) throw new Error('Failed to create user group');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || t('common.error_occurred') || 'Failed to create user group');
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user_groups'] });
       setIsAddGroupOpen(false);
+      createGroupMutation.reset();
       setGrpName('');
       setGrpDesc('');
+    },
+  });
+
+  // Delete Group Mutation
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/user-groups/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      if (!res.ok) throw new Error('Failed to delete user group');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user_groups'] });
     },
   });
 
   return (
     <div className="space-y-4">
       {/* Subnav & Action */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex border subtle-border rounded-lg p-0.5 surface-header text-xs">
           <button
             onClick={() => setActiveSubView('directory')}
@@ -239,17 +231,27 @@ export const UsersPage: React.FC = () => {
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-1 max-w-sm ml-auto">
+          <div className="relative w-full">
+            <Search className="w-3.5 h-3.5 text-subtle absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={activeSubView === 'directory' ? "Search users by name, email..." : "Search user groups..."}
+              className="w-full surface-input border subtle-border rounded-lg pl-8 pr-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+            />
+          </div>
           <button
             onClick={() => setIsAddUserOpen(true)}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs"
+            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs shrink-0"
           >
             <Plus className="w-3.5 h-3.5" />
             {t('users.add_user')}
           </button>
           <button
             onClick={() => setIsAddGroupOpen(true)}
-            className="border subtle-border hover:bg-slate-500/10 text-subtle hover:text-current font-medium px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs"
+            className="border subtle-border hover:bg-slate-500/10 text-subtle hover:text-current font-medium px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs shrink-0"
           >
             <UsersIcon className="w-3.5 h-3.5" />
             {t('users.add_group')}
@@ -280,7 +282,7 @@ export const UsersPage: React.FC = () => {
                     {pendingUsers.map((u) => (
                       <tr key={u.id} className="hover-row">
                         <td className="py-2.5 px-3.5">
-                          <div className="font-medium text-white">{u.name}</div>
+                          <div className="font-medium text-slate-900 dark:text-white">{u.name}</div>
                           <div className="text-[11px] text-dim font-mono">{u.email}</div>
                         </td>
                         <td className="py-2.5 px-3.5 text-subtle">{u.idp_provider?.name || 'OIDC Provider'}</td>
@@ -336,10 +338,29 @@ export const UsersPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y subtle-border">
-                    {activeUsers.map((u) => (
+                    {activeUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-8">
+                          <EmptyState
+                            icon={UsersIcon}
+                            title={searchQuery ? 'No matching users' : 'No active users found'}
+                            description={searchQuery ? `No users match '${searchQuery}'.` : "Invite team members or enable Single Sign-On to onboard users."}
+                            actionLabel={searchQuery ? 'Clear Search' : t('users.add_user')}
+                            actionIcon={searchQuery ? X : Plus}
+                            onAction={searchQuery ? () => setSearchQuery('') : () => setIsAddUserOpen(true)}
+                            className="border-none shadow-none bg-transparent"
+                          />
+                        </td>
+                      </tr>
+                    ) : (
+                      activeUsers.map((u) => (
                       <tr key={u.id} className="hover-row transition-colors">
-                        <td className="py-2.5 px-3.5 font-medium text-white">
-                          {u.name} <span className="text-dim font-normal font-mono">({u.email})</span>
+                        <td className="py-2.5 px-3.5 font-medium text-slate-900 dark:text-white">
+                          <div className="flex items-center gap-1.5">
+                            <span>{u.name}</span>
+                            <span className="text-dim font-normal font-mono">({u.email})</span>
+                            <CopyButton value={u.email} label={`email ${u.email}`} />
+                          </div>
                         </td>
                         <td className="py-2.5 px-3.5">
                           {u.auth_type === 'local' ? (
@@ -368,6 +389,7 @@ export const UsersPage: React.FC = () => {
                         </td>
                         <td className="py-2.5 px-3.5 text-right space-x-1">
                           <button
+                            type="button"
                             onClick={() => toggleRoleMutation.mutate(u.id)}
                             className={`p-1.5 rounded-md transition-colors inline-block ${
                               u.is_admin ? 'text-blue-500 hover:bg-blue-500/10' : 'text-subtle hover:text-blue-500 hover:bg-slate-500/10'
@@ -378,7 +400,8 @@ export const UsersPage: React.FC = () => {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                    ))
+                  )}
                   </tbody>
                 </table>
               </div>
@@ -400,163 +423,176 @@ export const UsersPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y subtle-border">
-              {userGroups.map((g) => (
-                <tr key={g.id} className="hover-row">
-                  <td className="py-2.5 px-3.5 font-medium text-blue-400 flex items-center gap-2">
-                    <UsersIcon className="w-3.5 h-3.5 text-blue-400" />
-                    {g.name}
-                  </td>
-                  <td className="py-2.5 px-3.5 text-subtle">{g.description || '-'}</td>
-                  <td className="py-2.5 px-3.5 text-dim font-mono">{g.member_count} members</td>
-                  <td className="py-2.5 px-3.5 text-right">
-                    <button
-                      onClick={() => alert('Deleting user group')}
-                      className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+              {filteredGroups.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-subtle font-sans text-xs">
+                    {searchQuery
+                      ? `No user groups match '${searchQuery}'`
+                      : "No user groups configured yet. Click '+ Add Group' to create a team."}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredGroups.map((g) => (
+                  <tr key={g.id} className="hover-row">
+                    <td className="py-2.5 px-3.5 font-medium text-blue-400 flex items-center gap-2">
+                      <UsersIcon className="w-3.5 h-3.5 text-blue-400" />
+                      {g.name}
+                    </td>
+                    <td className="py-2.5 px-3.5 text-subtle">{g.description || '-'}</td>
+                    <td className="py-2.5 px-3.5 text-dim font-mono">{g.member_count || 0} members</td>
+                    <td className="py-2.5 px-3.5 text-right">
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete user group '${g.name}'?`)) {
+                            deleteGroupMutation.mutate(g.id);
+                          }
+                        }}
+                        className="p-1.5 hover:bg-rose-500/10 rounded-md text-subtle hover:text-rose-500 transition-colors"
+                        title="Delete Group"
+                        aria-label="Delete Group"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       )}
 
       {/* MODAL: CREATE LOCAL USER */}
-      {isAddUserOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="surface-card border subtle-border rounded-xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b subtle-border pb-2.5">
-              <div>
-                <h3 className="font-bold text-sm text-white">{t('users.create_user_title')}</h3>
-                <div className="text-[11px] text-dim">{t('users.create_user_desc')}</div>
-              </div>
-              <button onClick={() => setIsAddUserOpen(false)} className="text-subtle hover:text-current">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      <Modal
+        isOpen={isAddUserOpen}
+        onClose={() => {
+          setIsAddUserOpen(false);
+          createUserMutation.reset();
+        }}
+        title={t('users.create_user_title')}
+        error={(createUserMutation.error as Error)?.message}
+      >
+        <div className="space-y-3 text-xs">
+          <div>
+            <label className="text-subtle block mb-1">{t('common.name')}</label>
+            <input
+              type="text"
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              placeholder="e.g. Alex Contractor"
+              className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+            />
+          </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="text-subtle block mb-1">{t('common.name')}</label>
-                <input
-                  type="text"
-                  value={userName}
-                  onChange={(e) => setUserName(e.target.value)}
-                  placeholder="e.g. Alex Contractor"
-                  className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
-                />
-              </div>
+          <div>
+            <label className="text-subtle block mb-1">{t('common.email')}</label>
+            <input
+              type="email"
+              value={userEmail}
+              onChange={(e) => setUserEmail(e.target.value)}
+              placeholder="e.g. alex@partner.io"
+              className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
+            />
+          </div>
 
-              <div>
-                <label className="text-subtle block mb-1">{t('common.email')}</label>
-                <input
-                  type="email"
-                  value={userEmail}
-                  onChange={(e) => setUserEmail(e.target.value)}
-                  placeholder="e.g. alex@partner.io"
-                  className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
-                />
-              </div>
+          <div>
+            <label className="text-subtle block mb-1">{t('common.password')}</label>
+            <input
+              type="password"
+              value={userPassword}
+              onChange={(e) => setUserPassword(e.target.value)}
+              placeholder="Strong password"
+              className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
+            />
+          </div>
 
-              <div>
-                <label className="text-subtle block mb-1">{t('common.password')}</label>
-                <input
-                  type="password"
-                  value={userPassword}
-                  onChange={(e) => setUserPassword(e.target.value)}
-                  placeholder="Strong password"
-                  className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="chk-admin"
-                  checked={userIsAdmin}
-                  onChange={(e) => setUserIsAdmin(e.target.checked)}
-                  className="rounded border-slate-600"
-                />
-                <label htmlFor="chk-admin" className="text-subtle cursor-pointer">
-                  Grant System Administrator privilege
-                </label>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2 border-t subtle-border">
-              <button
-                onClick={() => createUserMutation.mutate()}
-                disabled={!userName || !userEmail || !userPassword || createUserMutation.isPending}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
-              >
-                {t('common.save')}
-              </button>
-              <button
-                onClick={() => setIsAddUserOpen(false)}
-                className="px-3 py-1.5 border subtle-border rounded-lg hover:bg-slate-500/10 text-xs"
-              >
-                {t('common.cancel')}
-              </button>
-            </div>
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              type="checkbox"
+              id="chk-admin"
+              checked={userIsAdmin}
+              onChange={(e) => setUserIsAdmin(e.target.checked)}
+              className="rounded border-slate-600"
+            />
+            <label htmlFor="chk-admin" className="text-subtle cursor-pointer">
+              Grant System Administrator privilege
+            </label>
           </div>
         </div>
-      )}
+
+        <div className="flex gap-2 pt-2 border-t subtle-border">
+          <button
+            onClick={() => createUserMutation.mutate()}
+            disabled={!userName || !userEmail || !userPassword || createUserMutation.isPending}
+            className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
+          >
+            {createUserMutation.isPending ? 'Saving...' : t('common.save')}
+          </button>
+          <button
+            onClick={() => {
+              setIsAddUserOpen(false);
+              createUserMutation.reset();
+            }}
+            className="px-3 py-1.5 border subtle-border rounded-lg hover:bg-slate-500/10 text-xs"
+          >
+            {t('common.cancel')}
+          </button>
+        </div>
+      </Modal>
 
       {/* MODAL: CREATE USER GROUP */}
-      {isAddGroupOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="surface-card border subtle-border rounded-xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b subtle-border pb-2.5">
-              <h3 className="font-bold text-sm text-white">{t('users.add_group')}</h3>
-              <button onClick={() => setIsAddGroupOpen(false)} className="text-subtle hover:text-current">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      <Modal
+        isOpen={isAddGroupOpen}
+        onClose={() => {
+          setIsAddGroupOpen(false);
+          createGroupMutation.reset();
+        }}
+        title={t('users.add_group')}
+        error={(createGroupMutation.error as Error)?.message}
+      >
+        <div className="space-y-3 text-xs">
+          <div>
+            <label className="text-subtle block mb-1">Group Name</label>
+            <input
+              type="text"
+              value={grpName}
+              onChange={(e) => setGrpName(e.target.value)}
+              placeholder="e.g. Security Auditors"
+              className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+            />
+          </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="text-subtle block mb-1">Group Name</label>
-                <input
-                  type="text"
-                  value={grpName}
-                  onChange={(e) => setGrpName(e.target.value)}
-                  placeholder="e.g. Security Auditors"
-                  className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-subtle block mb-1">Description</label>
-                <input
-                  type="text"
-                  value={grpDesc}
-                  onChange={(e) => setGrpDesc(e.target.value)}
-                  placeholder="e.g. External auditors with read-only access"
-                  className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2 border-t subtle-border">
-              <button
-                onClick={() => createGroupMutation.mutate()}
-                disabled={!grpName || createGroupMutation.isPending}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
-              >
-                {t('common.save')}
-              </button>
-              <button
-                onClick={() => setIsAddGroupOpen(false)}
-                className="px-3 py-1.5 border subtle-border rounded-lg hover:bg-slate-500/10 text-xs"
-              >
-                {t('common.cancel')}
-              </button>
-            </div>
+          <div>
+            <label className="text-subtle block mb-1">Description</label>
+            <input
+              type="text"
+              value={grpDesc}
+              onChange={(e) => setGrpDesc(e.target.value)}
+              placeholder="e.g. External auditors with read-only access"
+              className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+            />
           </div>
         </div>
-      )}
+
+        <div className="flex gap-2 pt-2 border-t subtle-border">
+          <button
+            onClick={() => createGroupMutation.mutate()}
+            disabled={!grpName || createGroupMutation.isPending}
+            className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
+          >
+            {createGroupMutation.isPending ? 'Saving...' : t('common.save')}
+          </button>
+          <button
+            onClick={() => {
+              setIsAddGroupOpen(false);
+              createGroupMutation.reset();
+            }}
+            className="px-3 py-1.5 border subtle-border rounded-lg hover:bg-slate-500/10 text-xs"
+          >
+            {t('common.cancel')}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 };

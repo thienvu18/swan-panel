@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./docs/assets/logo.svg" width="96" height="96" alt="SwanPanel Logo" />
+
 # SwanPanel
 
 **Modern web control plane for strongSwan Remote Access VPN with 100% native client provisioning**

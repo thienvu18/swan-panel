@@ -2,28 +2,67 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
+import { LandingPage } from './pages/LandingPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { ResourcesPage } from './pages/ResourcesPage';
+import { AccessRulesPage } from './pages/AccessRulesPage';
+import { UsersPage } from './pages/UsersPage';
+import { DNSEnginePage } from './pages/DNSEnginePage';
+import { OIDCPage } from './pages/OIDCPage';
 import { ServerSettingsPage } from './pages/ServerSettingsPage';
+import { SystemLogsPage } from './pages/SystemLogsPage';
 import { useRealtime } from './hooks/useRealtime';
 
 export const App: React.FC = () => {
   const { t } = useTranslation();
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+  const [currentUser, setCurrentUser] = useState<any>(() => {
+    try {
+      const stored = localStorage.getItem('user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(() => {
+    return localStorage.getItem('theme') !== 'light';
+  });
   const [contextualBtn, setContextualBtn] = useState<React.ReactNode>(null);
 
-  // Lắng nghe SSE thời gian thực
-  const { isConnected } = useRealtime();
+  // Real-time SSE listener
+  const { isConnected } = useRealtime(token);
 
   useEffect(() => {
     const root = document.documentElement;
     if (isDark) {
       root.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
     } else {
       root.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
     }
   }, [isDark]);
+
+  const handleLoginSuccess = (newToken: string, newUser: any) => {
+    setToken(newToken);
+    setCurrentUser(newUser);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setToken(null);
+    setCurrentUser(null);
+    setContextualBtn(null);
+  };
+
+  // If user is not authenticated, show modern landing page with guides & login
+  if (!token) {
+    return <LandingPage onLoginSuccess={handleLoginSuccess} />;
+  }
 
   const titles: Record<string, string> = {
     dashboard: t('nav.dashboard'),
@@ -34,28 +73,44 @@ export const App: React.FC = () => {
     oidc: t('nav.oidc_providers'),
     server: t('nav.server_settings'),
     logs: t('nav.system_logs'),
+    guide: t('nav.guide'),
   };
 
   const renderContent = () => {
     switch (currentTab) {
       case 'dashboard':
         return <DashboardPage />;
+      case 'resources':
+        return <ResourcesPage />;
+      case 'access':
+        return <AccessRulesPage />;
+      case 'users':
+        return <UsersPage />;
+      case 'dns':
+        return <DNSEnginePage />;
+      case 'oidc':
+        return <OIDCPage />;
       case 'server':
         return <ServerSettingsPage onRegisterSaveButton={setContextualBtn} />;
-      default:
+      case 'logs':
+        return <SystemLogsPage />;
+      case 'guide':
         return (
-          <div className="border subtle-border rounded-xl p-12 text-center surface-card space-y-3">
-            <h3 className="font-bold text-base text-white">{titles[currentTab]}</h3>
-            <p className="text-xs text-subtle max-w-md mx-auto">
-              Module is ready for deployment. Functional UI is accessible and customizable.
-            </p>
+          <div className="-m-4 md:-m-6">
+            <LandingPage
+              isEmbedded={true}
+              defaultTab="install"
+              onBackToAdmin={() => setCurrentTab('dashboard')}
+            />
           </div>
         );
+      default:
+        return <DashboardPage />;
     }
   };
 
   return (
-    <div className="min-h-screen flex antialiased text-xs font-sans">
+    <div className="min-h-screen flex antialiased text-xs font-sans bg-transparent text-current">
       {/* Responsive Sidebar */}
       <Sidebar
         currentTab={currentTab}
@@ -69,6 +124,8 @@ export const App: React.FC = () => {
         onClose={() => setIsMobileMenuOpen(false)}
         isDark={isDark}
         onToggleTheme={() => setIsDark(!isDark)}
+        currentUser={currentUser}
+        onLogout={handleLogout}
       />
 
       {/* Main Viewport */}

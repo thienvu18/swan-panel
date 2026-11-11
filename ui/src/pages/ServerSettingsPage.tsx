@@ -147,7 +147,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
         {/* CARD 1: SESSION LIFETIMES & RE-AUTHENTICATION */}
         <div className="border subtle-border rounded-xl p-4 surface-card space-y-3.5 shadow-xs">
           <div className="border-b subtle-border pb-2">
-            <h3 className="font-semibold text-xs text-white">{t('server.lifetimes_title')}</h3>
+            <h3 className="font-semibold text-xs text-slate-900 dark:text-white">{t('server.lifetimes_title')}</h3>
             <p className="text-[11px] text-dim">{t('server.lifetimes_desc')}</p>
           </div>
 
@@ -218,7 +218,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
         {/* CARD 2: NETWORK ROAMING & TRAVERSAL */}
         <div className="border subtle-border rounded-xl p-4 surface-card space-y-3.5 shadow-xs">
           <div className="border-b subtle-border pb-2">
-            <h3 className="font-semibold text-xs text-white">{t('server.roaming_title')}</h3>
+            <h3 className="font-semibold text-xs text-slate-900 dark:text-white">{t('server.roaming_title')}</h3>
             <p className="text-[11px] text-dim">{t('server.roaming_desc')}</p>
           </div>
 
@@ -226,7 +226,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
             {/* MOBIKE */}
             <div className="flex items-start justify-between gap-4 p-2 rounded-lg surface-header border subtle-border">
               <div>
-                <div className="font-medium text-white">{t('server.mobike')}</div>
+                <div className="font-medium text-slate-900 dark:text-white">{t('server.mobike')}</div>
                 <div className="text-[11px] text-dim mt-0.5">{t('server.mobike_hint')}</div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
@@ -243,7 +243,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
             {/* NAT-T */}
             <div className="flex items-start justify-between gap-4 p-2 rounded-lg surface-header border subtle-border">
               <div>
-                <div className="font-medium text-white">{t('server.force_encap')}</div>
+                <div className="font-medium text-slate-900 dark:text-white">{t('server.force_encap')}</div>
                 <div className="text-[11px] text-dim mt-0.5">{t('server.force_encap_hint')}</div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
@@ -260,7 +260,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
             {/* Fragmentation */}
             <div className="flex items-start justify-between gap-4 p-2 rounded-lg surface-header border subtle-border">
               <div>
-                <div className="font-medium text-white">{t('server.fragmentation')}</div>
+                <div className="font-medium text-slate-900 dark:text-white">{t('server.fragmentation')}</div>
                 <div className="text-[11px] text-dim mt-0.5">{t('server.fragmentation_hint')}</div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
@@ -279,7 +279,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
         {/* CARD 3: CONNECTION HEALTH CHECK */}
         <div className="border subtle-border rounded-xl p-4 surface-card space-y-3.5 shadow-xs">
           <div className="border-b subtle-border pb-2">
-            <h3 className="font-semibold text-xs text-white">{t('server.health_title')}</h3>
+            <h3 className="font-semibold text-xs text-slate-900 dark:text-white">{t('server.health_title')}</h3>
             <p className="text-[11px] text-dim">{t('server.health_desc')}</p>
           </div>
 
@@ -325,7 +325,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
         {/* CARD 4: GATEWAY ENDPOINT & MTU TUNING */}
         <div className="border subtle-border rounded-xl p-4 surface-card space-y-3.5 shadow-xs">
           <div className="border-b subtle-border pb-2">
-            <h3 className="font-semibold text-xs text-white">{t('server.endpoint_title')}</h3>
+            <h3 className="font-semibold text-xs text-slate-900 dark:text-white">{t('server.endpoint_title')}</h3>
             <p className="text-[11px] text-dim">{t('server.endpoint_desc')}</p>
           </div>
 
@@ -360,7 +360,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
       {/* CARD 5: ENCRYPTION & COMPATIBILITY */}
       <div className="border subtle-border rounded-xl p-4 surface-card space-y-3.5 shadow-xs text-xs">
         <div className="border-b subtle-border pb-2">
-          <h3 className="font-semibold text-xs text-white">{t('server.ciphers_title')}</h3>
+          <h3 className="font-semibold text-xs text-slate-900 dark:text-white">{t('server.ciphers_title')}</h3>
           <p className="text-[11px] text-dim">{t('server.ciphers_desc')}</p>
         </div>
 
@@ -374,7 +374,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="font-bold text-xs text-white">{t('server.preset_modern')}</span>
+              <span className="font-bold text-xs text-slate-900 dark:text-white">{t('server.preset_modern')}</span>
               <input type="radio" checked={cipherPreset === 'modern'} readOnly />
             </div>
             <span className="text-[11px] text-subtle mt-1">{t('server.preset_modern_desc')}</span>
@@ -404,7 +404,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="font-bold text-xs text-white">{t('server.preset_custom')}</span>
+              <span className="font-bold text-xs text-slate-900 dark:text-white">{t('server.preset_custom')}</span>
               <input type="radio" checked={cipherPreset === 'custom'} readOnly />
             </div>
             <span className="text-[11px] text-subtle mt-1">{t('server.preset_custom_desc')}</span>

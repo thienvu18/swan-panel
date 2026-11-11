@@ -56,16 +56,24 @@ func (h *SettingsHandler) UpdateStrongswanSettings(c *gin.Context) {
 
 	// Dynamically hot-reload connection into strongSwan RAM via VICI
 	viciClient := vici.GetClient("")
-	params := map[string]interface{}{
-		"version":     "2",
-		"reauth_time": req.ReauthTime,
-		"mobike":      fmt.Sprintf("%v", req.MobikeEnabled),
-		"encap":       fmt.Sprintf("%v", req.ForceEncapNATT),
-		"dpd_delay":   req.DPDDelay,
-		"dpd_timeout": req.DPDTimeout,
-		"proposals":   req.IKEProposals,
+	connCfg := vici.ConnectionConfig{
+		Name:           "swanpanel-ikev2",
+		ServerIdentity: req.ServerIdentity,
+		ReauthTime:     req.ReauthTime,
+		RekeyTimeIKE:   req.RekeyTimeIKE,
+		RekeyTimeChild: req.RekeyTimeChild,
+		MobikeEnabled:  req.MobikeEnabled,
+		ForceEncapNATT: req.ForceEncapNATT,
+		DPDDelay:       req.DPDDelay,
+		DPDTimeout:     req.DPDTimeout,
+		IKEProposals:   req.IKEProposals,
+		ESPProposals:   req.ESPProposals,
 	}
-	_ = viciClient.LoadConnection(c.Request.Context(), "swanpanel-ikev2", params)
+	if err := viciClient.LoadConnectionConfig(c.Request.Context(), connCfg); err != nil {
+		slog.Error("Failed to apply dynamic strongSwan configuration via VICI", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to load connection into strongSwan RAM: %v", err)})
+		return
+	}
 
 	// Broadcast SSE event to all connected dashboard clients
 	realtime.DefaultBroker.Broadcast("strongswan_settings_updated", req)

@@ -1,12 +1,12 @@
 package handlers
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"math"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -244,10 +244,16 @@ func (h *ResourcesHandler) DownloadDeviceConfig(c *gin.Context) {
 		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"setup-%s.ps1\"", dev.Hostname))
 		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(cfg))
 
-	case "linux", "swanctl":
-		cfg := pki.GenerateSwanctlConfig(sw.ServerEndpoint, dev.Hostname, certBundle)
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"swanctl-%s.conf\"", dev.Hostname))
-		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(cfg))
+	case "linux", "swanctl", "sh":
+		if c.Query("format") == "conf" {
+			cfg := pki.GenerateSwanctlConfig(sw.ServerEndpoint, dev.Hostname, certBundle)
+			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"swanctl-%s.conf\"", dev.Hostname))
+			c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(cfg))
+		} else {
+			cfg := pki.GenerateLinuxInstallerScript(sw.ServerEndpoint, dev.Hostname, certBundle)
+			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"setup-%s.sh\"", dev.Hostname))
+			c.Data(http.StatusOK, "text/x-shellscript; charset=utf-8", []byte(cfg))
+		}
 
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported platform; must be 'apple', 'windows', or 'linux'"})
@@ -431,19 +437,21 @@ func allocateDynamicIP(cidr string) (string, error) {
 		usedSet[ip] = true
 	}
 
-	// Start iterating from .10 upward
 	ip := ipNet.IP.To4()
 	if ip == nil {
 		return "", fmt.Errorf("IPv6 not currently supported for dynamic pool")
 	}
 
-	// Simple IPv4 next-available generator
-	parts := strings.Split(ip.String(), ".")
-	basePrefix := parts[0] + "." + parts[1] + "." + parts[2] + "."
+	netIP := binary.BigEndian.Uint32(ip)
+	mask := binary.BigEndian.Uint32(ipNet.Mask)
+	broadcast := netIP | ^mask
 
-	for host := 10; host < 250; host++ {
-		candidate := basePrefix + strconv.Itoa(host)
-		if net.ParseIP(candidate) != nil && ipNet.Contains(net.ParseIP(candidate)) && !usedSet[candidate] {
+	// Usable host IPs: from netIP + 1 up to broadcast - 1
+	for cur := netIP + 1; cur < broadcast; cur++ {
+		curBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(curBytes, cur)
+		candidate := net.IP(curBytes).String()
+		if !usedSet[candidate] {
 			return candidate, nil
 		}
 	}

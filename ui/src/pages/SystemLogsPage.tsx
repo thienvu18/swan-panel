@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { RotateCcw, Power, Play, Pause, Trash2, Download, Search, Terminal } from 'lucide-react';
+import { RotateCcw, Power, Play, Pause, Trash2, Download, Search, Terminal, ArrowDown } from 'lucide-react';
 
 interface LogEntry {
   timestamp: string;
@@ -20,6 +20,8 @@ export const SystemLogsPage: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [cleared, setCleared] = useState(false);
   const [daemonStatus, setDaemonStatus] = useState<'active' | 'inactive'>('active');
+  const [isAutoScroll, setIsAutoScroll] = useState(true);
+  const terminalRef = useRef<HTMLDivElement>(null);
 
   // Query logs
   const { data } = useQuery<{ logs: LogEntry[] }>({
@@ -33,66 +35,68 @@ export const SystemLogsPage: React.FC = () => {
       const res = await fetch(`/api/system/logs?${params.toString()}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
       });
-      if (!res.ok) {
-        return {
-          logs: [
-            {
-              timestamp: '12:54:10',
-              level: 'info',
-              scope: 'dev:thienvu-macbook user:thienvu ug:devops res:eng',
-              tag1: 'thienvu-macbook',
-              tag2: 'DevOps',
-              message: 'IKE_SA_INIT handshake completed successfully from 113.161.42.18:500 (DH Group: CURVE_25519)',
-            },
-            {
-              timestamp: '12:54:11',
-              level: 'info',
-              scope: 'dev:thienvu-macbook user:thienvu ug:devops ug:backend res:eng',
-              tag1: 'thienvu-macbook',
-              tag2: 'thienvu@company.com',
-              message: "IKE_AUTH mutual X.509 certificate verification succeeded for subject 'CN=thienvu-macbook'",
-            },
-            {
-              timestamp: '12:54:11',
-              level: 'info',
-              scope: 'dev:thienvu-macbook user:thienvu res:eng',
-              tag1: 'thienvu-macbook',
-              tag2: 'Engineering Subnet',
-              message: 'Configuration Payload: Assigned Virtual IPv4 10.0.1.15 & DNS server 10.0.0.1',
-            },
-            {
-              timestamp: '12:54:12',
-              level: 'info',
-              scope: 'dev:thienvu-macbook user:thienvu ug:devops res:prod',
-              tag1: 'thienvu-macbook',
-              tag2: 'Production VPC',
-              message: 'CHILD_SA established. Installed Traffic Selector: remote_ts 10.100.0.0/16, 10.50.0.0/16 (Rule Nature: Group Policy)',
-            },
-            {
-              timestamp: '12:55:04',
-              level: 'warn',
-              scope: 'dev:nam-thinkpad user:nam ug:backend res:eng',
-              tag1: 'nam-thinkpad',
-              tag2: 'DENY-DROP',
-              message: 'nftables dropped packet from 10.0.1.16 towards 10.50.99.10:443 (Matched Exclusion Rule: User Nam Nguyen)',
-            },
-            {
-              timestamp: '12:56:00',
-              level: 'info',
-              scope: 'dev:db-primary-prod res:prod',
-              tag1: 'db-primary-prod',
-              tag2: 'Production VPC',
-              message: 'DPD (Dead Peer Detection) keepalive exchange completed with 171.244.18.9 (Roundtrip Latency: 4.2ms)',
-            },
-          ],
-        };
-      }
+      if (!res.ok) throw new Error('Failed to fetch system logs');
       return res.json();
     },
     refetchInterval: isPaused ? false : 3000,
   });
 
+  // Query real devices and users for scope filter options
+  const { data: devicesData } = useQuery<{ devices: any[] }>({
+    queryKey: ['devices'],
+    queryFn: async () => {
+      const res = await fetch('/api/devices', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      if (!res.ok) return { devices: [] };
+      return res.json();
+    },
+  });
+
+  const { data: usersData } = useQuery<{ users: any[] }>({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const res = await fetch('/api/users', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      if (!res.ok) return { users: [] };
+      return res.json();
+    },
+  });
+
+  const enrolledDevices = devicesData?.devices || [];
+  const registeredUsers = usersData?.users || [];
+
+  // Query strongSwan daemon status
+  const { data: daemonData } = useQuery<{ service: string; status: string; pid: number; memory: string; uptime: string }>({
+    queryKey: ['daemon_status'],
+    queryFn: async () => {
+      const res = await fetch('/api/system/daemon/status', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      if (!res.ok) return { service: 'strongswan', status: 'inactive', pid: 0, memory: 'N/A', uptime: 'N/A' };
+      return res.json();
+    },
+  });
+
   const logs = cleared ? [] : data?.logs || [];
+
+  useEffect(() => {
+    if (isAutoScroll && terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [logs, isAutoScroll]);
+
+  const handleTerminalScroll = () => {
+    if (!terminalRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = terminalRef.current;
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 40;
+    if (isAtBottom && !isAutoScroll) {
+      setIsAutoScroll(true);
+    } else if (!isAtBottom && isAutoScroll) {
+      setIsAutoScroll(false);
+    }
+  };
 
   const handleDaemonControl = async (action: 'restart' | 'stop') => {
     if (confirm(`Are you sure you want to ${action.toUpperCase()} the VPN Gateway? Active tunnels will be affected.`)) {
@@ -132,8 +136,8 @@ export const SystemLogsPage: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-xs text-white">{t('logs.service_status')}</span>
-              {daemonStatus === 'active' ? (
+              <span className="font-bold text-xs text-slate-900 dark:text-white">{t('logs.service_status')}</span>
+              {(daemonData?.status || daemonStatus) === 'active' ? (
                 <span className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium">
                   Active (Running)
                 </span>
@@ -144,7 +148,7 @@ export const SystemLogsPage: React.FC = () => {
               )}
             </div>
             <div className="text-[11px] text-dim font-mono">
-              PID: 14208 &bull; Memory: 24.2 MB &bull; Uptime: 14d 6h 32m
+              PID: {daemonData?.pid ?? '...'} &bull; Memory: {daemonData?.memory || '...'} &bull; Uptime: {daemonData?.uptime || '...'}
             </div>
           </div>
         </div>
@@ -179,41 +183,50 @@ export const SystemLogsPage: React.FC = () => {
               className="surface-input border subtle-border rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500"
             >
               <option value="all">{t('logs.all_logs')}</option>
-              <optgroup label="Filter by Device">
-                <option value="dev:thienvu-macbook">Device: thienvu-macbook</option>
-                <option value="dev:db-primary-prod">Device: db-primary-prod</option>
-                <option value="dev:nam-thinkpad">Device: nam-thinkpad</option>
-              </optgroup>
-              <optgroup label="Filter by User">
-                <option value="user:thienvu">User: thienvu@company.com</option>
-                <option value="user:nam">User: nam@company.com</option>
-                <option value="user:alex">User: alex@partner.io</option>
-              </optgroup>
-              <optgroup label="Filter by Resource Group">
-                <option value="res:prod">Resource Group: Production VPC</option>
-                <option value="res:eng">Resource Group: Engineering Subnet</option>
-              </optgroup>
-              <optgroup label="Filter by User Group">
-                <option value="ug:devops">User Group: DevOps</option>
-                <option value="ug:backend">User Group: Backend</option>
-                <option value="ug:sales">User Group: Sales</option>
-              </optgroup>
+              {enrolledDevices.length > 0 && (
+                <optgroup label="Filter by Device">
+                  {enrolledDevices.map((d) => (
+                    <option key={d.id} value={`dev:${d.hostname}`}>
+                      Device: {d.hostname}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {registeredUsers.length > 0 && (
+                <optgroup label="Filter by User">
+                  {registeredUsers.map((u) => (
+                    <option key={u.id} value={`user:${u.email}`}>
+                      User: {u.name || u.email} ({u.email})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
-          {/* Level Selector */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-subtle text-[11px] font-medium">{t('logs.level')}:</span>
-            <select
-              value={selectedLevel}
-              onChange={(e) => setSelectedLevel(e.target.value)}
-              className="surface-input border subtle-border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
-            >
-              <option value="all">All Levels</option>
-              <option value="info">INFO</option>
-              <option value="warn">WARN</option>
-              <option value="error">ERROR</option>
-            </select>
+          {/* Level Filter Chips */}
+          <div className="flex items-center gap-1">
+            {(['all', 'info', 'warn', 'error'] as const).map((lvl) => {
+              const isSelected = selectedLevel === lvl;
+              return (
+                <button
+                  key={lvl}
+                  type="button"
+                  onClick={() => setSelectedLevel(lvl)}
+                  className={`px-2 py-0.5 rounded-md border subtle-border transition-colors uppercase font-mono text-[10px] ${
+                    isSelected
+                      ? lvl === 'error'
+                        ? 'bg-rose-500/20 border-rose-500/40 text-rose-400 font-semibold'
+                        : lvl === 'warn'
+                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 font-semibold'
+                        : 'bg-blue-600/20 border-blue-500/40 text-blue-400 font-semibold'
+                      : 'text-subtle hover:text-current hover:bg-slate-500/10'
+                  }`}
+                >
+                  {lvl}
+                </button>
+              );
+            })}
           </div>
 
           {/* Keyword Search */}
@@ -232,6 +245,7 @@ export const SystemLogsPage: React.FC = () => {
         {/* Live Stream Actions */}
         <div className="flex items-center gap-1.5">
           <button
+            type="button"
             onClick={() => setIsPaused(!isPaused)}
             className="border subtle-border hover:bg-slate-500/10 px-2.5 py-1 rounded-lg text-subtle hover:text-current transition-colors flex items-center gap-1"
           >
@@ -239,6 +253,7 @@ export const SystemLogsPage: React.FC = () => {
             {isPaused ? t('common.resume') : t('common.pause')}
           </button>
           <button
+            type="button"
             onClick={() => setCleared(true)}
             className="border subtle-border hover:bg-slate-500/10 px-2.5 py-1 rounded-lg text-subtle hover:text-current transition-colors flex items-center gap-1"
           >
@@ -246,6 +261,7 @@ export const SystemLogsPage: React.FC = () => {
             {t('common.clear')}
           </button>
           <button
+            type="button"
             onClick={handleExport}
             className="border subtle-border hover:bg-slate-500/10 px-2.5 py-1 rounded-lg text-subtle hover:text-current transition-colors flex items-center gap-1"
           >
@@ -256,7 +272,7 @@ export const SystemLogsPage: React.FC = () => {
       </div>
 
       {/* LIVE STREAM CONSOLE TERMINAL */}
-      <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs font-mono text-[11px]">
+      <div className="relative border subtle-border rounded-xl overflow-hidden surface-card shadow-xs font-mono text-[11px]">
         <div className="surface-header border-b subtle-border px-4 py-2 flex items-center justify-between text-subtle">
           <span className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -265,7 +281,11 @@ export const SystemLogsPage: React.FC = () => {
           <span className="text-dim">Showing {logs.length} events</span>
         </div>
 
-        <div className="p-4 space-y-2 max-h-96 overflow-y-auto bg-[#070a0f] text-slate-200">
+        <div
+          ref={terminalRef}
+          onScroll={handleTerminalScroll}
+          className="p-4 space-y-2 max-h-96 overflow-y-auto bg-[#070a0f] text-slate-200"
+        >
           {logs.length === 0 ? (
             <div className="text-dim italic">No events matching the current filter.</div>
           ) : (
@@ -300,6 +320,23 @@ export const SystemLogsPage: React.FC = () => {
             ))
           )}
         </div>
+
+        {/* Floating Auto-Scroll Resume Button */}
+        {!isAutoScroll && (
+          <button
+            type="button"
+            onClick={() => {
+              setIsAutoScroll(true);
+              if (terminalRef.current) {
+                terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+              }
+            }}
+            className="absolute bottom-3 right-4 bg-blue-600 hover:bg-blue-500 text-white shadow-lg px-3 py-1 rounded-full text-xs font-sans flex items-center gap-1.5 transition-all animate-bounce z-10"
+          >
+            <ArrowDown className="w-3.5 h-3.5" />
+            Auto-scroll paused (Click to resume)
+          </button>
+        )}
       </div>
     </div>
   );

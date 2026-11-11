@@ -2,15 +2,15 @@
 # SwanPanel - Multi-Stage Production Container Build
 # https://github.com/thienvu18/swan-panel
 #
-# Stage 1: Build modern React SPA with Vite & Node 22
-# Stage 2: Compile pure Go 1.27 static binary (CGO_ENABLED=0)
-# Stage 3: Lightweight Alpine runtime with strongSwan, iptables, & nftables
+# Stage 1: Build modern React SPA with Vite & Node 26 (Alpine 3.23)
+# Stage 2: Compile pure Go 1.27 static binary with CGO_ENABLED=0 (Alpine 3.23)
+# Stage 3: Lightweight Alpine 3.23 runtime with strongSwan, iptables, & nftables
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
 # Stage 1: Frontend SPA Builder
 # ------------------------------------------------------------------------------
-FROM node:22-alpine AS frontend-builder
+FROM node:26-alpine3.23 AS frontend-builder
 
 WORKDIR /build/ui
 
@@ -25,7 +25,7 @@ RUN npm run build
 # ------------------------------------------------------------------------------
 # Stage 2: Go Backend Builder (Pure Go, Statically Linked)
 # ------------------------------------------------------------------------------
-FROM golang:alpine AS backend-builder
+FROM golang:1.27-alpine3.23 AS backend-builder
 
 WORKDIR /build
 
@@ -52,7 +52,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # ------------------------------------------------------------------------------
 # Stage 3: Lightweight Runtime Image
 # ------------------------------------------------------------------------------
-FROM alpine:latest AS runtime
+FROM alpine:3.23 AS runtime
 
 LABEL maintainer="Thai Thien Vu <thienvu18@gmail.com>"
 LABEL org.opencontainers.image.title="SwanPanel"
@@ -71,7 +71,8 @@ RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     curl \
-    bash
+    bash \
+    tini
 
 # Setup application, state, and runtime socket directories
 RUN mkdir -p /var/lib/swan-panel /etc/swan-panel /var/run /etc/ipsec.d && \
@@ -79,7 +80,7 @@ RUN mkdir -p /var/lib/swan-panel /etc/swan-panel /var/run /etc/ipsec.d && \
 
 # Copy statically compiled binary and entrypoint
 COPY --from=backend-builder /build/swan-panel /usr/local/bin/swan-panel
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY deploy/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/swan-panel /usr/local/bin/docker-entrypoint.sh
 
 # Default environment configuration
@@ -101,5 +102,5 @@ VOLUME ["/var/lib/swan-panel", "/etc/swan-panel"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD curl -fs http://127.0.0.1:${PORT}/api/health || exit 1
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/usr/local/bin/swan-panel"]

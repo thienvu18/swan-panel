@@ -16,6 +16,8 @@ import (
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/dns"
 	"github.com/swan-panel/swan-panel/internal/logger"
+	"github.com/swan-panel/swan-panel/internal/pki"
+	"github.com/swan-panel/swan-panel/internal/vici"
 )
 
 func main() {
@@ -48,7 +50,50 @@ func main() {
 
 	router := api.SetupRouter(cfg, staticFS)
 
-	// 4. Start Embedded DNS Server if enabled
+	// 4. Initialize PKI & synchronize strongSwan Server and CA certificates
+	pkiMgr, err := pki.GetPKIManager()
+	if err != nil {
+		slog.Error("Failed to initialize PKI manager", "error", err)
+	} else {
+		_ = pkiMgr.EnsureServerCertificates("swan-panel", []string{"172.18.0.2", "127.0.0.1"})
+	}
+
+	// 5. Initialize strongSwan VICI client and sync stored configuration into RAM
+	viciClient := vici.GetClient(cfg.VICISocket)
+	if viciClient.IsConnected() {
+		slog.Info("strongSwan daemon connected via VICI on startup", "socket", cfg.VICISocket)
+
+		// 5.1 Pre-load default IP address pool into strongSwan RAM
+		_ = viciClient.LoadPool(context.Background(), "swanpanel-pool", "10.0.1.0/24")
+
+		// 5.2 Load stored connection settings
+		var swanSettings db.StrongswanSettings
+		if err := db.DB.First(&swanSettings, 1).Error; err == nil {
+			connCfg := vici.ConnectionConfig{
+				Name:           "swanpanel-ikev2",
+				ServerIdentity: swanSettings.ServerIdentity,
+				ReauthTime:     swanSettings.ReauthTime,
+				RekeyTimeIKE:   swanSettings.RekeyTimeIKE,
+				RekeyTimeChild: swanSettings.RekeyTimeChild,
+				MobikeEnabled:  swanSettings.MobikeEnabled,
+				ForceEncapNATT: swanSettings.ForceEncapNATT,
+				DPDDelay:       swanSettings.DPDDelay,
+				DPDTimeout:     swanSettings.DPDTimeout,
+				IKEProposals:   swanSettings.IKEProposals,
+				ESPProposals:   swanSettings.ESPProposals,
+				Pools:          []string{"swanpanel-pool"},
+			}
+			if err := viciClient.LoadConnectionConfig(context.Background(), connCfg); err != nil {
+				slog.Warn("Failed to pre-load stored strongSwan settings on startup", "error", err)
+			} else {
+				slog.Info("Stored strongSwan configuration applied dynamically to daemon in RAM on startup")
+			}
+		}
+	} else {
+		slog.Info("strongSwan daemon socket not active on startup; VICI client will auto-connect on demand", "socket", cfg.VICISocket)
+	}
+
+	// 6. Start Embedded DNS Server if enabled
 	var dnsServer *dns.Server
 	if cfg.EnableDNS {
 		dnsAddr := fmt.Sprintf(":%d", cfg.DNSPort)

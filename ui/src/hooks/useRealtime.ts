@@ -7,18 +7,29 @@ export interface RealtimeEvent {
   timestamp: number;
 }
 
-export function useRealtime() {
+export function useRealtime(token?: string | null) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null);
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    const activeToken = token !== undefined ? token : localStorage.getItem('token');
+    if (!activeToken) {
+      setIsConnected(false);
+      return;
+    }
+
     let eventSource: EventSource | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout>;
 
     const connect = () => {
-      const token = localStorage.getItem('token') || '';
-      const streamUrl = token ? `/api/realtime/stream?token=${encodeURIComponent(token)}` : '/api/realtime/stream';
+      const currentToken = token !== undefined ? token : localStorage.getItem('token');
+      if (!currentToken) {
+        setIsConnected(false);
+        return;
+      }
+
+      const streamUrl = `/api/realtime/stream?token=${encodeURIComponent(currentToken)}`;
       eventSource = new EventSource(streamUrl);
 
       eventSource.onopen = () => {
@@ -68,7 +79,7 @@ export function useRealtime() {
       }
       clearTimeout(reconnectTimeout);
     };
-  }, [queryClient]);
+  }, [queryClient, token]);
 
   return { isConnected, lastEvent };
 }

@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   color-scheme: light dark;
   scrollbar-width: thin;
@@ -32,6 +34,7 @@ html.dark .subtle-border { border-color: #1f2937; }
 html.dark .hover-row:hover { background-color: rgba(31, 41, 55, 0.4); }
 html.dark .text-subtle { color: #94a3b8; }
 html.dark .text-dim { color: #64748b; }
+html.dark .text-heading { color: #f8fafc; }
 
 /* Light Mode Tokens */
 html:not(.dark) body { background-color: #f8fafc; color: #0f172a; }
@@ -43,6 +46,7 @@ html:not(.dark) .subtle-border { border-color: #e2e8f0; }
 html:not(.dark) .hover-row:hover { background-color: #f8fafc; }
 html:not(.dark) .text-subtle { color: #64748b; }
 html:not(.dark) .text-dim { color: #94a3b8; }
+html:not(.dark) .text-heading { color: #0f172a; }
 
 /* Tooltip */
 [data-tooltip] { position: relative; }

@@ -35,3 +35,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local environment & compose overrides
+.env
+docker-compose.override.yml

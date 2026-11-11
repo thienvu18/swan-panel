@@ -21,17 +21,16 @@ services:
     # NOTE: On production Linux VPS, you may alternatively use `network_mode: host`
     # for direct kernel ESP (Protocol 50) handling.
     ports:
-      - "8080:8080/tcp"   # SwanPanel Web Control Plane UI & REST API
-      - "53:53/udp"       # Internal Split-DNS Engine
-      - "53:53/tcp"       # Split-DNS TCP Fallback
-      - "500:500/udp"     # strongSwan IKEv2 Key Exchange
-      - "4500:4500/udp"   # strongSwan IPsec NAT-Traversal
+      - "${PORT:-8080}:8080/tcp"                    # SwanPanel Web Control Plane UI & REST API
+      - "${HOST_DNS_PORT:-53}:53/udp"              # Internal Split-DNS Engine (set HOST_DNS_PORT if 53 is busy)
+      - "${HOST_DNS_PORT:-53}:53/tcp"              # Split-DNS TCP Fallback
+      - "${IKE_PORT:-500}:500/udp"                  # strongSwan IKEv2 Key Exchange
+      - "${IPSEC_PORT:-4500}:4500/udp"              # strongSwan IPsec NAT-Traversal
 
-    # Host IPC socket mount and persistent volumes
+    # Persistent storage volumes for database, TLS certificates, and configuration
+    # Note: If running strongSwan directly on the host systemd, overlay with
+    # deploy/docker/docker-compose.host-swan.yml to bind-mount /var/run/charon.vici
     volumes:
-      # Mount host strongSwan VICI socket (if strongSwan runs on host systemd)
-      # If omitted or not found, SwanPanel starts its internal strongSwan daemon automatically
-      - /var/run/charon.vici:/var/run/charon.vici
       - swanpanel_data:/var/lib/swan-panel
       - swanpanel_config:/etc/swan-panel
 

@@ -12,6 +12,9 @@ import (
 	"log/slog"
 	"math/big"
 	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -270,6 +273,50 @@ func (m *PKIManager) GenerateServerCertificate(serverFQDN string, serverIPs []st
 	}, nil
 }
 
+// EnsureServerCertificates writes CA and Server certificates into strongSwan directories (/etc/swanctl/)
+func (m *PKIManager) EnsureServerCertificates(serverFQDN string, serverIPs []string) error {
+	caDir := "/etc/swanctl/x509ca"
+	serverCertDir := "/etc/swanctl/x509"
+	serverKeyDir := "/etc/swanctl/rsa"
+	dataDir := "/var/lib/swan-panel"
+
+	_ = os.MkdirAll(caDir, 0755)
+	_ = os.MkdirAll(serverCertDir, 0755)
+	_ = os.MkdirAll(serverKeyDir, 0700)
+	_ = os.MkdirAll(dataDir, 0750)
+
+	// Write CA cert
+	if m.caCertPEM != "" {
+		_ = os.WriteFile(filepath.Join(dataDir, "ca.crt"), []byte(m.caCertPEM), 0644)
+		_ = os.WriteFile(filepath.Join(caDir, "ca.crt"), []byte(m.caCertPEM), 0644)
+	}
+
+	if serverFQDN == "" {
+		serverFQDN = "swan-panel"
+	}
+
+	// Default IP SANs and DNS names
+	allIPs := append([]string{"127.0.0.1", "172.18.0.2"}, serverIPs...)
+	bundle, err := m.GenerateServerCertificate(serverFQDN, allIPs)
+	if err != nil {
+		return err
+	}
+
+	_ = os.WriteFile(filepath.Join(dataDir, "server.crt"), []byte(bundle.CertPEM), 0644)
+	_ = os.WriteFile(filepath.Join(serverCertDir, "server.crt"), []byte(bundle.CertPEM), 0644)
+
+	_ = os.WriteFile(filepath.Join(dataDir, "server.key"), []byte(bundle.PrivateKeyPEM), 0600)
+	_ = os.WriteFile(filepath.Join(serverKeyDir, "server.key"), []byte(bundle.PrivateKeyPEM), 0600)
+
+	slog.Info("Server certificates and CA synchronized to /etc/swanctl/ for strongSwan daemon", "fqdn", serverFQDN)
+
+	if _, err := exec.LookPath("swanctl"); err == nil {
+		_ = exec.Command("swanctl", "--load-creds").Run()
+	}
+
+	return nil
+}
+
 // GenerateAppleMobileconfig creates an Apple .mobileconfig XML profile for macOS and iOS
 func GenerateAppleMobileconfig(serverFQDN, deviceHostname string, certBundle *CertificateBundle) string {
 	caCertB64 := base64.StdEncoding.EncodeToString([]byte(certBundle.CACertPEM))
@@ -439,7 +486,8 @@ connections {
 
         remote {
             auth = pubkey
-            id = %s
+            id = %%any
+            cacerts = swanpanel-ca.crt
         }
 
         children {
@@ -447,7 +495,9 @@ connections {
                 remote_ts = 0.0.0.0/0
                 start_action = start
                 dpd_action = restart
-                close_action = restart
+                close_action = none
+                mode = tunnel
+                esp_proposals = aes256gcm16-ecp384,aes256-sha256
             }
         }
 
@@ -457,5 +507,98 @@ connections {
         proposals = aes256gcm16-prfsha384-ecp384,aes256-sha256-modp2048
     }
 }
-`, serverFQDN, deviceHostname, serverFQDN)
+`, serverFQDN, deviceHostname)
+}
+
+// GenerateLinuxInstallerScript creates a complete self-installing bash script for Linux strongSwan
+func GenerateLinuxInstallerScript(serverEndpoint, deviceHostname string, certBundle *CertificateBundle) string {
+	return fmt.Sprintf(`#!/usr/bin/env bash
+# ==============================================================================
+# SwanPanel Native Linux Client Installer
+# Target Server: %s | Device: %s
+# ==============================================================================
+set -eo pipefail
+
+if [ "$EUID" -ne 0 ]; then
+  echo "[-] Please run as root: sudo bash $0"
+  exit 1
+fi
+
+echo "[*] Installing SwanPanel native IKEv2 profile for '%s'..."
+
+# Ensure strongSwan / swanctl directories exist
+mkdir -p /etc/swanctl/x509ca /etc/swanctl/x509 /etc/swanctl/rsa /etc/swanctl/conf.d
+
+# 1. Write Root CA certificate
+cat << 'EOF_CA' > /etc/swanctl/x509ca/swanpanel-ca.crt
+%s
+EOF_CA
+
+# 2. Write Client certificate
+cat << 'EOF_CERT' > /etc/swanctl/x509/client.crt
+%s
+EOF_CERT
+
+# 3. Write Client private key
+cat << 'EOF_KEY' > /etc/swanctl/rsa/client.key
+%s
+EOF_KEY
+chmod 600 /etc/swanctl/rsa/client.key
+
+# 4. Write swanctl configuration
+cat << 'EOF_CONF' > /etc/swanctl/conf.d/swanpanel.conf
+connections {
+    swanpanel {
+        remote_addrs = %s
+        vips = 0.0.0.0
+
+        local {
+            auth = pubkey
+            certs = client.crt
+            id = %s
+        }
+
+        remote {
+            auth = pubkey
+            id = %%any
+            cacerts = swanpanel-ca.crt
+        }
+
+        children {
+            swanpanel-traffic {
+                remote_ts = 0.0.0.0/0
+                start_action = start
+                dpd_action = restart
+                close_action = none
+                mode = tunnel
+                esp_proposals = aes256gcm16-ecp384,aes256-sha256
+            }
+        }
+
+        version = 2
+        mobike = yes
+        encap = yes
+        proposals = aes256gcm16-prfsha384-ecp384,aes256-sha256-modp2048
+    }
+}
+EOF_CONF
+
+echo "[+] Credentials and configuration installed to /etc/swanctl/."
+
+# 5. Reload credentials and initiate connection if strongSwan is running
+if command -v swanctl >/dev/null 2>&1; then
+    swanctl --load-all || true
+    echo "[*] Connecting to SwanPanel Gateway at %s..."
+    swanctl --initiate --child swanpanel-traffic || true
+    echo "[+] Done! Check status with: swanctl --list-sas"
+else
+    echo "[!] strongSwan swanctl not found. Please install strongswan and run: swanctl --load-all"
+fi
+`, serverEndpoint, deviceHostname, deviceHostname,
+		strings.TrimSpace(certBundle.CACertPEM),
+		strings.TrimSpace(certBundle.CertPEM),
+		strings.TrimSpace(certBundle.PrivateKeyPEM),
+		serverEndpoint,
+		deviceHostname,
+		serverEndpoint)
 }
