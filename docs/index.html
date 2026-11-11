@@ -25,7 +25,7 @@
           <rect x="35" y="61" width="41" height="7" rx="3.5" fill="#60a5fa" />
         </svg>
         <span>SwanPanel</span>
-        <span class="logo-badge">v0.0.1</span>
+        <span class="logo-badge">v0.0.2</span>
       </a>
 
       <!-- Primary Navigation Landmark -->
@@ -52,7 +52,9 @@
           <li><a href="#why" class="nav-link" data-i18n="nav.why">Why SwanPanel</a></li>
           <li><a href="#features" class="nav-link" data-i18n="nav.features">Features</a></li>
           <li><a href="#comparison" class="nav-link" data-i18n="nav.comparison">Comparison</a></li>
-          <li><a href="#quickstart" class="nav-link" data-i18n="nav.quickstart">Quickstart</a></li>
+          <li><a href="#install-guide" class="nav-link" data-i18n="nav.install_guide">Install Guide</a></li>
+          <li><a href="#user-guide" class="nav-link" data-i18n="nav.user_guide">User Guide</a></li>
+          <li><a href="guide.html" class="nav-link" data-i18n="nav.docs">Docs & Operations</a></li>
         </ul>
       </nav>
 
@@ -77,6 +79,15 @@
           </svg>
         </button>
 
+        <!-- User Guide Button -->
+        <a href="guide.html" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 0.4rem;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+          </svg>
+          <span data-i18n="nav.guide_btn">User Guide</span>
+        </a>
+
         <!-- GitHub Star Button -->
         <a href="https://github.com/thienvu18/swan-panel" class="btn btn-star-gold" target="_blank" rel="noopener">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
@@ -86,7 +97,7 @@
         </a>
 
         <!-- Primary CTA Button -->
-        <a href="#quickstart" class="btn btn-primary">
+        <a href="#install-guide" class="btn btn-primary">
           <span data-i18n="nav.get_started">Get Started</span>
         </a>
       </div>
@@ -156,8 +167,15 @@
 
       <!-- Action Buttons -->
       <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-        <a href="#quickstart" class="btn btn-primary" style="padding: 0.75rem 1.6rem; font-size: 1rem;">
-          <span data-i18n="hero.btn_get_started">Get Started (60s)</span>
+        <a href="#install-guide" class="btn btn-primary" style="padding: 0.75rem 1.6rem; font-size: 1rem;">
+          <span data-i18n="hero.btn_get_started">Install Gateway</span>
+        </a>
+        <a href="#user-guide" class="btn btn-secondary" style="padding: 0.75rem 1.6rem; font-size: 1rem; display: inline-flex; align-items: center; gap: 0.4rem;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+          </svg>
+          <span data-i18n="nav.guide_btn">User Guide</span>
         </a>
         <a href="https://github.com/thienvu18/swan-panel" class="btn btn-star-gold" style="padding: 0.75rem 1.6rem; font-size: 1rem;" target="_blank" rel="noopener">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -165,8 +183,8 @@
           </svg>
           <span data-i18n="hero.btn_star">Star on GitHub</span>
         </a>
-        <a href="https://github.com/thienvu18/swan-panel/releases/tag/v0.0.1" class="btn btn-secondary" style="padding: 0.75rem 1.6rem; font-size: 1rem;" target="_blank" rel="noopener">
-          <span data-i18n="hero.btn_download">Download v0.0.1 Binary</span>
+        <a href="https://github.com/thienvu18/swan-panel/releases/tag/v0.0.2" class="btn btn-secondary" style="padding: 0.75rem 1.6rem; font-size: 1rem;" target="_blank" rel="noopener">
+          <span data-i18n="hero.btn_download">Download v0.0.2 Binary</span>
         </a>
       </div>
     </section>
@@ -429,31 +447,305 @@
       </div>
     </section>
 
-    <!-- SECTION 5: 60 SECONDS QUICKSTART -->
-    <section id="quickstart" class="content-section" tabindex="-1">
+    <!-- SECTION 5: INSTALLATION & GATEWAY SETUP GUIDE -->
+    <section id="install-guide" class="content-section" tabindex="-1">
       <div class="section-header">
-        <div class="section-tag" data-i18n="steps.tag">Quickstart</div>
-        <h2 class="section-title" data-i18n="steps.title">Up and Running in 60 Seconds</h2>
-        <p class="section-subtitle" data-i18n="steps.subtitle">From a fresh Linux server to an enterprise zero-trust VPN in three quick steps.</p>
+        <div class="section-tag" data-i18n="install.tag">Installation Guide</div>
+        <h2 class="section-title" data-i18n="install.title">Gateway Installation & Setup</h2>
+        <p class="section-subtitle" data-i18n="install.subtitle">Deploy SwanPanel in under 60 seconds with Docker Compose or as a standalone single binary with zero external dependencies.</p>
       </div>
 
-      <div class="steps-grid">
-        <div class="step-card">
-          <div class="step-num" data-i18n="steps.s1_num">01</div>
-          <h3 class="step-title" data-i18n="steps.s1_title">Run 1-Line Installer</h3>
-          <p class="step-desc" data-i18n="steps.s1_desc">Run curl -sSL https://raw.githubusercontent.com/thienvu18/swan-panel/main/install.sh | sudo bash. The script installs strongSwan, tunes kernel forwarding, and starts the systemd service.</p>
+      <!-- Network Ports Requirements -->
+      <h3 style="font-size: 1.35rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;" data-i18n="install.ports_title">Firewall & Network Port Requirements</h3>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1rem;" data-i18n="install.ports_subtitle">Open the following inbound ports on your gateway or cloud security group (AWS SG, GCP Firewall, Azure NSG):</p>
+      
+      <div class="ports-grid">
+        <div class="port-card">
+          <span class="port-badge">UDP 500</span>
+          <span class="port-name" data-i18n="install.p1_name">IKEv2 Negotiation</span>
+          <span class="port-desc" data-i18n="install.p1_desc">Initial IKE_SA negotiation and Diffie-Hellman key exchange between clients and gateway.</span>
+        </div>
+        <div class="port-card">
+          <span class="port-badge">UDP 4500</span>
+          <span class="port-name" data-i18n="install.p2_name">NAT-Traversal (NAT-T)</span>
+          <span class="port-desc" data-i18n="install.p2_desc">Encapsulates ESP packets in UDP when clients or gateways are located behind NAT routers.</span>
+        </div>
+        <div class="port-card">
+          <span class="port-badge">TCP 8080</span>
+          <span class="port-name" data-i18n="install.p3_name">Web Control Plane & API</span>
+          <span class="port-desc" data-i18n="install.p3_desc">SwanPanel admin dashboard, device provisioning portal, and REST API endpoints.</span>
+        </div>
+        <div class="port-card">
+          <span class="port-badge">UDP 53</span>
+          <span class="port-name" data-i18n="install.p4_name">Split-DNS Server</span>
+          <span class="port-desc" data-i18n="install.p4_desc">Embedded high-performance DNS engine resolving internal hostnames and custom overrides.</span>
+        </div>
+      </div>
+
+      <!-- Deployment Option 1: Docker Compose -->
+      <div class="terminal-panel" style="margin-top: 2rem;">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <span class="terminal-dot"></span>
+            <span class="terminal-dot"></span>
+            <span class="terminal-dot"></span>
+          </div>
+          <span class="terminal-title" data-i18n="install.docker_title">Production Setup via Docker Compose</span>
+          <button class="copy-btn" type="button" data-target="docker-compose-code" aria-label="Copy Docker Compose snippet">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span data-i18n="hero.copy">Copy</span>
+          </button>
+        </div>
+        <div class="terminal-body">
+          <pre id="docker-compose-code" style="color: #cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.9rem; line-height: 1.5; overflow-x: auto; white-space: pre;">services:
+  swan-panel:
+    image: ghcr.io/thienvu18/swan-panel:latest
+    container_name: swan-panel
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "53:53/udp"
+    volumes:
+      - /var/run/charon.vici:/var/run/charon.vici:rw
+      - swan-data:/var/lib/swan-panel
+    environment:
+      - PORT=8080
+      - DB_PATH=/var/lib/swan-panel/swanpanel.db
+      - LOG_LEVEL=INFO
+volumes:
+  swan-data:</pre>
+        </div>
+      </div>
+
+      <!-- Deployment Option 2: 60s 1-Line Standalone Installer -->
+      <div class="terminal-panel" style="margin-top: 1.5rem;">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <span class="terminal-dot"></span>
+            <span class="terminal-dot"></span>
+            <span class="terminal-dot"></span>
+          </div>
+          <span class="terminal-title" data-i18n="install.binary_title">Option B: Standalone 1-Line Installer</span>
+          <button class="copy-btn" type="button" data-target="cli-installer-code" aria-label="Copy standalone installer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span data-i18n="hero.copy">Copy</span>
+          </button>
+        </div>
+        <div class="terminal-body">
+          <code id="cli-installer-code" class="terminal-cmd">curl -sSL https://raw.githubusercontent.com/thienvu18/swan-panel/main/install.sh | sudo bash</code>
+        </div>
+      </div>
+
+      <!-- 5-Step Gateway Walkthrough -->
+      <div style="margin-top: 3rem;">
+        <h3 style="font-size: 1.35rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;" data-i18n="install.steps_title">Initial Gateway Configuration Walkthrough</h3>
+        <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;" data-i18n="install.steps_subtitle">Follow these 5 simple steps to bootstrap your production gateway after launching SwanPanel:</p>
+
+        <div class="steps-grid">
+          <div class="step-card">
+            <div class="step-num">01</div>
+            <h3 class="step-title" data-i18n="install.s1_title">Root Admin Sign In</h3>
+            <p class="step-desc" data-i18n="install.s1_desc">Open http://&lt;GATEWAY_IP&gt;:8080. Log in using default credentials admin@swanpanel.internal / Admin@SwanPanel123! and change your password.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-num">02</div>
+            <h3 class="step-title" data-i18n="install.s2_title">Set External Domain</h3>
+            <p class="step-desc" data-i18n="install.s2_desc">In Server Settings, input your gateway's public domain name (e.g. vpn.example.com). This FQDN is embedded into all generated client profiles.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-num">03</div>
+            <h3 class="step-title" data-i18n="install.s3_title">Define IP Pool</h3>
+            <p class="step-desc" data-i18n="install.s3_desc">Allocate virtual VPN client address pools (e.g. 10.50.0.0/16). SwanPanel assigns dedicated IP subnets to user and resource groups.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-num">04</div>
+            <h3 class="step-title" data-i18n="install.s4_title">Internal PKI Setup</h3>
+            <p class="step-desc" data-i18n="install.s4_desc">SwanPanel automatically issues an internal 4096-bit RSA Root CA and signs gateway certificates, eliminating manual OpenSSL scripts.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-num">05</div>
+            <h3 class="step-title" data-i18n="install.s5_title">Live VICI Dynamic Socket</h3>
+            <p class="step-desc" data-i18n="install.s5_desc">Verify connection to /var/run/charon.vici. Rules and devices reload dynamically in RAM without ever restarting the daemon or dropping active tunnels.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Admin Guide Callout -->
+      <div class="guide-callout-box">
+        <div class="guide-callout-text">
+          <h3 data-i18n="install.callout_title">Looking for the Complete System Operations Manual?</h3>
+          <p data-i18n="install.callout_desc">Read our detailed Administrator User Guide covering strongSwan kernel tuning, systemd hardening, OIDC SSO integration, and disaster recovery.</p>
+        </div>
+        <a href="https://github.com/thienvu18/swan-panel/blob/main/docs/ADMIN_USER_GUIDE.md" class="btn btn-primary" target="_blank" rel="noopener">
+          <span data-i18n="install.callout_btn">View Full Admin User Guide</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- SECTION 6: END-USER NATIVE CLIENT GUIDE -->
+    <section id="user-guide" class="content-section" tabindex="-1">
+      <div class="section-header">
+        <div class="section-tag" data-i18n="user_guide.tag">End-User Guide</div>
+        <h2 class="section-title" data-i18n="user_guide.title">Native VPN Client Connection Guide</h2>
+        <p class="section-subtitle" data-i18n="user_guide.subtitle">Connect in seconds using built-in OS clients on macOS, iOS, Windows, Linux, and Android. Zero third-party apps required.</p>
+      </div>
+
+      <!-- Why Native Clients are Superior -->
+      <div class="feature-grid" style="margin-bottom: 2.5rem;">
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+          </div>
+          <h3 class="feature-title" data-i18n="user_guide.adv1_title">Hardware-Accelerated IPsec</h3>
+          <p class="feature-desc" data-i18n="user_guide.adv1_desc">Native AES-256-GCM encryption runs directly in the OS kernel with zero CPU virtualization overhead.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+            </svg>
+          </div>
+          <h3 class="feature-title" data-i18n="user_guide.adv2_title">Zero Battery & RAM Bloat</h3>
+          <p class="feature-desc" data-i18n="user_guide.adv2_desc">No background daemon or tray agent draining device battery. Seamless sleep, wake, and standby.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+          <h3 class="feature-title" data-i18n="user_guide.adv3_title">MOBIKE Seamless Roaming</h3>
+          <p class="feature-desc" data-i18n="user_guide.adv3_desc">Roam seamlessly between Wi-Fi and 4G/5G cellular connections without dropping active sessions (RFC 4555).</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </div>
+          <h3 class="feature-title" data-i18n="user_guide.adv4_title">Automatic Split-DNS</h3>
+          <p class="feature-desc" data-i18n="user_guide.adv4_desc">Only internal corporate domains (.strongnet) route through VPN DNS, keeping personal browsing completely untouched.</p>
+        </div>
+      </div>
+
+      <!-- Platform-by-Platform Instructions -->
+      <h3 style="font-size: 1.35rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;" data-i18n="user_guide.platforms_title">Select Your Operating System</h3>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;" data-i18n="user_guide.platforms_subtitle">Choose your platform for exact step-by-step connection instructions:</p>
+
+      <div class="os-grid">
+        <!-- Apple Card -->
+        <div class="os-card">
+          <div class="os-card-header">
+            <div class="os-icon-title">
+              <div class="os-icon-box">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2a10 10 0 0 0-1.9.18 5 5 0 0 1-4.8 4.8A10 10 0 1 0 12 2z"></path>
+                </svg>
+              </div>
+              <span class="os-card-title">macOS & iOS</span>
+            </div>
+            <span class="os-badge">.mobileconfig</span>
+          </div>
+          <ol class="os-steps">
+            <li><strong data-i18n="user_guide.apple_s1_t">Log In:</strong> <span data-i18n="user_guide.apple_s1_d">Access SwanPanel and locate your device under Resources.</span></li>
+            <li><strong data-i18n="user_guide.apple_s2_t">Download:</strong> <span data-i18n="user_guide.apple_s2_d">Click "Download Profile (.mobileconfig)" containing your embedded certificate.</span></li>
+            <li><strong data-i18n="user_guide.apple_s3_t">Install:</strong> <span data-i18n="user_guide.apple_s3_d">Double-click profile -> Open System Settings -> Profiles -> Click Install.</span></li>
+            <li><strong data-i18n="user_guide.apple_s4_t">Connect:</strong> <span data-i18n="user_guide.apple_s4_d">Toggle VPN from your Mac menu bar or iOS Control Center.</span></li>
+          </ol>
         </div>
 
-        <div class="step-card">
-          <div class="step-num" data-i18n="steps.s2_num">02</div>
-          <h3 class="step-title" data-i18n="steps.s2_title">Open Web Control Plane</h3>
-          <p class="step-desc" data-i18n="steps.s2_desc">Navigate to http://&lt;SERVER_IP&gt;:8080. Log in with the default administrator credentials, configure your external hostname, and invite your team.</p>
+        <!-- Windows Card -->
+        <div class="os-card">
+          <div class="os-card-header">
+            <div class="os-icon-title">
+              <div class="os-icon-box">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="3 4 10 3 10 11 3 11 3 4"></polygon>
+                  <polygon points="12 3 21 2 21 11 12 11 12 3"></polygon>
+                  <polygon points="3 13 10 13 10 21 3 20 3 13"></polygon>
+                  <polygon points="12 13 21 13 21 22 12 21 12 13"></polygon>
+                </svg>
+              </div>
+              <span class="os-card-title">Windows 10 & 11</span>
+            </div>
+            <span class="os-badge">PowerShell .ps1</span>
+          </div>
+          <ol class="os-steps">
+            <li><strong data-i18n="user_guide.win_s1_t">Log In:</strong> <span data-i18n="user_guide.win_s1_d">Access SwanPanel and choose Windows as platform.</span></li>
+            <li><strong data-i18n="user_guide.win_s2_t">Download:</strong> <span data-i18n="user_guide.win_s2_d">Download the tailored setup.ps1 script and certificate bundle.</span></li>
+            <li><strong data-i18n="user_guide.win_s3_t">Run Script:</strong> <span data-i18n="user_guide.win_s3_d">Right-click setup.ps1 -> Select "Run with PowerShell as Administrator".</span></li>
+            <li><strong data-i18n="user_guide.win_s4_t">Connect:</strong> <span data-i18n="user_guide.win_s4_d">Click Network icon on Taskbar -> Select SwanPanel -> Connect.</span></li>
+          </ol>
         </div>
 
-        <div class="step-card">
-          <div class="step-num" data-i18n="steps.s3_num">03</div>
-          <h3 class="step-title" data-i18n="steps.s3_title">Download Native Profiles & Connect</h3>
-          <p class="step-desc" data-i18n="steps.s3_desc">Provision devices with one click. Download Apple .mobileconfig, Windows PowerShell, or Linux profiles and connect directly from OS system settings.</p>
+        <!-- Linux Card -->
+        <div class="os-card">
+          <div class="os-card-header">
+            <div class="os-icon-title">
+              <div class="os-icon-box">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z"></path>
+                </svg>
+              </div>
+              <span class="os-card-title">Linux</span>
+            </div>
+            <span class="os-badge">NetworkManager</span>
+          </div>
+          <ol class="os-steps">
+            <li><strong data-i18n="user_guide.linux_s1_t">Download:</strong> <span data-i18n="user_guide.linux_s1_d">Download the .nmconnection profile and certificates package.</span></li>
+            <li><strong data-i18n="user_guide.linux_s2_t">Install:</strong> <span data-i18n="user_guide.linux_s2_d">Copy file to /etc/NetworkManager/system-connections/ with 600 permissions.</span></li>
+            <li><strong data-i18n="user_guide.linux_s3_t">Reload:</strong> <span data-i18n="user_guide.linux_s3_d">Execute sudo nmcli connection reload.</span></li>
+            <li><strong data-i18n="user_guide.linux_s4_t">Connect:</strong> <span data-i18n="user_guide.linux_s4_d">Run nmcli connection up &lt;DeviceName&gt; or toggle via desktop UI.</span></li>
+          </ol>
+        </div>
+
+        <!-- Android Card -->
+        <div class="os-card">
+          <div class="os-card-header">
+            <div class="os-icon-title">
+              <div class="os-icon-box">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                  <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                </svg>
+              </div>
+              <span class="os-card-title">Android</span>
+            </div>
+            <span class="os-badge">IKEv2 RSA / strongSwan</span>
+          </div>
+          <ol class="os-steps">
+            <li><strong data-i18n="user_guide.android_s1_t">Download:</strong> <span data-i18n="user_guide.android_s1_d">Download the .p12 certificate bundle onto your device.</span></li>
+            <li><strong data-i18n="user_guide.android_s2_t">Install Cert:</strong> <span data-i18n="user_guide.android_s2_d">Settings -> Security -> Install Certificate -> VPN & App User Certificate.</span></li>
+            <li><strong data-i18n="user_guide.android_s3_t">Password:</strong> <span data-i18n="user_guide.android_s3_d">Enter the PKCS#12 bundle decryption password shown in SwanPanel.</span></li>
+            <li><strong data-i18n="user_guide.android_s4_t">Connect:</strong> <span data-i18n="user_guide.android_s4_d">Create an IKEv2/IPSec RSA connection in native VPN settings and connect.</span></li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- User Guide Callout -->
+      <div class="guide-callout-box">
+        <div class="guide-callout-text">
+          <h3 data-i18n="user_guide.callout_title">Need Complete Step-by-Step Instructions with Visual Guides?</h3>
+          <p data-i18n="user_guide.callout_desc">Access our comprehensive End-User Client Guide or view our live technical documentation for advanced split-tunneling setup.</p>
+        </div>
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+          <a href="guide.html" class="btn btn-secondary">
+            <span data-i18n="user_guide.callout_btn_interactive">Interactive User Guide</span>
+          </a>
+          <a href="https://github.com/thienvu18/swan-panel/blob/main/docs/END_USER_GUIDE.md" class="btn btn-primary" target="_blank" rel="noopener">
+            <span data-i18n="user_guide.callout_btn_md">View End-User Guide on GitHub</span>
+          </a>
         </div>
       </div>
     </section>
@@ -505,7 +797,10 @@
   <footer class="site-footer">
     <div class="footer-links">
       <a href="https://github.com/thienvu18/swan-panel" target="_blank" rel="noopener" data-i18n="footer.github">GitHub Repository</a>
-      <a href="https://github.com/thienvu18/swan-panel/releases/tag/v0.0.1" target="_blank" rel="noopener" data-i18n="footer.releases">Release v0.0.1</a>
+      <a href="https://github.com/thienvu18/swan-panel/releases/tag/v0.0.2" target="_blank" rel="noopener" data-i18n="footer.releases">Release v0.0.2</a>
+      <a href="guide.html" data-i18n="footer.guide">Interactive Guide</a>
+      <a href="https://github.com/thienvu18/swan-panel/blob/main/docs/ADMIN_USER_GUIDE.md" target="_blank" rel="noopener" data-i18n="footer.admin_guide">Admin Guide</a>
+      <a href="https://github.com/thienvu18/swan-panel/blob/main/docs/END_USER_GUIDE.md" target="_blank" rel="noopener" data-i18n="footer.enduser_guide">End-User Guide</a>
       <a href="https://github.com/thienvu18/swan-panel/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="footer.license">AGPL-3.0 License</a>
     </div>
     <p data-i18n="footer.credit">SwanPanel is an open-source project created by Thái Thiên Vũ. Licensed under GNU AGPL-3.0.</p>

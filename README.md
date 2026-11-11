@@ -1,6 +1,10 @@
 <div align="center">
 
-<img src="./docs/assets/logo.svg" width="96" height="96" alt="SwanPanel Logo" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-light.svg">
+  <img src="docs/assets/logo.svg" width="96" height="96" alt="SwanPanel Logo" />
+</picture>
 
 # SwanPanel
 
@@ -286,6 +290,9 @@ We thank all contributors who help improve SwanPanel!
 
 ## Documentation Links
 
+* [Administrator User Guide](docs/ADMIN_USER_GUIDE.md) — Comprehensive guide for deploying, managing, and securing SwanPanel.
+* [End-User Client Guide](docs/END_USER_GUIDE.md) — Step-by-step native VPN connection guide for macOS, iOS, Windows, Linux, and Android.
+* [Interactive Web Documentation](https://thienvu18.github.io/swan-panel/guide.html) — Live GitHub Pages user guide and operations manual.
 * [System Architecture & DB Specs](ARCHITECTURE.md) — GORM relational schema, REST endpoints, and VICI workflow.
 * [UI/UX Design Specification](DESIGN.md) — Google Labs `design.md` compliance, design tokens, and components.
 * [AI Agent Guidelines](AGENTS.md) — Coding conventions, security mandates, and build instructions.

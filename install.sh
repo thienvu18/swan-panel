@@ -140,8 +140,8 @@ if [[ "${VERSION}" == "latest" ]]; then
     RELEASE_URL="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
     DOWNLOAD_URL="$(curl -fsSL "${RELEASE_URL}" | grep "browser_download_url.*swan-panel-${BIN_ARCH}" | cut -d '"' -f 4 | head -n 1 || true)"
     if [[ -z "${DOWNLOAD_URL}" ]]; then
-        warn "Could not resolve latest release via GitHub API. Falling back to tag v0.0.1 download..."
-        DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/v0.0.1/swan-panel-${BIN_ARCH}"
+        warn "Could not resolve latest release via GitHub API. Falling back to tag v0.0.2 download..."
+        DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/v0.0.2/swan-panel-${BIN_ARCH}"
     fi
 else
     DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/swan-panel-${BIN_ARCH}"

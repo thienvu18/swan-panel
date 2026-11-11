@@ -1,6 +1,10 @@
 <div align="center">
 
-<img src="./docs/assets/logo.svg" width="96" height="96" alt="SwanPanel Logo" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-light.svg">
+  <img src="docs/assets/logo.svg" width="96" height="96" alt="SwanPanel Logo" />
+</picture>
 
 # SwanPanel
 
@@ -286,6 +290,9 @@ Cảm ơn tất cả các thành viên cộng đồng đã tham gia đóng góp 
 
 ## Tài liệu Kỹ thuật Chi tiết
 
+* [Hướng dẫn Quản trị Hệ thống (Admin Guide)](docs/ADMIN_USER_GUIDE.md) — Cẩm nang triển khai, vận hành và quản lý bảo mật SwanPanel.
+* [Hướng dẫn Kết nối Người dùng Cuối (End-User Guide)](docs/END_USER_GUIDE.md) — Hướng dẫn kết nối VPN Native cho macOS, iOS, Windows, Linux, Android.
+* [Tài liệu Trực quan trên Web](https://thienvu18.github.io/swan-panel/guide.html) — Hướng dẫn sử dụng và tài liệu vận hành trên GitHub Pages.
 * [Đặc tả Kiến trúc & Cơ sở Dữ liệu](ARCHITECTURE.md) — Chi tiết schema quan hệ GORM, REST API và luồng VICI.
 * [Hệ thống Thiết kế UI/UX](DESIGN.md) — Chuẩn Google Labs `design.md`, bảng token màu và quy tắc thiết kế.
 * [Quy chuẩn Kỹ thuật cho AI Agent](AGENTS.md) — Quy ước lập trình, nguyên tắc bảo mật và lệnh kiểm thử.
