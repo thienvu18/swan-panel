@@ -188,4 +188,27 @@
     }
   }
 
+  // 6. Generic Tab Navigation
+  document.querySelectorAll('.tab-nav').forEach(nav => {
+    const buttons = nav.querySelectorAll('.tab-btn');
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetId = btn.getAttribute('data-tab');
+        if (!targetId) return;
+
+        // Toggle active button
+        buttons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // Toggle panels
+        const container = nav.parentElement;
+        container.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        const activePanel = container.querySelector('#' + targetId);
+        if (activePanel) {
+          activePanel.classList.add('active');
+        }
+      });
+    });
+  });
+
 })();

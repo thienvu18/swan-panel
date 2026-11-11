@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadDisplayName</key>
+	<string>SwanPanel VPN (david-iphone-16-pro)</string>
+	<key>PayloadIdentifier</key>
+	<string>com.swanpanel.vpn.david-iphone-16-pro</string>
+	<key>PayloadRemovalDisallowed</key>
+	<false/>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>swanpanel-vpn-david-iphone-16-pro</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+	<key>PayloadContent</key>
+	<array>
+		<!-- Root CA Certificate Payload -->
+		<dict>
+			<key>PayloadType</key>
+			<string>com.apple.security.root</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>PayloadIdentifier</key>
+			<string>com.swanpanel.ca.david-iphone-16-pro</string>
+			<key>PayloadUUID</key>
+			<string>swanpanel-ca-david-iphone-16-pro</string>
+			<key>PayloadDisplayName</key>
+			<string>SwanPanel Root CA</string>
+			<key>PayloadContent</key>
+			<data>LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUYxakNDQTc2Z0F3SUJBZ0lSQU9oWjlMTHBqMUhrSkwycXhwM1RTcWd3RFFZSktvWklodmNOQVFFTEJRQXcKZ1lJeEN6QUpCZ05WQkFZVEFsVlRNUk13RVFZRFZRUUlFd3BEWVd4cFptOXlibWxoTVJZd0ZBWURWUVFIRXcxVApZVzRnUm5KaGJtTnBjMk52TVNFd0h3WURWUVFLRXhoVGQyRnVVR0Z1Wld3Z1VtOXZkQ0JCZFhSb2IzSnBkSGt4Ckl6QWhCZ05WQkFNVEdsTjNZVzVRWVc1bGJDQkpiblJsY201aGJDQlNiMjkwSUVOQk1CNFhEVEkyTVRFeE1UQXgKTlRBME1Gb1hEVE0yTVRFeE1UQXlNREEwTUZvd2dZSXhDekFKQmdOVkJBWVRBbFZUTVJNd0VRWURWUVFJRXdwRApZV3hwWm05eWJtbGhNUll3RkFZRFZRUUhFdzFUWVc0Z1JuSmhibU5wYzJOdk1TRXdId1lEVlFRS0V4aFRkMkZ1ClVHRnVaV3dnVW05dmRDQkJkWFJvYjNKcGRIa3hJekFoQmdOVkJBTVRHbE4zWVc1UVlXNWxiQ0JKYm5SbGNtNWgKYkNCU2IyOTBJRU5CTUlJQ0lqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FnOEFNSUlDQ2dLQ0FnRUF1aUJkV2F6SApkN3pqdWZmWU9YVXlOQlJsTWozbGhlVHlVd3h4QTNzQnRtSVdmeTkxYzJnY1VOUFJHQkdtRXlHdElkRmh4TTJNCnh4cDlMdGVIRVhBU0xDdnVtQWc3RndGTVV6TW55cjZtZWw3bG5IRkhlbzFmTUhZN2V6aWFqV3Z5QnpIRFo4bFMKNG8yblhjRVBVQTdpbnBYMkRIZFdqc0M5L3JBS0RZR0MvWnJJdk9sMVhSbWZyV3Q3djVWV2FCOTJyNEpTUHNEUgpaSDlweHJNYzcxVHI2QWJmbkRTRENBZkFLN0pGRjVlUmRSNTRzQUw3Skw0dXplc0xaeXRLaE40bCthVFZncnpICjBTUDNCM1IzM2ZjcnQrTTdwTG9XdS9yNzdaWm5laDRQb3dDVkFDSnBEOTVreFFUeXEwWWZmV2xnaDZMb3dJUXAKMmJZQVFuZnlqTWo1S0FDazdmQW93QkdQSTR0ZWE2UUhhZHZoc0hSN2FFWHBiVXlHVjRHbW1pMk1sZTJXa3BhMQpvOXJ5RGt0VUR5TDVqSHhwUVVoQlFKcE1tZ1NGQWpKbXoxY3ZUb29hMVF4UmhTdVpMOVgxSkk1Z3NrNW9WYy9JCnFwQTduMjIxOU05UVRBbVpaNzBjRWQ5c3ZYRHpYUUlMRlhrR0tMYVZRb3YrTW1WY29kTm1RWGlsSFlOYnZDK00KRjBweTlNWUY5S2VrTEFNQjkzMlRqWkFHTmdINWtYR0k1dXYwS2JZZm9rczhXK2tXZEUzczA0aTIxdExXVWdKZgpEVk9pUUZNQ1EzWVBWYitxSjZZbkg2OXNVeXEwZC9LZ2RGemtETVR0WGNidXEwc1JoOG0rK3dqQWFQMllWdmhDCklzRmMrYlEvVXA3dE5KTHhSN3Y4dktrbXBPRHBSSTZySkNFQ0F3RUFBYU5GTUVNd0RnWURWUjBQQVFIL0JBUUQKQWdHR01CSUdBMVVkRXdFQi93UUlNQVlCQWY4Q0FRRXdIUVlEVlIwT0JCWUVGUFpmSld3bTI2dytVYkRBNHB6MQpaenpTSXpldk1BMEdDU3FHU0liM0RRRUJDd1VBQTRJQ0FRQlhTcW1RQlpza1ZicHJkSDl4SmYzbUNaNUhHOUhtCldSRWt5NytQejV3YWc0TlhhLzJsSVo0Mk00LzZ1NzZvZ2lMRkZKMFBYT2t0VTlJN1NUWklPR1JFT2IvVDhSQ3AKN2l0Z3MvckhIS0txd0pmUVNveFpCSEo0cm5YaERZTUVUYnAwb1MybUlWaW5JQ2RyV2d0dGZmeUtWZ1lpV2d5NwpzSnRBTDBkVkpHdG5nSlA5dGFlU1AvVTJybzB6dDRXVVM5ZDVRSnlzOWUxOWFVWk9yR0tRRzhLKytJNmpMRW1JCllFd2pTM3VKNWR3WWFSNkZzak5DNVhGMDJwQzZsMGVYN3d5K3ZIeHBLMTJJNkhLWWdNb2lqRFV3VGdLV2tTK3QKc0JRR0FKTDJHcUpreWt4VEdRWWhEZXVpU0s4N1ZwcGNNZXdtVjZhd3VwN1lGNmRFSXhoWlcrMllGMnNrU3hxQwpmQnVUanNsRjQrbmwzT090bDJvUG5Xc010K2N5MXVaT2oxOW0vNVhGMm9oVEl5Zm1GSkJkd3FHdXZRUmQ0RVFVClRERElXRmk1T2lDOXlOK3Z0bXhaMVJJd2F3UWIyZGNIUks4azhhWHNYckNudlJ3dW13bnFJL0xXb0w2N1dHbE8Ka1pOYnlWS0U0ZGg5MDN0RmJ0TGx3c0dpTUxnWm9nSkIwRnQremNqRW5rRFdTQStPa2hiT3Frcy9XVU1vRmxtcwp5UEdibi8zNVVXUlZWSGZoTDd6RlZJS0QwbTF3Wmx1d09xYVZXZ0pCVHNKZUhpclJiSTRSU0xuWGRzcCtUM2x5CnVEVWJYS1hqc2VFdFFGNFM2ZVNUK2M0Y2twWWdwUXRKUVBWcVltRlNodmtrK3dLR2pZUU5YeVFaekJVbVBFUkMKSCtZRjQrK2c5VGNhR3c9PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==</data>
+		</dict>
+		<!-- Client Certificate Payload -->
+		<dict>
+			<key>PayloadType</key>
+			<string>com.apple.security.pem</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>PayloadIdentifier</key>
+			<string>com.swanpanel.cert.david-iphone-16-pro</string>
+			<key>PayloadUUID</key>
+			<string>swanpanel-client-david-iphone-16-pro</string>
+			<key>PayloadDisplayName</key>
+			<string>SwanPanel Client Certificate (david-iphone-16-pro)</string>
+			<key>PayloadContent</key>
+			<data>LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUV2VENDQXFXZ0F3SUJBZ0lSQU51TlBYV2RsbWY0Sm9JS1AvdDNJR2N3RFFZSktvWklodmNOQVFFTEJRQXcKZ1lJeEN6QUpCZ05WQkFZVEFsVlRNUk13RVFZRFZRUUlFd3BEWVd4cFptOXlibWxoTVJZd0ZBWURWUVFIRXcxVApZVzRnUm5KaGJtTnBjMk52TVNFd0h3WURWUVFLRXhoVGQyRnVVR0Z1Wld3Z1VtOXZkQ0JCZFhSb2IzSnBkSGt4Ckl6QWhCZ05WQkFNVEdsTjNZVzVRWVc1bGJDQkpiblJsY201aGJDQlNiMjkwSUVOQk1CNFhEVEkyTVRFeE1UQXkKTURjMU9Gb1hEVEk0TVRFeE1UQXlNVGMxT0Zvd09URVpNQmNHQTFVRUNoTVFVM2RoYmxCaGJtVnNJRU5zYVdWdQpkREVjTUJvR0ExVUVBeE1UWkdGMmFXUXRhWEJvYjI1bExURTJMWEJ5YnpDQ0FTSXdEUVlKS29aSWh2Y05BUUVCCkJRQURnZ0VQQURDQ0FRb0NnZ0VCQU9wUU05QW9rWjV2VnNscDN3ZjNEMWtHUFpqZCtIWm9iS1R5S09uaGFpNksKbmptRHVJcHhPMnNscExiRzJGWVhUc3RqdzlpeUZtbm81Mm1iOHNRcDYvSUJ6dUQvNFRPRlhOY2U2eXFNWnV6NgpVL053K2EyREE1TkJkOVN0SEVDWjZyWjZQVzF6NTdyVTFUYjd6VGc5QlFGQ0g2Y0tCbUdkbFdJcEQ3U2dBZzBUCllsTFNKV2tLREtDOGRkaGo5V1N6NWVaZmZJcWpNVG5LNFpuM0VUTU5yWTZIT1d1TFJLLzBZWTlqaG1FRzRrbUgKTEhmZkZpQmZsNlZyM3RtMk9FUUNYWlR6WHVvMDkxQ1FSeXlMekNrcmw2SVhkR2YraGQ5a1NkVkVycDVDKzZvcApoUE5sRG1wM1Y3bWJEeGlUVzgyN3VyUXA0Q3lXdUxTcFRUSWxWcEZFaElrQ0F3RUFBYU4yTUhRd0RnWURWUjBQCkFRSC9CQVFEQWdXZ01CTUdBMVVkSlFRTU1Bb0dDQ3NHQVFVRkJ3TUNNQXdHQTFVZEV3RUIvd1FDTUFBd0h3WUQKVlIwakJCZ3dGb0FVOWw4bGJDYmJyRDVSc01EaW5QVm5QTklqTjY4d0hnWURWUjBSQkJjd0ZZSVRaR0YyYVdRdAphWEJvYjI1bExURTJMWEJ5YnpBTkJna3Foa2lHOXcwQkFRc0ZBQU9DQWdFQU1hTDhNTmJZd1YxZmxtUXh5aFlWCjNmVWJKaXBuVUVveXdpQm9mOS9OQ1Y2MXk3c0RSekRNZVU3M0lZakVwMGVBYjRDTVNmQm9vdmNFcmxqb2FMMTEKVHlDVWUxZnZ2Z2RELzFRMXgrUTNDS0RiVXlCYWpDQU1ZbTZNRmdjeitZY05yLzc0YUFTWFZlcmF3RWEwN1owZQpXU1FYSDRqL2RTTDJLcHZPWkI3U2RIY2UvMlZCeFB1WUdmMElXYTdTVVdvZEVtb0hpQXY5VzY2d2dJNFdldEJSCnNSVDFNeWFKazVrQlI3VDl4OEh6K1VhcE82TE02cHp1VmhWSUk0WmdmamZXYllkL2hWV1lZcytaQUdNazZsUDYKTGRBTk0rTkswazlDb01Pbjk1b3BjWC8xc1kyUDZBeGxvTElWSkVOYnZnTG01MzY4RFB0TVVwcTlPVER0dWV2WgpES0Y3TEd5d3dqakFpSEU4Vk4xWkwrT0VFM0g0MGhvajE0QkZBSGpQdkk1ZHRtZnROYlphdDVocDcwY2p1K0ozCnhRa04wKzRCSms3V3JaQ2U0NVRscnZWY1JpRyt3SnhHNW94MkVVd3ZqYVRjK3pkYStIMnBIV1NmSlhrdkFlU2cKS25jekFDbHdEekMwY2duY2xEbXV5WThtWXlQWitrSjVySnVKUXhMakl4dHVoSVBPOUk3YzlzUlJOVE9MRXhvSgpUNHRiM3ZCbXNHMjljUm5qcXU5TjlJdXp6N0FDTlpYYzV0TkExdlBBS3lzTTFkeWRubXJoaXFZTGJZQkRVRVNQCndKQUEwWlZZUnJMN2VhdU9Oek9hNEFjTHpPQnEvRi9SWnYzU014WkVKWXBXd3Q1b2pla0p0cnBnTUY3dStKNDgKWHRYUXYwSG5oOEdHMHVYVjhpSUNBd2c9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K</data>
+		</dict>
+		<!-- Native IKEv2 VPN Payload -->
+		<dict>
+			<key>PayloadType</key>
+			<string>com.apple.vpn.managed</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>PayloadIdentifier</key>
+			<string>com.swanpanel.vpn.config.david-iphone-16-pro</string>
+			<key>PayloadUUID</key>
+			<string>swanpanel-ikev2-david-iphone-16-pro</string>
+			<key>PayloadDisplayName</key>
+			<string>SwanPanel IKEv2 (david-iphone-16-pro)</string>
+			<key>UserDefinedName</key>
+			<string>SwanPanel VPN</string>
+			<key>VPNType</key>
+			<string>IKEv2</string>
+			<key>IKEv2</key>
+			<dict>
+				<key>RemoteAddress</key>
+				<string>swan-panel</string>
+				<key>RemoteIdentifier</key>
+				<string>swan-panel</string>
+				<key>LocalIdentifier</key>
+				<string>david-iphone-16-pro</string>
+				<key>AuthenticationMethod</key>
+				<string>Certificate</string>
+				<key>PayloadCertificateUUID</key>
+				<string>swanpanel-client-david-iphone-16-pro</string>
+				<key>ExtendedAuthEnabled</key>
+				<integer>0</integer>
+				<key>DeadPeerDetectionRate</key>
+				<string>Medium</string>
+				<key>DisableMOBIKE</key>
+				<integer>0</integer>
+				<key>DisableRedirect</key>
+				<integer>0</integer>
+				<key>EnablePFS</key>
+				<integer>1</integer>
+				<key>EnableCertificateRevocationCheck</key>
+				<integer>0</integer>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

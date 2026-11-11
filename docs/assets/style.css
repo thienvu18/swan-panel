@@ -854,3 +854,207 @@ a:hover {
   font-size: 0.95rem;
 }
 
+/* Theme responsive screenshot toggle */
+.light-only {
+  display: block;
+}
+.dark-only {
+  display: none;
+}
+[data-theme="dark"] .light-only {
+  display: none !important;
+}
+[data-theme="dark"] .dark-only {
+  display: block !important;
+}
+[data-theme="light"] .light-only {
+  display: block !important;
+}
+[data-theme="light"] .dark-only {
+  display: none !important;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .light-only {
+    display: none !important;
+  }
+  :root:not([data-theme="light"]) .dark-only {
+    display: block !important;
+  }
+}
+
+/* Hero Product Mockup Window */
+.hero-mockup {
+  margin: 3.25rem auto 0;
+  max-width: 1080px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 25px 60px -15px light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.65)),
+              0 0 0 1px light-dark(rgba(0,0,0,0.05), rgba(255,255,255,0.05));
+  overflow: hidden;
+  text-align: left;
+}
+.hero-mockup-header {
+  background: var(--bg-surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.hero-mockup-dots {
+  display: flex;
+  gap: 6px;
+}
+.hero-mockup-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+.hero-mockup-dot.red { background: #ef4444; }
+.hero-mockup-dot.yellow { background: #eab308; }
+.hero-mockup-dot.green { background: #10b981; }
+.hero-mockup-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-page);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9999px;
+  padding: 0.25rem 1rem;
+  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  color: var(--text-muted);
+  max-width: 420px;
+  width: 100%;
+  justify-content: center;
+}
+.hero-mockup-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  background: light-dark(#ecfdf5, #064e3b);
+  color: light-dark(#047857, #34d399);
+  border: 1px solid light-dark(#a7f3d0, #059669);
+  font-family: ui-monospace, monospace;
+  flex-shrink: 0;
+}
+.hero-mockup-badge .pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+}
+.hero-mockup-body {
+  background: var(--bg-surface);
+  line-height: 0;
+}
+.hero-mockup-img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Documentation Figures & Screenshots */
+.doc-figure {
+  margin: 1.75rem 0 2.25rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-surface);
+  box-shadow: 0 4px 16px light-dark(rgba(0,0,0,0.04), rgba(0,0,0,0.3));
+}
+.doc-figure img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.doc-figure figcaption {
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: var(--bg-surface-elevated);
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.doc-section-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: light-dark(#eff6ff, #1e293b);
+  color: var(--brand-primary);
+  border: 1px solid light-dark(#bfdbfe, #3b82f6);
+  margin-bottom: 0.75rem;
+}
+.doc-profile-download-box {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 1.25rem 1.5rem;
+  margin: 1.5rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.doc-profile-download-title {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+}
+.doc-profile-download-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Generic Tabs Component */
+.tab-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+}
+.tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.tab-btn:hover {
+  color: var(--text-main);
+}
+.tab-btn.active {
+  color: var(--brand-primary);
+  border-bottom-color: var(--brand-primary);
+}
+.tab-panel {
+  display: none;
+}
+.tab-panel.active {
+  display: block;
+}
+
+
+

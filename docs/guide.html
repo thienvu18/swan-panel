@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
-  <title>SwanPanel User Guide & Technical Documentation</title>
-  <meta name="description" content="Complete user guide and operational reference for SwanPanel: 1-line installation, native client configuration, Split-DNS, PKI, and zero-trust policies.">
+  <title>SwanPanel Documentation & Complete User Guide</title>
+  <meta name="description" content="Complete documentation for SwanPanel: 1-line installation, admin operations guide with UI screenshots, and native OS client setup for Apple, Windows, Linux, and Android.">
   <link rel="stylesheet" href="assets/style.css">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none'><polygon points='27,26 17,29 27,32' fill='%233b82f6'/><path d='M 27 26 C 29 17, 44 17, 46 26 C 48 36, 39 45, 36 54 C 33 62, 35 68, 42 74 L 32 74 C 23 66, 23 53, 28 43 C 31 36, 29 31, 27 26 Z' fill='%230284c7'/><rect x='44' y='39' width='38' height='7' rx='3.5' fill='%232563eb'/><circle cx='75' cy='42.5' r='2.2' fill='%2310b981'/><rect x='40' y='50' width='46' height='7' rx='3.5' fill='%233b82f6'/><rect x='35' y='61' width='41' height='7' rx='3.5' fill='%2360a5fa'/></svg>">
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 </head>
 <body>
 
@@ -15,13 +15,13 @@
   <header class="site-header is-wide">
     <div class="header-container">
       <a href="index.html" class="logo-group">
-        <svg class="logo-icon" viewBox="0 0 100 100" fill="none">
-          <polygon points="27,26 17,29 27,32" fill="#3b82f6"/>
-          <path d="M 27 26 C 29 17, 44 17, 46 26 C 48 36, 39 45, 36 54 C 33 62, 35 68, 42 74 L 32 74 C 23 66, 23 53, 28 43 C 31 36, 29 31, 27 26 Z" fill="var(--logo-swan, #f8fafc)"/>
-          <rect x="44" y="39" width="38" height="7" rx="3.5" fill="#2563eb"/>
-          <circle cx="75" cy="42.5" r="2.2" fill="#10b981"/>
-          <rect x="40" y="50" width="46" height="7" rx="3.5" fill="#3b82f6"/>
-          <rect x="35" y="61" width="41" height="7" rx="3.5" fill="#60a5fa"/>
+        <svg class="logo-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="27,26 17,29 27,32" fill="#3b82f6" />
+          <path d="M 27 26 C 29 17, 44 17, 46 26 C 48 36, 39 45, 36 54 C 33 62, 35 68, 42 74 L 32 74 C 23 66, 23 53, 28 43 C 31 36, 29 31, 27 26 Z" fill="var(--logo-swan, #f8fafc)" />
+          <rect x="44" y="39" width="38" height="7" rx="3.5" fill="#2563eb" />
+          <circle cx="75" cy="42.5" r="2.2" fill="#10b981" />
+          <rect x="40" y="50" width="46" height="7" rx="3.5" fill="#3b82f6" />
+          <rect x="35" y="61" width="41" height="7" rx="3.5" fill="#60a5fa" />
         </svg>
         <span>SwanPanel</span>
         <span class="logo-badge">Docs</span>
@@ -29,7 +29,6 @@
 
       <!-- Primary Navigation Landmark -->
       <nav class="site-nav" aria-label="Primary">
-        <!-- Modern Web Guidance: Popover trigger button for narrow viewports -->
         <button
           class="menu-button"
           type="button"
@@ -46,17 +45,15 @@
           <span data-i18n="nav.menu">Menu</span>
         </button>
 
-        <!-- Popover list in narrow view, inline row in wide view -->
         <ul id="site-menu" class="site-menu">
           <li><a href="index.html#why" class="nav-link" data-i18n="nav.why">Why SwanPanel</a></li>
-          <li><a href="index.html#features" class="nav-link" data-i18n="nav.features">Features</a></li>
-          <li><a href="index.html#install-guide" class="nav-link" data-i18n="nav.install_guide">Install Guide</a></li>
-          <li><a href="index.html#user-guide" class="nav-link" data-i18n="nav.user_guide">User Guide</a></li>
-          <li><a href="guide.html" class="nav-link active" data-i18n="nav.docs">Docs & Operations</a></li>
+          <li><a href="index.html#features" class="nav-link" data-i18n="nav.features">Capabilities</a></li>
+          <li><a href="index.html#comparison" class="nav-link" data-i18n="nav.comparison">Comparison</a></li>
+          <li><a href="guide.html" class="nav-link active" data-i18n="nav.docs">Docs & Guide</a></li>
         </ul>
       </nav>
 
-      <!-- Action Buttons -->
+      <!-- Action Controls -->
       <div class="nav-actions">
         <!-- Language Switcher -->
         <button id="lang-toggle" class="control-btn" aria-label="Switch language">
@@ -85,248 +82,519 @@
           <span data-i18n="nav.star">Star on GitHub</span>
         </a>
 
-        <!-- Get Started CTA -->
-        <a href="index.html#install-guide" class="btn btn-primary">
-          <span data-i18n="nav.get_started">Get Started</span>
+        <!-- Home CTA -->
+        <a href="index.html" class="btn btn-secondary">
+          <span data-i18n="footer.home">Home</span>
         </a>
       </div>
     </div>
   </header>
 
-  <!-- Main Content Layout -->
+  <!-- Main Documentation Layout -->
   <div class="doc-layout">
-    <!-- Sidebar Navigation -->
+    <!-- Sidebar Navigation: 3 Distinct Core Groups -->
     <aside class="doc-sidebar">
+      <!-- GROUP 1: INSTALLATION -->
       <div class="doc-nav-group">
-        <div class="doc-nav-heading" data-i18n="guide_sidebar.getting_started">Getting Started</div>
+        <div class="doc-nav-heading" data-i18n="guide_sidebar.group_install">1. Installation & Setup</div>
         <ul class="doc-nav-list">
-          <li class="doc-nav-item"><a href="#intro" class="doc-nav-link active" data-i18n="guide_sidebar.intro">Introduction</a></li>
-          <li class="doc-nav-item"><a href="#prerequisites" class="doc-nav-link" data-i18n="guide_sidebar.prerequisites">Prerequisites</a></li>
-          <li class="doc-nav-item"><a href="#installation" class="doc-nav-link" data-i18n="guide_sidebar.installation">1-Line Installation</a></li>
-          <li class="doc-nav-item"><a href="#configuration" class="doc-nav-link" data-i18n="guide_sidebar.configuration">Configuration</a></li>
+          <li class="doc-nav-item"><a href="#prerequisites" class="doc-nav-link" data-i18n="guide_sidebar.prereq">Prerequisites & Ports</a></li>
+          <li class="doc-nav-item"><a href="#install-quick" class="doc-nav-link" data-i18n="guide_sidebar.install_quick">1-Line Production Installer</a></li>
+          <li class="doc-nav-item"><a href="#install-docker" class="doc-nav-link" data-i18n="guide_sidebar.install_docker">Docker Compose Setup</a></li>
+          <li class="doc-nav-item"><a href="#install-config" class="doc-nav-link" data-i18n="guide_sidebar.install_config">Configuration & Env</a></li>
+          <li class="doc-nav-item"><a href="#install-proxy" class="doc-nav-link" data-i18n="guide_sidebar.install_proxy">Reverse Proxy & TLS</a></li>
         </ul>
       </div>
 
+      <!-- GROUP 2: ADMIN OPERATIONS (WITH SCREENSHOTS) -->
       <div class="doc-nav-group">
-        <div class="doc-nav-heading" data-i18n="guide_sidebar.client_setup">Native Client Setup</div>
+        <div class="doc-nav-heading" data-i18n="guide_sidebar.group_admin">2. Administrator Guide</div>
         <ul class="doc-nav-list">
-          <li class="doc-nav-item"><a href="#client-apple" class="doc-nav-link" data-i18n="guide_sidebar.client_apple">macOS & iOS</a></li>
-          <li class="doc-nav-item"><a href="#client-windows" class="doc-nav-link" data-i18n="guide_sidebar.client_windows">Windows 10 & 11</a></li>
-          <li class="doc-nav-item"><a href="#client-linux" class="doc-nav-link" data-i18n="guide_sidebar.client_linux">Linux (NetworkManager)</a></li>
-          <li class="doc-nav-item"><a href="#client-android" class="doc-nav-link" data-i18n="guide_sidebar.client_android">Android</a></li>
+          <li class="doc-nav-item"><a href="#admin-login" class="doc-nav-link" data-i18n="guide_sidebar.admin_login">Sign In & Password</a></li>
+          <li class="doc-nav-item"><a href="#admin-dashboard" class="doc-nav-link" data-i18n="guide_sidebar.admin_dashboard">Dashboard Overview</a></li>
+          <li class="doc-nav-item"><a href="#admin-subnets" class="doc-nav-link" data-i18n="guide_sidebar.admin_subnets">Subnets & IP Pools</a></li>
+          <li class="doc-nav-item"><a href="#admin-devices" class="doc-nav-link" data-i18n="guide_sidebar.admin_devices">Devices & Profiles</a></li>
+          <li class="doc-nav-item"><a href="#admin-users" class="doc-nav-link" data-i18n="guide_sidebar.admin_users">Users & User Groups</a></li>
+          <li class="doc-nav-item"><a href="#admin-rules" class="doc-nav-link" data-i18n="guide_sidebar.admin_rules">Zero-Trust Access Rules</a></li>
+          <li class="doc-nav-item"><a href="#admin-dns" class="doc-nav-link" data-i18n="guide_sidebar.admin_dns">Split-DNS & MagicDNS</a></li>
+          <li class="doc-nav-item"><a href="#admin-oidc" class="doc-nav-link" data-i18n="guide_sidebar.admin_oidc">OIDC SSO Providers</a></li>
+          <li class="doc-nav-item"><a href="#admin-settings" class="doc-nav-link" data-i18n="guide_sidebar.admin_settings">Server Settings & VICI</a></li>
+          <li class="doc-nav-item"><a href="#admin-logs" class="doc-nav-link" data-i18n="guide_sidebar.admin_logs">System Audit Logs</a></li>
         </ul>
       </div>
 
+      <!-- GROUP 3: END-USER NATIVE CLIENT SETUP (WITH SCREENSHOTS) -->
       <div class="doc-nav-group">
-        <div class="doc-nav-heading" data-i18n="guide_sidebar.subsystems">Subsystems & Core</div>
+        <div class="doc-nav-heading" data-i18n="guide_sidebar.group_user">3. End-User VPN Guide</div>
         <ul class="doc-nav-list">
-          <li class="doc-nav-item"><a href="#vici" class="doc-nav-link" data-i18n="guide_sidebar.vici">Zero-SSH VICI Control</a></li>
-          <li class="doc-nav-item"><a href="#dns" class="doc-nav-link" data-i18n="guide_sidebar.dns">Split-DNS & MagicDNS</a></li>
-          <li class="doc-nav-item"><a href="#policy" class="doc-nav-link" data-i18n="guide_sidebar.policy">Zero-Trust Policies</a></li>
-          <li class="doc-nav-item"><a href="#pki" class="doc-nav-link" data-i18n="guide_sidebar.pki">Automated Internal PKI</a></li>
-        </ul>
-      </div>
-
-      <div class="doc-nav-group">
-        <div class="doc-nav-heading" data-i18n="guide_sidebar.operations">Operations</div>
-        <ul class="doc-nav-list">
-          <li class="doc-nav-item"><a href="#production" class="doc-nav-link" data-i18n="guide_sidebar.production">Production Hardening</a></li>
-          <li class="doc-nav-item"><a href="#troubleshooting" class="doc-nav-link" data-i18n="guide_sidebar.troubleshooting">Troubleshooting & FAQ</a></li>
+          <li class="doc-nav-item"><a href="#user-overview" class="doc-nav-link" data-i18n="guide_sidebar.user_overview">Why Native Clients?</a></li>
+          <li class="doc-nav-item"><a href="#user-apple" class="doc-nav-link" data-i18n="guide_sidebar.user_apple">Apple macOS & iOS</a></li>
+          <li class="doc-nav-item"><a href="#user-windows" class="doc-nav-link" data-i18n="guide_sidebar.user_windows">Microsoft Windows</a></li>
+          <li class="doc-nav-item"><a href="#user-linux" class="doc-nav-link" data-i18n="guide_sidebar.user_linux">Linux NetworkManager</a></li>
+          <li class="doc-nav-item"><a href="#user-android" class="doc-nav-link" data-i18n="guide_sidebar.user_android">Android IKEv2 RSA</a></li>
+          <li class="doc-nav-item"><a href="#user-samples" class="doc-nav-link" data-i18n="guide_sidebar.user_samples">Sample Config Files</a></li>
         </ul>
       </div>
     </aside>
 
     <!-- Main Content Area -->
     <article class="doc-content">
-      <section id="intro" tabindex="-1">
-        <h1>SwanPanel User Guide</h1>
-        <p>
-          Welcome to the official documentation for <strong>SwanPanel</strong>, an enterprise-grade, zero-trust web control plane built for the industry-standard <strong>strongSwan</strong> IPsec VPN daemon.
-        </p>
-        <p>
-          SwanPanel was designed to eliminate the operational friction of traditional VPN administration: it eliminates static configuration editing, eliminates manual certificate authority management, and eliminates third-party client application requirements across mobile and desktop endpoints.
-        </p>
-      </section>
-
+      <!-- =========================================================================
+           GROUP 1: INSTALLATION & SETUP
+           ========================================================================= -->
+      <div class="doc-section-badge" data-i18n="guide_sidebar.group_install">1. Installation & Setup</div>
+      
       <section id="prerequisites" tabindex="-1">
-        <h2>Prerequisites & System Requirements</h2>
-        <p>SwanPanel runs on any standard Linux distribution with kernel IPsec support:</p>
-        <ul>
-          <li><strong>Supported Distributions:</strong> Ubuntu 22.04 / 24.04 LTS, Debian 12 (Bookworm), CentOS / RHEL 9, Rocky Linux 9, AlmaLinux 9, Fedora 39+.</li>
-          <li><strong>Hardware:</strong> 1 CPU Core, 512 MB RAM, 100 MB disk space.</li>
-          <li><strong>Network Ports:</strong>
-            <ul>
-              <li><code>UDP 500</code>: IKEv2 Key Exchange</li>
-              <li><code>UDP 4500</code>: NAT-Traversal (NAT-T)</li>
-              <li><code>TCP 8080</code> (or <code>443</code> via reverse proxy): Web Control Plane</li>
-              <li><code>UDP/TCP 53</code>: Internal Split-DNS server</li>
-            </ul>
-          </li>
-        </ul>
+        <h1 data-i18n="guide.prereq_title">System Requirements & Port Matrix</h1>
+        <p data-i18n="guide.prereq_desc">
+          SwanPanel is a lightweight, single-binary control plane written in pure Go. It coordinates strongSwan's high-performance IPsec kernel module without requiring Java, Node.js runtimes, or external database servers.
+        </p>
+
+        <h3 data-i18n="guide.ports_title">Network Firewall & Port Mapping</h3>
+        <p data-i18n="guide.ports_desc">Open the following inbound ports on your cloud firewall (AWS Security Group, GCP Firewall, Cloudflare, or local iptables):</p>
+
+        <div class="ports-grid">
+          <div class="port-card">
+            <span class="port-badge">UDP 500</span>
+            <span class="port-name">IKEv2 Negotiation</span>
+            <span class="port-desc">Initial Diffie-Hellman key exchange and SA negotiation.</span>
+          </div>
+          <div class="port-card">
+            <span class="port-badge">UDP 4500</span>
+            <span class="port-name">NAT-Traversal (NAT-T)</span>
+            <span class="port-desc">Encapsulates ESP packets in UDP when devices are behind NAT.</span>
+          </div>
+          <div class="port-card">
+            <span class="port-badge">TCP 8080</span>
+            <span class="port-name">Web Control Plane & API</span>
+            <span class="port-desc">Admin dashboard and client device provisioning endpoint.</span>
+          </div>
+          <div class="port-card">
+            <span class="port-badge">UDP/TCP 53</span>
+            <span class="port-name">Split-DNS Server</span>
+            <span class="port-desc">High-performance internal DNS resolving .strongnet domains.</span>
+          </div>
+        </div>
       </section>
 
-      <section id="installation" tabindex="-1">
-        <h2>1-Line Automated Installation</h2>
-        <p>Run the following command on your Linux server with root privileges:</p>
+      <section id="install-quick" tabindex="-1">
+        <h2 data-i18n="guide.quick_title">1-Line Automated Production Installer</h2>
+        <p data-i18n="guide.quick_desc">
+          The recommended deployment method for Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, and Fedora. The installer automatically detects your distribution, installs strongSwan with the VICI plugin, tunes Linux kernel packet forwarding, generates an initial PKI CA, and registers a systemd service:
+        </p>
 
-        <pre><code>curl -sSL https://raw.githubusercontent.com/thienvu18/swan-panel/main/install.sh | sudo bash</code></pre>
+        <div class="terminal-panel">
+          <div class="terminal-header">
+            <span class="terminal-title">bash installer</span>
+            <button class="copy-btn" data-target="guide-install-cmd" aria-label="Copy command">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span data-i18n="hero.copy">Copy</span>
+            </button>
+          </div>
+          <div class="terminal-body">
+            <code id="guide-install-cmd" class="terminal-cmd">curl -sSL https://raw.githubusercontent.com/thienvu18/swan-panel/main/install.sh | sudo bash</code>
+          </div>
+        </div>
 
-        <p>The script installs <code>strongswan</code> and <code>strongswan-charon-plugin-vici</code>, configures kernel forwarding, downloads the latest static <code>swan-panel</code> binary for your architecture, installs a systemd unit, and starts the service.</p>
-
-        <h3>Accessing the Web Dashboard</h3>
-        <p>After installation, navigate to <code>http://&lt;SERVER_IP&gt;:8080</code> in your browser:</p>
-        <ul>
-          <li><strong>Initial Username:</strong> <code>admin@swanpanel.internal</code></li>
-          <li><strong>Initial Password:</strong> <code>Admin@SwanPanel123</code></li>
-        </ul>
-        <p>You will be prompted to change your administrative password immediately upon initial sign-in.</p>
+        <p data-i18n="guide.quick_post">Once complete, access your control plane at <code>http://&lt;SERVER_IP&gt;:8080</code>.</p>
       </section>
 
-      <section id="configuration" tabindex="-1">
-        <h2>Environment Variables</h2>
-        <p>SwanPanel configuration is managed via <code>/etc/swan-panel/config.env</code>:</p>
-        <pre><code># Application Environment (production / development)
-APP_ENV=production
+      <section id="install-docker" tabindex="-1">
+        <h2 data-i18n="guide.docker_title">Production Docker Compose Deployment</h2>
+        <p data-i18n="guide.docker_desc">
+          If you prefer containerized workloads, run SwanPanel via Docker Compose. Ensure the host has the strongSwan VICI UNIX socket mapped at <code>/var/run/charon.vici</code>:
+        </p>
 
-# HTTP Web Control Plane Binding
-SERVER_PORT=8080
-SERVER_HOST=0.0.0.0
+        <div class="terminal-panel">
+          <div class="terminal-header">
+            <span class="terminal-title">docker-compose.yml</span>
+            <button class="copy-btn" data-target="guide-docker-code" aria-label="Copy Docker Compose snippet">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span data-i18n="hero.copy">Copy</span>
+            </button>
+          </div>
+          <div class="terminal-body" style="padding: 1rem 1.25rem;">
+            <pre id="guide-docker-code" style="color: #cbd5e1; font-family: ui-monospace, monospace; font-size: 0.85rem; line-height: 1.5; overflow-x: auto; white-space: pre;">services:
+  swan-panel:
+    image: ghcr.io/thienvu18/swan-panel:latest
+    container_name: swan-panel
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "500:500/udp"
+      - "4500:4500/udp"
+      - "53:53/udp"
+    volumes:
+      - /var/run/charon.vici:/var/run/charon.vici:rw
+      - swan-data:/var/lib/swan-panel
+    environment:
+      - PORT=8080
+      - DB_PATH=/var/lib/swan-panel/swanpanel.db
+      - LOG_LEVEL=INFO
+volumes:
+  swan-data:</pre>
+          </div>
+        </div>
+      </section>
 
-# Security Secret (32-byte hex for JWT signing)
-JWT_SECRET=your_cryptographically_secure_random_key_here
+      <section id="install-config" tabindex="-1">
+        <h2 data-i18n="guide.config_title">Configuration & Environment Variables</h2>
+        <p data-i18n="guide.config_desc">Configure SwanPanel via environment variables or <code>/etc/swan-panel/config.env</code>:</p>
+        <pre><code># Web Server Binding
+PORT=8080
+HOST=0.0.0.0
 
-# strongSwan UNIX Socket
+# Database Storage (Pure Go SQLite)
+DB_PATH=/var/lib/swan-panel/swanpanel.db
+
+# strongSwan IPC Socket
 VICI_SOCKET=/var/run/charon.vici
 
 # Split-DNS Engine
-ENABLE_DNS=true
 DNS_PORT=53
+DNS_DOMAIN=strongnet
+UPSTREAM_DNS=1.1.1.1,8.8.8.8
 
-# Logging Level (debug, info, warn, error)
-LOG_LEVEL=info</code></pre>
+# Security & Logs (DEBUG, INFO, WARN, ERROR)
+LOG_LEVEL=INFO</code></pre>
       </section>
 
-      <section id="client-apple" tabindex="-1">
-        <h2>Apple Ecosystem Provisioning (macOS & iOS)</h2>
-        <p>SwanPanel generates signed <code>.mobileconfig</code> XML profiles containing embedded PKCS#12 client certificates and the SwanPanel Root CA trust chain.</p>
-        <ol>
-          <li>Navigate to <strong>Resources & Devices</strong> in the SwanPanel web interface.</li>
-          <li>Click <strong>+ Add Device</strong>, choose <strong>Apple (macOS / iOS)</strong>, and assign a hostname (e.g. <code>alice-macbook</code>).</li>
-          <li>Click <strong>Download Profile (.mobileconfig)</strong>.</li>
-          <li>On macOS, double-click the downloaded profile. Open <strong>System Settings -> Profiles</strong>, click <strong>Install</strong>, and enter your local admin password.</li>
-          <li>Your Mac will connect automatically via native IKEv2 whenever network connectivity is established.</li>
+      <section id="install-proxy" tabindex="-1">
+        <h2 data-i18n="guide.proxy_title">TLS Termination & Reverse Proxy</h2>
+        <p data-i18n="guide.proxy_desc">For production security, terminate HTTPS via Caddy or Nginx:</p>
+
+        <pre><code># Caddyfile Example
+vpn.yourcompany.com {
+    reverse_proxy localhost:8080
+}</code></pre>
+      </section>
+
+      <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 3.5rem 0;">
+
+      <!-- =========================================================================
+           GROUP 2: ADMINISTRATOR OPERATIONS GUIDE (WITH SCREENSHOTS)
+           ========================================================================= -->
+      <div class="doc-section-badge" data-i18n="guide_sidebar.group_admin">2. Administrator Guide (Visual Walkthrough)</div>
+
+      <section id="admin-login" tabindex="-1">
+        <h1 data-i18n="guide.admin_login_title">Initial Administrator Sign In</h1>
+        <p data-i18n="guide.admin_login_desc">
+          Navigate to <code>http://&lt;SERVER_IP&gt;:8080</code>. Log in using the default administrative credentials:
+        </p>
+        <ul>
+          <li><strong>Email:</strong> <code>admin@swanpanel.internal</code></li>
+          <li><strong>Default Password:</strong> <code>Admin@SwanPanel123!</code></li>
+        </ul>
+        <p data-i18n="guide.admin_login_warn">
+          You will be prompted to replace this default secret immediately upon your first sign in to ensure zero-trust compliance.
+        </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/01_login_page.png" class="dark-only" alt="SwanPanel Login Screen" loading="lazy">
+          <img src="assets/images/user-guide/en/light/01_login_page.png" class="light-only" alt="SwanPanel Login Screen" loading="lazy">
+          <figcaption data-i18n="guide.caption_login">Figure 2.1: SwanPanel administrative authentication interface with brute-force rate-limiting.</figcaption>
+        </figure>
+      </section>
+
+      <section id="admin-dashboard" tabindex="-1">
+        <h2 data-i18n="guide.admin_dash_title">Dashboard & Gateway Live Status</h2>
+        <p data-i18n="guide.admin_dash_desc">
+          The Dashboard provides instantaneous visibility into your strongSwan daemon: VICI UNIX socket connection health, active Security Associations (IKE_SA / CHILD_SA), connected client devices, and realtime RX/TX throughput metrics.
+        </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/02_dashboard.png" class="dark-only" alt="SwanPanel Dashboard" loading="lazy">
+          <img src="assets/images/user-guide/en/light/02_dashboard.png" class="light-only" alt="SwanPanel Dashboard" loading="lazy">
+          <figcaption data-i18n="guide.caption_dash">Figure 2.2: Live Gateway Dashboard showing connected native clients and VICI memory socket status.</figcaption>
+        </figure>
+      </section>
+
+      <section id="admin-subnets" tabindex="-1">
+        <h2 data-i18n="guide.admin_subnets_title">Subnets & IP Pool Allocation</h2>
+        <p data-i18n="guide.admin_subnets_desc">
+          In <strong>Resources &rarr; Subnets</strong>, configure virtual VPN client address pools (e.g. <code>10.50.0.0/16</code>) and register protected private subnets (e.g. <code>10.60.10.0/24</code> for Production, <code>10.60.20.0/24</code> for Staging).
+        </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/03_resources_subnets.png" class="dark-only" alt="Subnets Management" loading="lazy">
+          <img src="assets/images/user-guide/en/light/03_resources_subnets.png" class="light-only" alt="Subnets Management" loading="lazy">
+          <figcaption data-i18n="guide.caption_subnets">Figure 2.3: Subnet allocation table managing CIDR blocks and IP utilization.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/04_modal_add_subnet.png" class="dark-only" alt="Add Subnet Modal" loading="lazy">
+          <img src="assets/images/user-guide/en/light/04_modal_add_subnet.png" class="light-only" alt="Add Subnet Modal" loading="lazy">
+          <figcaption data-i18n="guide.caption_add_subnet">Figure 2.4: Modal dialog for allocating dedicated subnets and assigning resource groups.</figcaption>
+        </figure>
+      </section>
+
+      <section id="admin-devices" tabindex="-1">
+        <h2 data-i18n="guide.admin_devices_title">Device Inventory & Client Profile Provisioning</h2>
+        <p data-i18n="guide.admin_devices_desc">
+          Every endpoint connecting to SwanPanel is tracked under <strong>Resources &rarr; Devices</strong>. When you register a new device, SwanPanel's internal PKI automatically generates an X.509 client certificate and prepares platform-specific configuration profiles (.mobileconfig for Apple, PowerShell for Windows, NetworkManager for Linux).
+        </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/05_resources_devices.png" class="dark-only" alt="Devices Directory" loading="lazy">
+          <img src="assets/images/user-guide/en/light/05_resources_devices.png" class="light-only" alt="Devices Directory" loading="lazy">
+          <figcaption data-i18n="guide.caption_devices">Figure 2.5: Device inventory listing hostnames, assigned virtual IPs, and 1-click download actions.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/06_modal_add_device.png" class="dark-only" alt="Add Device Modal" loading="lazy">
+          <img src="assets/images/user-guide/en/light/06_modal_add_device.png" class="light-only" alt="Add Device Modal" loading="lazy">
+          <figcaption data-i18n="guide.caption_add_device">Figure 2.6: Device provisioning modal supporting Apple, Windows, Linux, and Android presets.</figcaption>
+        </figure>
+      </section>
+
+      <section id="admin-users" tabindex="-1">
+        <h2 data-i18n="guide.admin_users_title">User Directory & Role-Based User Groups</h2>
+        <p data-i18n="guide.admin_users_desc">
+          Manage local users and organize them into functional groups (e.g. <code>Engineering</code>, <code>DevOps</code>, <code>Contractors</code>, <code>Sales</code>). Access rules are enforced at the group level to maintain zero-trust segmentation.
+        </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/07_users_directory.png" class="dark-only" alt="Users Directory" loading="lazy">
+          <img src="assets/images/user-guide/en/light/07_users_directory.png" class="light-only" alt="Users Directory" loading="lazy">
+          <figcaption data-i18n="guide.caption_users">Figure 2.7: User directory tracking assigned devices, authentication roles, and group memberships.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/09_user_groups.png" class="dark-only" alt="User Groups" loading="lazy">
+          <img src="assets/images/user-guide/en/light/09_user_groups.png" class="light-only" alt="User Groups" loading="lazy">
+          <figcaption data-i18n="guide.caption_groups">Figure 2.8: User Group management for policy mapping and access scoping.</figcaption>
+        </figure>
+      </section>
+
+      <section id="admin-rules" tabindex="-1">
+        <h2 data-i18n="guide.admin_rules_title">Zero-Trust Access Rules Engine</h2>
+        <p data-i18n="guide.admin_rules_desc">
+          Under <strong>Access Rules</strong>, define explicit ALLOW and DENY policies mapping User Groups to Resource Groups. When you save a rule, SwanPanel dynamically recompiles Linux kernel traffic selectors and pushes the changes into RAM via the VICI socket without dropping any live tunnels.
+        </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/11_access_rules.png" class="dark-only" alt="Access Rules Engine" loading="lazy">
+          <img src="assets/images/user-guide/en/light/11_access_rules.png" class="light-only" alt="Access Rules Engine" loading="lazy">
+          <figcaption data-i18n="guide.caption_rules">Figure 2.9: Micro-segmentation matrix mapping User Groups to Resource Subnets with instant RAM reload.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/12_modal_add_rule.png" class="dark-only" alt="Add Rule Modal" loading="lazy">
+          <img src="assets/images/user-guide/en/light/12_modal_add_rule.png" class="light-only" alt="Add Rule Modal" loading="lazy">
+          <figcaption data-i18n="guide.caption_add_rule">Figure 2.10: Rule modal dialog for selecting source user group, destination target, and action.</figcaption>
+        </figure>
+      </section>
+
+      <section id="admin-dns" tabindex="-1">
+        <h2 data-i18n="guide.admin_dns_title">Split-DNS Engine & Hostname Overrides</h2>
+        <p data-i18n="guide.admin_dns_desc">
+          SwanPanel includes an embedded DNS server powered by <code>miekg/dns</code>. It automatically registers connected devices under <code>&lt;hostname&gt;.strongnet</code> and allows administrators to define custom A and CNAME record overrides for internal services (e.g. <code>k8s.internal &rarr; 10.60.10.100</code>).
+        </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/13_dns_engine.png" class="dark-only" alt="DNS Engine Settings" loading="lazy">
+          <img src="assets/images/user-guide/en/light/13_dns_engine.png" class="light-only" alt="DNS Engine Settings" loading="lazy">
+          <figcaption data-i18n="guide.caption_dns">Figure 2.11: Split-DNS engine interface managing internal zone records and recursive upstreams.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/14_modal_add_dns_override.png" class="dark-only" alt="Add DNS Override" loading="lazy">
+          <img src="assets/images/user-guide/en/light/14_modal_add_dns_override.png" class="light-only" alt="Add DNS Override" loading="lazy">
+          <figcaption data-i18n="guide.caption_add_dns">Figure 2.12: Modal for configuring custom split-tunneling DNS records with instant live caching.</figcaption>
+        </figure>
+      </section>
+
+      <section id="admin-oidc" tabindex="-1">
+        <h2 data-i18n="guide.admin_oidc_title">Enterprise Single Sign-On (OIDC SSO)</h2>
+        <p data-i18n="guide.admin_oidc_desc">
+          Connect your organization's identity provider (Google Workspace, Microsoft Entra ID, Okta, Keycloak, or Auth0) using standard OpenID Connect (OIDC).
+        </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/15_oidc_providers.png" class="dark-only" alt="OIDC Providers" loading="lazy">
+          <img src="assets/images/user-guide/en/light/15_oidc_providers.png" class="light-only" alt="OIDC Providers" loading="lazy">
+          <figcaption data-i18n="guide.caption_oidc">Figure 2.13: OIDC configuration portal managing corporate Single Sign-On integrations.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/16_modal_add_oidc.png" class="dark-only" alt="Add OIDC Provider" loading="lazy">
+          <img src="assets/images/user-guide/en/light/16_modal_add_oidc.png" class="light-only" alt="Add OIDC Provider" loading="lazy">
+          <figcaption data-i18n="guide.caption_add_oidc">Figure 2.14: Connecting an enterprise identity provider via Issuer URL, Client ID, and Secret.</figcaption>
+        </figure>
+      </section>
+
+      <section id="admin-settings" tabindex="-1">
+        <h2 data-i18n="guide.admin_settings_title">Server Settings & VICI Socket Tuning</h2>
+        <p data-i18n="guide.admin_settings_desc">
+          Under <strong>Server Settings</strong>, set your gateway's public FQDN (e.g. <code>vpn.company.com</code>), configure default DNS search domains, and verify UNIX socket connectivity to <code>/var/run/charon.vici</code>.
+        </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/17_server_settings.png" class="dark-only" alt="Server Settings" loading="lazy">
+          <img src="assets/images/user-guide/en/light/17_server_settings.png" class="light-only" alt="Server Settings" loading="lazy">
+          <figcaption data-i18n="guide.caption_settings">Figure 2.15: Server settings managing gateway public address, PKI certificate regeneration, and socket health.</figcaption>
+        </figure>
+      </section>
+
+      <section id="admin-logs" tabindex="-1">
+        <h2 data-i18n="guide.admin_logs_title">Real-Time System Audit & Kernel Logs</h2>
+        <p data-i18n="guide.admin_logs_desc">
+          Stream structured system and charon daemon logs directly in the browser over Server-Sent Events (SSE). Filter by severity level (DEBUG, INFO, WARN, ERROR) or search by client IP address.
+        </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/18_system_logs.png" class="dark-only" alt="System Logs Terminal" loading="lazy">
+          <img src="assets/images/user-guide/en/light/18_system_logs.png" class="light-only" alt="System Logs Terminal" loading="lazy">
+          <figcaption data-i18n="guide.caption_logs">Figure 2.16: Realtime streaming audit logs with scope filtering, search, and live pause controls.</figcaption>
+        </figure>
+      </section>
+
+      <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 3.5rem 0;">
+
+      <!-- =========================================================================
+           GROUP 3: END-USER NATIVE CLIENT SETUP (WITH SCREENSHOTS & PROFILES)
+           ========================================================================= -->
+      <div class="doc-section-badge" data-i18n="guide_sidebar.group_user">3. End-User VPN Guide</div>
+
+      <section id="user-overview" tabindex="-1">
+        <h1 data-i18n="guide.user_why_title">Why SwanPanel Uses 100% Native OS Clients</h1>
+        <p data-i18n="guide.user_why_desc">
+          Unlike legacy VPN solutions that force employees to install bulky, battery-draining client applications, SwanPanel leverages the native IKEv2/IPsec engine built directly into every modern operating system.
+        </p>
+
+        <div class="feature-grid" style="margin: 2rem 0;">
+          <div class="feature-card">
+            <h3 class="feature-title" data-i18n="user_guide.adv1_title">Hardware-Accelerated IPsec</h3>
+            <p class="feature-desc" data-i18n="user_guide.adv1_desc">Native AES-256-GCM encryption runs directly in the OS kernel with zero CPU virtualization overhead.</p>
+          </div>
+          <div class="feature-card">
+            <h3 class="feature-title" data-i18n="user_guide.adv2_title">Zero Battery & RAM Bloat</h3>
+            <p class="feature-desc" data-i18n="user_guide.adv2_desc">No background tray agent or daemon draining laptop battery. Seamless sleep, wake, and standby.</p>
+          </div>
+          <div class="feature-card">
+            <h3 class="feature-title" data-i18n="user_guide.adv3_title">MOBIKE Seamless Roaming</h3>
+            <p class="feature-desc" data-i18n="user_guide.adv3_desc">Roam seamlessly between Wi-Fi and 4G/5G cellular connections without dropping active sessions (RFC 4555).</p>
+          </div>
+          <div class="feature-card">
+            <h3 class="feature-title" data-i18n="user_guide.adv4_title">Automatic Split-DNS</h3>
+            <p class="feature-desc" data-i18n="user_guide.adv4_desc">Only internal corporate domains (.strongnet) route through VPN DNS, keeping personal browsing completely untouched.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="user-apple" tabindex="-1">
+        <h2 data-i18n="guide.user_apple_title">Apple Ecosystem: macOS & iOS (.mobileconfig)</h2>
+        <p data-i18n="guide.user_apple_desc">
+          SwanPanel packages your client certificate, private key, and Root CA trust chain into a single signed Apple configuration profile (<code>.mobileconfig</code>).
+        </p>
+        <ol class="os-steps" style="margin: 1.5rem 0 1.5rem 1.5rem;">
+          <li><strong>Step 1 (Download):</strong> Log in to SwanPanel and click <strong>Download Profile (.mobileconfig)</strong> for your device.</li>
+          <li><strong>Step 2 (Install):</strong> Double-click the file. Open <strong>System Settings &rarr; Privacy & Security &rarr; Profiles</strong>, double-click the profile, and click <strong>Install</strong>.</li>
+          <li><strong>Step 3 (Connect):</strong> Click the native VPN toggle in your Mac menu bar or iOS Control Center. You are securely connected!</li>
         </ol>
+
+        <div class="doc-profile-download-box">
+          <div>
+            <div class="doc-profile-download-title">Apple Sample Configuration Profile</div>
+            <div class="doc-profile-download-desc">Sample .mobileconfig payload with embedded IKEv2 configuration.</div>
+          </div>
+          <a href="assets/images/user-guide/client-profiles/macbook-sample.mobileconfig" download class="btn btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>Download Sample Profile</span>
+          </a>
+        </div>
       </section>
 
-      <section id="client-windows" tabindex="-1">
-        <h2>Windows 10 & 11 Provisioning</h2>
-        <p>SwanPanel auto-generates idempotent PowerShell scripts configuring the native Windows VPN subsystem:</p>
-        <pre><code># Example command generated by SwanPanel
-Add-VpnConnection -Name "SwanPanel-VPN" `
-  -ServerAddress "vpn.company.com" `
-  -TunnelType IKEv2 `
-  -AuthenticationMethod MachineCertificate `
-  -SplitTunneling
+      <section id="user-windows" tabindex="-1">
+        <h2 data-i18n="guide.user_win_title">Microsoft Windows 10 & 11 (PowerShell Script)</h2>
+        <p data-i18n="guide.user_win_desc">
+          SwanPanel generates an automated, idempotent PowerShell script that imports the Root CA, installs your machine certificate, and creates the native Windows VPN connection:
+        </p>
+        <ol class="os-steps" style="margin: 1.5rem 0 1.5rem 1.5rem;">
+          <li><strong>Step 1 (Download):</strong> Download your customized <code>setup.ps1</code> and certificate bundle from SwanPanel.</li>
+          <li><strong>Step 2 (Run):</strong> Right-click <code>setup.ps1</code> and select <strong>Run with PowerShell as Administrator</strong>.</li>
+          <li><strong>Step 3 (Connect):</strong> Click the Network icon on your Taskbar, select <strong>SwanPanel-VPN</strong>, and click <strong>Connect</strong>.</li>
+        </ol>
 
-Set-VpnConnectionIPsecConfiguration -ConnectionName "SwanPanel-VPN" `
-  -AuthenticationTransformConstants GCMAES256 `
-  -CipherTransformConstants GCMAES256 `
-  -EncryptionMethod GCMAES256 `
-  -IntegrityCheckMethod SHA384 `
-  -PfsGroup ECP384 `
-  -DHGroup Group14</code></pre>
+        <div class="doc-profile-download-box">
+          <div>
+            <div class="doc-profile-download-title">Windows Sample PowerShell Script</div>
+            <div class="doc-profile-download-desc">Automated PowerShell setup script using native Add-VpnConnection cmdlet.</div>
+          </div>
+          <a href="assets/images/user-guide/client-profiles/windows-sample.ps1" download class="btn btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>Download Windows Script</span>
+          </a>
+        </div>
       </section>
 
-      <section id="client-linux" tabindex="-1">
-        <h2>Linux Provisioning</h2>
-        <p>For Linux desktop endpoints, SwanPanel delivers ready-to-import NetworkManager connection files (<code>.nmconnection</code>):</p>
-        <pre><code># Move profile to NetworkManager configuration directory
+      <section id="user-linux" tabindex="-1">
+        <h2 data-i18n="guide.user_linux_title">Linux Desktop (NetworkManager & nmcli)</h2>
+        <p data-i18n="guide.user_linux_desc">
+          On Ubuntu, Fedora, Debian, and Arch desktops, SwanPanel integrates with native NetworkManager:
+        </p>
+        <pre><code># 1. Copy profile to NetworkManager system configuration
 sudo cp SwanPanel.nmconnection /etc/NetworkManager/system-connections/
 sudo chmod 600 /etc/NetworkManager/system-connections/SwanPanel.nmconnection
 
-# Reload and connect
+# 2. Reload connections and activate
 sudo nmcli connection reload
 sudo nmcli connection up SwanPanel</code></pre>
+
+        <div class="doc-profile-download-box">
+          <div>
+            <div class="doc-profile-download-title">Linux Sample Setup Script</div>
+            <div class="doc-profile-download-desc">Automated bash helper configuring NetworkManager IKEv2 profiles.</div>
+          </div>
+          <a href="assets/images/user-guide/client-profiles/linux-setup-sample.sh" download class="btn btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>Download Linux Script</span>
+          </a>
+        </div>
       </section>
 
-      <section id="client-android" tabindex="-1">
-        <h2>Android Provisioning</h2>
-        <p>Android devices connect natively using standard IKEv2 RSA certificate authentication:</p>
-        <ol>
-          <li>Download the <code>.p12</code> bundle from SwanPanel onto the device.</li>
-          <li>Go to <strong>Settings -> Security & Privacy -> Encryption & Credentials -> Install a Certificate -> VPN & App User Certificate</strong>.</li>
-          <li>Select the downloaded bundle and enter the bundle password displayed in the SwanPanel UI.</li>
-          <li>Open <strong>VPN Settings</strong>, create a new connection with Type <code>IKEv2/IPSec RSA</code>, and select the installed certificate.</li>
+      <section id="user-android" tabindex="-1">
+        <h2 data-i18n="guide.user_android_title">Google Android (Native IKEv2 RSA)</h2>
+        <p data-i18n="guide.user_android_desc">
+          Android connects via native IKEv2/IPSec RSA using standard system settings:
+        </p>
+        <ol class="os-steps" style="margin: 1.5rem 0 1.5rem 1.5rem;">
+          <li><strong>Step 1:</strong> Download the <code>.p12</code> bundle from SwanPanel onto your Android device.</li>
+          <li><strong>Step 2:</strong> Go to <strong>Settings &rarr; Security &rarr; Encryption & Credentials &rarr; Install a Certificate &rarr; VPN & App User Certificate</strong>.</li>
+          <li><strong>Step 3:</strong> Select the file, enter the decryption password shown in SwanPanel, and tap OK.</li>
+          <li><strong>Step 4:</strong> In Android VPN settings, add an <strong>IKEv2/IPSec RSA</strong> connection and tap <strong>Connect</strong>.</li>
         </ol>
+
+        <div class="doc-profile-download-box">
+          <div>
+            <div class="doc-profile-download-title">SwanPanel Root CA Certificate</div>
+            <div class="doc-profile-download-desc">Standard X.509 Root CA certificate for Android certificate store.</div>
+          </div>
+          <a href="assets/images/user-guide/client-profiles/swanpanel-root-ca.crt" download class="btn btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>Download Root CA</span>
+          </a>
+        </div>
       </section>
 
-      <section id="vici" tabindex="-1">
-        <h2>Zero-SSH strongSwan Control Plane</h2>
-        <p>SwanPanel manages strongSwan entirely through its official VICI protocol (<code>govici</code>) over the UNIX socket <code>/var/run/charon.vici</code>:</p>
+      <section id="user-samples" tabindex="-1">
+        <h2 data-i18n="guide.user_samples_title">Reference Configuration Profiles</h2>
+        <p data-i18n="guide.user_samples_desc">
+          Explore reference configuration samples bundled with SwanPanel:
+        </p>
         <ul>
-          <li><strong>RAM Dynamic Reloads:</strong> When configuration parameters or policies change, SwanPanel issues <code>load-conn</code> commands directly to strongSwan's memory. Active tunnels are never dropped or interrupted.</li>
-          <li><strong>Instant SA Termination:</strong> When an administrator revokes a device or terminates a session, SwanPanel dispatches a <code>terminate</code> command to immediately tear down the active IKE Security Association in the Linux kernel.</li>
+          <li><a href="assets/images/user-guide/client-profiles/macbook-sample.mobileconfig" download>Apple macOS Profile (<code>macbook-sample.mobileconfig</code>)</a></li>
+          <li><a href="assets/images/user-guide/client-profiles/windows-sample.ps1" download>Windows PowerShell Script (<code>windows-sample.ps1</code>)</a></li>
+          <li><a href="assets/images/user-guide/client-profiles/linux-setup-sample.sh" download>Linux Setup Script (<code>linux-setup-sample.sh</code>)</a></li>
+          <li><a href="assets/images/user-guide/client-profiles/swanctl-sample.conf" download>strongSwan VICI Config (<code>swanctl-sample.conf</code>)</a></li>
+          <li><a href="assets/images/user-guide/client-profiles/swanpanel-root-ca.crt" download>SwanPanel Root CA (<code>swanpanel-root-ca.crt</code>)</a></li>
         </ul>
-      </section>
-
-      <section id="dns" tabindex="-1">
-        <h2>Split-DNS & MagicDNS Engine</h2>
-        <p>The integrated DNS engine runs on UDP/TCP port 53 and eliminates DNS leaks while resolving private service hostnames:</p>
-        <ul>
-          <li><strong>MagicDNS:</strong> Automatically maps <code>&lt;device-hostname&gt;.strongnet</code> to the client's internal IP address.</li>
-          <li><strong>Custom DNS Overrides:</strong> Define custom A or CNAME records (e.g. <code>gitlab.internal -&gt; 10.60.0.50</code>) in the DNS Engine management tab.</li>
-          <li><strong>Recursive Upstream Forwarding:</strong> External domain queries (e.g. <code>github.com</code>) are resolved via configured upstream servers (default: Cloudflare <code>1.1.1.1</code> and Google <code>8.8.8.8</code>).</li>
-        </ul>
-      </section>
-
-      <section id="policy" tabindex="-1">
-        <h2>Zero-Trust Access Policies</h2>
-        <p>SwanPanel separates network permissions into <strong>User Groups</strong> and <strong>Resource Groups</strong>:</p>
-        <ul>
-          <li>Create User Groups (e.g. <code>Developers</code>, <code>DevOps</code>, <code>Contractors</code>).</li>
-          <li>Create Resource Groups defining IP subnets (e.g. <code>Production VPC: 10.60.10.0/24</code>, <code>Staging: 10.60.20.0/24</code>).</li>
-          <li>Attach <code>ALLOW</code> or <code>DENY</code> rules between groups. The Policy Compiler compiles these rules into explicit traffic selectors and firewall exclusion filters.</li>
-        </ul>
-      </section>
-
-      <section id="pki" tabindex="-1">
-        <h2>Automated Internal PKI</h2>
-        <p>SwanPanel manages the complete X.509 certificate lifecycle without requiring external Certificate Authority software:</p>
-        <ul>
-          <li><strong>Root CA:</strong> 4096-bit RSA certificate self-generated on initial daemon startup.</li>
-          <li><strong>Client Certificates:</strong> Generated and signed dynamically whenever a device is provisioned.</li>
-          <li><strong>PKCS#12 Bundling:</strong> Securely packages client private key, certificate, and CA trust chain into password-protected <code>.p12</code> archives.</li>
-        </ul>
-      </section>
-
-      <section id="production" tabindex="-1">
-        <h2>Production Hardening & Reverse Proxy</h2>
-        <p>For production deployments, place SwanPanel behind a reverse proxy handling TLS termination.</p>
-
-        <h3>Example Caddy Configuration</h3>
-        <pre><code>vpn.yourdomain.com {
-    reverse_proxy localhost:8080
-}</code></pre>
-
-        <h3>Firewall Configuration (UFW)</h3>
-        <pre><code># Allow IPsec VPN traffic
-sudo ufw allow 500/udp
-sudo ufw allow 4500/udp
-
-# Allow HTTPS control plane
-sudo ufw allow 443/tcp
-
-# Enable NAT masquerade for client subnet
-sudo iptables -t nat -A POSTROUTING -s 10.60.0.0/16 -o eth0 -j MASQUERADE</code></pre>
-      </section>
-
-      <section id="troubleshooting" tabindex="-1">
-        <h2>Troubleshooting & FAQ</h2>
-        <h3>strongSwan Daemon Disconnected</h3>
-        <p>Ensure the <code>charon.vici</code> plugin is enabled in <code>/etc/strongswan.d/charon/vici.conf</code> and the strongSwan service is active (<code>sudo systemctl restart strongswan</code>).</p>
-
-        <h3>Client Connection Timeout</h3>
-        <p>Verify that UDP ports 500 and 4500 are not blocked by cloud provider security groups (AWS Security Groups, Hetzner Firewall, GCP Firewall Rules).</p>
       </section>
     </article>
   </div>
@@ -335,7 +603,7 @@ sudo iptables -t nat -A POSTROUTING -s 10.60.0.0/16 -o eth0 -j MASQUERADE</code>
   <footer class="site-footer">
     <div class="footer-links">
       <a href="index.html" data-i18n="footer.home">Home</a>
-      <a href="guide.html" data-i18n="footer.guide">User Guide</a>
+      <a href="guide.html" data-i18n="footer.guide">Docs & Guide</a>
       <a href="https://github.com/thienvu18/swan-panel/wiki" target="_blank" rel="noopener" data-i18n="footer.wiki">Wiki</a>
       <a href="https://github.com/thienvu18/swan-panel/blob/main/docs/ADMIN_USER_GUIDE.md" target="_blank" rel="noopener" data-i18n="footer.admin_guide">Admin Guide</a>
       <a href="https://github.com/thienvu18/swan-panel/blob/main/docs/END_USER_GUIDE.md" target="_blank" rel="noopener" data-i18n="footer.enduser_guide">End-User Guide</a>

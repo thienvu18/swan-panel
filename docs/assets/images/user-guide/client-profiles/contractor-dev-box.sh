@@ -1,0 +1,1 @@
+{"error":"Device certificate has been revoked"}
