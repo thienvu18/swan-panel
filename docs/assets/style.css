@@ -986,17 +986,49 @@ a:hover {
   gap: 0.5rem;
 }
 .doc-section-badge {
-  display: inline-block;
-  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--radius-sm);
-  background: light-dark(#eff6ff, #1e293b);
+  letter-spacing: 0.08em;
+  padding: 0.35rem 0.85rem;
+  border-radius: 9999px;
+  background: light-dark(#eff6ff, #172554);
   color: var(--brand-primary);
-  border: 1px solid light-dark(#bfdbfe, #3b82f6);
-  margin-bottom: 0.75rem;
+  border: 1px solid light-dark(#bfdbfe, #1e40af);
+  margin-bottom: 1.25rem;
+}
+
+.doc-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.doc-content th {
+  background: var(--bg-surface-elevated);
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: var(--text-main);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.doc-content td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.875rem;
+}
+
+.doc-content tr:last-child td {
+  border-bottom: none;
 }
 .doc-profile-download-box {
   background: var(--bg-surface-elevated);
@@ -1055,6 +1087,218 @@ a:hover {
 .tab-panel.active {
   display: block;
 }
+
+/* =========================================================================
+   DOCUMENTATION LAYOUT & SIDEBAR STYLES (guide.html)
+   ========================================================================= */
+
+.doc-layout {
+  max-width: 1440px;
+  margin: 0 auto;
+  display: flex;
+  gap: 3.5rem;
+  padding: 2.5rem 1.5rem 4rem;
+  position: relative;
+  align-items: flex-start;
+}
+
+/* Sticky Documentation Sidebar Navigation */
+.doc-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 5.5rem;
+  max-height: calc(100dvh - 6.5rem);
+  overflow-y: auto;
+  padding-right: 0.75rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.doc-sidebar::-webkit-scrollbar {
+  width: 5px;
+}
+.doc-sidebar::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 9999px;
+}
+
+.doc-nav-group {
+  margin-bottom: 2rem;
+}
+
+.doc-nav-heading {
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--brand-primary);
+  margin-bottom: 0.65rem;
+  padding: 0 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.doc-nav-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.doc-nav-item {
+  margin: 0;
+  padding: 0;
+}
+
+.doc-nav-link {
+  display: block;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: all 0.15s ease;
+  border-left: 2px solid transparent;
+  line-height: 1.4;
+}
+
+.doc-nav-link:hover {
+  color: var(--text-main);
+  background: var(--bg-surface-elevated);
+}
+
+.doc-nav-link.active,
+.doc-nav-link.target-current,
+.doc-nav-link[aria-current="true"] {
+  color: var(--brand-primary);
+  font-weight: 700;
+  background: light-dark(#eff6ff, #172554);
+  border-left-color: var(--brand-primary);
+}
+
+/* Documentation Content Area */
+.doc-content {
+  flex: 1;
+  min-width: 0;
+  max-width: 920px;
+  color: var(--text-main);
+  line-height: 1.75;
+}
+
+.doc-content section {
+  scroll-margin-top: 5.5rem;
+  margin-bottom: 2.5rem;
+}
+
+.doc-content h1 {
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--text-main);
+  margin: 0.5rem 0 1rem;
+  line-height: 1.25;
+}
+
+.doc-content h2 {
+  font-size: 1.65rem;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+  color: var(--text-main);
+  margin: 2.75rem 0 0.85rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-subtle);
+  line-height: 1.3;
+}
+
+.doc-content h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 1.75rem 0 0.65rem;
+}
+
+.doc-content p {
+  color: var(--text-muted);
+  font-size: 1rem;
+  margin-bottom: 1.25rem;
+  line-height: 1.7;
+}
+
+.doc-content pre {
+  background: var(--bg-code);
+  color: #e2e8f0;
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  margin: 1.25rem 0 1.75rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.doc-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875em;
+}
+
+.doc-content :not(pre) > code {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  color: var(--brand-primary);
+  font-weight: 600;
+}
+
+.doc-content ul,
+.doc-content ol {
+  color: var(--text-muted);
+  padding-left: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.doc-content li {
+  margin-bottom: 0.45rem;
+  line-height: 1.65;
+}
+
+.doc-content li strong {
+  color: var(--text-main);
+}
+
+/* Responsive Doc Layout on Narrow Screens */
+@media (max-width: 1023px) {
+  .doc-layout {
+    flex-direction: column;
+    gap: 2rem;
+    padding: 1.5rem 1rem;
+  }
+  .doc-sidebar {
+    width: 100%;
+    position: static;
+    max-height: none;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 1.5rem;
+    padding-right: 0;
+  }
+  .doc-content {
+    max-width: 100%;
+  }
+  .doc-content h1 {
+    font-size: 1.85rem;
+  }
+  .doc-content h2 {
+    font-size: 1.45rem;
+  }
+}
+
 
 
 

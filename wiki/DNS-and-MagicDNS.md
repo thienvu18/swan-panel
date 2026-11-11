@@ -2,6 +2,8 @@
 
 SwanPanel includes an integrated, high-concurrency DNS server built on top of `github.com/miekg/dns`.
 
+![SwanPanel DNS Engine](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/13_dns_engine.png)
+
 ---
 
 ## 1. MagicDNS Hostname Resolution

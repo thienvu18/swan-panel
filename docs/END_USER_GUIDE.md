@@ -118,7 +118,8 @@ flowchart LR
 1. Open the Windows Start Menu, type `powershell`.
 2. Right-click **Windows PowerShell** and choose **"Run as administrator"**.
 
-![Windows PowerShell Execution](/Users/thienvu/.gemini/antigravity/brain/f70050a8-6911-477c-93ec-8ca212f94929/user-guide/client-profiles/windows-sample.ps1)
+> [!TIP]
+> You can inspect or download the [Sample Windows Setup Script](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/client-profiles/windows-sample.ps1) for reference.
 
 ### Step 3: Execute the Setup Script
 Navigate to your Downloads folder and run:

@@ -2,6 +2,8 @@
 
 SwanPanel implements dynamic role- and group-based access control (RBAC/GBAC) across users and network resource groups.
 
+![SwanPanel Access Rules](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/11_access_rules.png)
+
 ---
 
 ## 1. Core Abstractions

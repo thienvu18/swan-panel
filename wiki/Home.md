@@ -2,11 +2,15 @@
 
 **SwanPanel** is a modern, enterprise-grade, zero-trust web control plane for **strongSwan** Remote Access VPNs.
 
+![SwanPanel Dashboard](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/02_dashboard.png)
+
 ---
 
 ## Core Wiki Navigation
 
 - [Quickstart & Installation Guide](Quickstart)
+- [Administrator Operations Guide](Administrator-Guide)
+- [End-User Native Client Guide](End-User-Guide)
 - [Architecture & Internals](Architecture)
 - [Native Client Provisioning](Client-Provisioning)
 - [Split-DNS & MagicDNS Engine](DNS-and-MagicDNS)
