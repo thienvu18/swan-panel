@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"log/slog"
@@ -61,9 +62,76 @@ func GetPKIManager() (*PKIManager, error) {
 	return DefaultPKI, nil
 }
 
-// initCA generates or loads the Root CA
+// resolvePKIDataDir discovers or creates a writable persistent directory for PKI state
+func resolvePKIDataDir() string {
+	candidates := []string{
+		os.Getenv("PKI_DATA_DIR"),
+		"/var/lib/swan-panel",
+		"data/pki",
+		".swanpanel_pki",
+	}
+	for _, dir := range candidates {
+		if dir == "" {
+			continue
+		}
+		if err := os.MkdirAll(dir, 0700); err == nil {
+			testFile := filepath.Join(dir, ".perm_test")
+			if err := os.WriteFile(testFile, []byte("ok"), 0600); err == nil {
+				_ = os.Remove(testFile)
+				return dir
+			}
+		}
+	}
+	return "."
+}
+
+func parseRSAPrivateKeyFromPEM(pemBytes []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block containing private key")
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	if keyInterface, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		if rsaKey, ok := keyInterface.(*rsa.PrivateKey); ok {
+			return rsaKey, nil
+		}
+	}
+	return nil, fmt.Errorf("unsupported private key format")
+}
+
+// initCA generates or loads the Root CA from persistent storage
 func (m *PKIManager) initCA() error {
-	slog.Info("Initializing internal SwanPanel X.509 Root CA")
+	pkiDir := resolvePKIDataDir()
+	caCertPath := filepath.Join(pkiDir, "ca.crt")
+	caKeyPath := filepath.Join(pkiDir, "ca.key")
+
+	// 1. Attempt loading existing persisted CA certificate and private key
+	if certData, err1 := os.ReadFile(caCertPath); err1 == nil {
+		if keyData, err2 := os.ReadFile(caKeyPath); err2 == nil {
+			certBlock, _ := pem.Decode(certData)
+			if certBlock != nil {
+				parsedCA, err := x509.ParseCertificate(certBlock.Bytes)
+				if err == nil && time.Now().Before(parsedCA.NotAfter) {
+					parsedKey, errKey := parseRSAPrivateKeyFromPEM(keyData)
+					if errKey == nil {
+						m.caCert = parsedCA
+						m.caKey = parsedKey
+						m.caCertPEM = string(certData)
+						m.caKeyPEM = string(keyData)
+						slog.Info("Root CA loaded from persistent storage", "path", caCertPath, "serial", parsedCA.SerialNumber.Text(16), "cn", parsedCA.Subject.CommonName)
+						return nil
+					}
+					slog.Warn("Failed to parse persisted CA private key; regenerating", "error", errKey)
+				} else {
+					slog.Warn("Persisted CA certificate expired or invalid; regenerating")
+				}
+			}
+		}
+	}
+
+	slog.Info("Initializing new internal SwanPanel X.509 Root CA and persisting to disk")
 
 	// Generate 4096-bit RSA key for Root CA
 	key, err := rsa.GenerateKey(rand.Reader, 4096)
@@ -124,7 +192,21 @@ func (m *PKIManager) initCA() error {
 	m.caCertPEM = certBuf.String()
 	m.caKeyPEM = keyBuf.String()
 
-	slog.Info("Root CA initialized successfully", "serial", serialNumber.Text(16), "cn", parsedCA.Subject.CommonName)
+	// Persist to disk with strict file permissions
+	if err := os.WriteFile(caCertPath, certBuf.Bytes(), 0644); err != nil {
+		slog.Warn("Failed to persist CA certificate to disk", "path", caCertPath, "error", err)
+	}
+	if err := os.WriteFile(caKeyPath, keyBuf.Bytes(), 0600); err != nil {
+		slog.Warn("Failed to persist CA private key to disk", "path", caKeyPath, "error", err)
+	}
+
+	// Synchronize to /etc/swanctl/x509ca/ if possible
+	etcCADir := "/etc/swanctl/x509ca"
+	if err := os.MkdirAll(etcCADir, 0755); err == nil {
+		_ = os.WriteFile(filepath.Join(etcCADir, "ca.crt"), certBuf.Bytes(), 0644)
+	}
+
+	slog.Info("Root CA initialized and persisted successfully", "serial", serialNumber.Text(16), "cn", parsedCA.Subject.CommonName, "path", caCertPath)
 	return nil
 }
 
@@ -601,4 +683,39 @@ fi
 		serverEndpoint,
 		deviceHostname,
 		serverEndpoint)
+}
+
+// GenerateAndroidProfile creates a native strongSwan Android app configuration profile (.sswan JSON format)
+func GenerateAndroidProfile(serverFQDN, deviceHostname string, certBundle *CertificateBundle) string {
+	profileUUID := fmt.Sprintf("swanpanel-android-%s", deviceHostname)
+	profileName := fmt.Sprintf("SwanPanel (%s)", deviceHostname)
+
+	profile := map[string]interface{}{
+		"uuid": profileUUID,
+		"name": profileName,
+		"type": "ikev2-cert",
+		"remote": map[string]interface{}{
+			"addr": serverFQDN,
+			"id":   serverFQDN,
+		},
+		"local": map[string]interface{}{
+			"id":   deviceHostname,
+			"cert": strings.TrimSpace(certBundle.CertPEM),
+			"key":  strings.TrimSpace(certBundle.PrivateKeyPEM),
+		},
+		"remote-ca": map[string]interface{}{
+			"cert": strings.TrimSpace(certBundle.CACertPEM),
+		},
+		"split-tunneling": map[string]interface{}{
+			"block-ipv4": false,
+			"block-ipv6": false,
+		},
+	}
+
+	data, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		slog.Error("Failed to marshal Android .sswan profile", "error", err)
+		return "{}"
+	}
+	return string(data)
 }

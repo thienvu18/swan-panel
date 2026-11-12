@@ -255,8 +255,13 @@ func (h *ResourcesHandler) DownloadDeviceConfig(c *gin.Context) {
 			c.Data(http.StatusOK, "text/x-shellscript; charset=utf-8", []byte(cfg))
 		}
 
+	case "android", "sswan":
+		cfg := pki.GenerateAndroidProfile(sw.ServerEndpoint, dev.Hostname, certBundle)
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.sswan\"", dev.Hostname))
+		c.Data(http.StatusOK, "application/vnd.strongswan.profile", []byte(cfg))
+
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported platform; must be 'apple', 'windows', or 'linux'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported platform; must be 'apple', 'windows', 'linux', or 'android'"})
 	}
 }
 

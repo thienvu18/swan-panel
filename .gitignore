@@ -39,3 +39,8 @@ Thumbs.db
 # Local environment & compose overrides
 .env
 docker-compose.override.yml
+
+# Runtime data & PKI storage
+data/
+**/data/
+

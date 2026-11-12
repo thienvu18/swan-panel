@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/swan-panel/swan-panel/internal/db"
 )
+
+// SecureTokenCompare performs a constant-time comparison of two cryptographic strings
+// to mitigate timing attack vectors as strictly mandated by AGENTS.md Rule 2.3
+func SecureTokenCompare(tokenA, tokenB string) bool {
+	return subtle.ConstantTimeCompare([]byte(tokenA), []byte(tokenB)) == 1
+}
 
 type JWTClaims struct {
 	UserID  string `json:"user_id"`

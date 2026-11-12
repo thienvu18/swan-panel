@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,23 +32,56 @@ func SecurityHeaders() gin.HandlerFunc {
 	}
 }
 
-// CORSPolicy configures explicit and secure CORS policies without wildcards
-func CORSPolicy() gin.HandlerFunc {
+// CORSPolicy configures explicit and secure CORS policies with strict origin whitelist validation
+func CORSPolicy(allowedOrigins []string, isDev bool) gin.HandlerFunc {
+	// Normalized map for O(1) whitelist lookup
+	allowedMap := make(map[string]bool)
+	for _, o := range allowedOrigins {
+		allowedMap[strings.ToLower(strings.TrimRight(o, "/"))] = true
+	}
+
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
-		if origin != "" {
+		if origin == "" {
+			c.Next()
+			return
+		}
+
+		normalizedOrigin := strings.ToLower(strings.TrimRight(origin, "/"))
+		allowed := false
+
+		if allowedMap[normalizedOrigin] {
+			allowed = true
+		} else if isDev {
+			// In development mode, allow standard localhost and loopback ports
+			if strings.HasPrefix(normalizedOrigin, "http://localhost:") ||
+				strings.HasPrefix(normalizedOrigin, "http://127.0.0.1:") ||
+				strings.HasPrefix(normalizedOrigin, "https://localhost:") ||
+				normalizedOrigin == "http://localhost" ||
+				normalizedOrigin == "http://127.0.0.1" {
+				allowed = true
+			}
+		}
+
+		if allowed {
 			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Vary", "Origin")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, X-Requested-With")
 			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Access-Control-Max-Age", "86400")
-			slog.Debug("CORS headers attached to response", "origin", origin)
-		}
+			slog.Debug("CORS origin approved", "origin", origin)
 
-		if c.Request.Method == "OPTIONS" {
-			slog.Debug("CORS preflight request handled", "origin", origin)
-			c.AbortWithStatus(204)
-			return
+			if c.Request.Method == "OPTIONS" {
+				c.AbortWithStatus(204)
+				return
+			}
+		} else {
+			slog.Warn("CORS request rejected: origin not in whitelist", "origin", origin, "path", c.Request.URL.Path, "ip", c.ClientIP())
+			if c.Request.Method == "OPTIONS" {
+				c.AbortWithStatusJSON(403, gin.H{"error": "Forbidden: CORS origin not allowed"})
+				return
+			}
 		}
 
 		c.Next()

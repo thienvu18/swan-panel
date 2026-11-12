@@ -54,4 +54,16 @@ func TestPKIManager(t *testing.T) {
 	if !strings.Contains(swanctlConf, "connections {") {
 		t.Errorf("swanctl.conf missing connections block")
 	}
+
+	// 5. Test Android strongSwan profile generation (.sswan JSON)
+	androidProfile := pki.GenerateAndroidProfile("vpn.company.com", "test-laptop", clientBundle)
+	if !strings.Contains(androidProfile, "ikev2-cert") {
+		t.Errorf("Android profile missing ikev2-cert type")
+	}
+	if !strings.Contains(androidProfile, "vpn.company.com") {
+		t.Errorf("Android profile missing server FQDN")
+	}
+	if !strings.Contains(androidProfile, "test-laptop") {
+		t.Errorf("Android profile missing device hostname")
+	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	swanpanel "github.com/swan-panel/swan-panel"
 	"github.com/swan-panel/swan-panel/internal/api"
+	"github.com/swan-panel/swan-panel/internal/api/middleware"
 	"github.com/swan-panel/swan-panel/internal/config"
 	"github.com/swan-panel/swan-panel/internal/db"
 )
@@ -733,4 +734,180 @@ func TestSecurityAuditRemediations(t *testing.T) {
 		t.Fatalf("Admin should be able to access system logs, got: %d", wLogAdmin.Code)
 	}
 	_ = aliceID
+
+	// =========================================================================
+	// TEST 4: Android Device Configuration Download (.sswan JSON profile)
+	// =========================================================================
+	wAndroid := httptest.NewRecorder()
+	reqAndroid, _ := http.NewRequest("GET", "/api/devices/"+aliceDevID+"/config/android", nil)
+	reqAndroid.Header.Set("Authorization", "Bearer "+aliceToken)
+	router.ServeHTTP(wAndroid, reqAndroid)
+	if wAndroid.Code != http.StatusOK {
+		t.Fatalf("Failed to download Android config: %d, body: %s", wAndroid.Code, wAndroid.Body.String())
+	}
+	if !strings.Contains(wAndroid.Header().Get("Content-Disposition"), "alice-macbook.sswan") {
+		t.Fatalf("Expected .sswan attachment header, got: %s", wAndroid.Header().Get("Content-Disposition"))
+	}
+	if !strings.Contains(wAndroid.Body.String(), "ikev2-cert") {
+		t.Fatalf("Expected ikev2-cert profile in .sswan JSON body, got: %s", wAndroid.Body.String())
+	}
+
+	// =========================================================================
+	// TEST 5: Change Password Flow
+	// =========================================================================
+	// Wrong current password -> 401
+	wrongPwdPayload := map[string]string{
+		"current_password": "wrongpassword123",
+		"new_password":     "newsecurepassword123",
+	}
+	bodyWrong, _ := json.Marshal(wrongPwdPayload)
+	wWrongPwd := httptest.NewRecorder()
+	reqWrongPwd, _ := http.NewRequest("PUT", "/api/auth/password", bytes.NewBuffer(bodyWrong))
+	reqWrongPwd.Header.Set("Content-Type", "application/json")
+	reqWrongPwd.Header.Set("Authorization", "Bearer "+aliceToken)
+	router.ServeHTTP(wWrongPwd, reqWrongPwd)
+	if wWrongPwd.Code != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 for wrong current password, got: %d", wWrongPwd.Code)
+	}
+
+	// Password too short -> 400
+	shortPwdPayload := map[string]string{
+		"current_password": "alicepassword123",
+		"new_password":     "short",
+	}
+	bodyShort, _ := json.Marshal(shortPwdPayload)
+	wShort := httptest.NewRecorder()
+	reqShort, _ := http.NewRequest("PUT", "/api/auth/password", bytes.NewBuffer(bodyShort))
+	reqShort.Header.Set("Content-Type", "application/json")
+	reqShort.Header.Set("Authorization", "Bearer "+aliceToken)
+	router.ServeHTTP(wShort, reqShort)
+	if wShort.Code != http.StatusBadRequest {
+		t.Fatalf("Expected 400 for short new password, got: %d", wShort.Code)
+	}
+
+	// Valid password change -> 200
+	validPwdPayload := map[string]string{
+		"current_password": "alicepassword123",
+		"new_password":     "brandnewalicepassword456",
+	}
+	bodyValid, _ := json.Marshal(validPwdPayload)
+	wValid := httptest.NewRecorder()
+	reqValid, _ := http.NewRequest("PUT", "/api/auth/password", bytes.NewBuffer(bodyValid))
+	reqValid.Header.Set("Content-Type", "application/json")
+	reqValid.Header.Set("Authorization", "Bearer "+aliceToken)
+	router.ServeHTTP(wValid, reqValid)
+	if wValid.Code != http.StatusOK {
+		t.Fatalf("Expected 200 for valid password change, got: %d, body: %s", wValid.Code, wValid.Body.String())
+	}
+
+	// Verify login with new password
+	newLoginPayload := map[string]string{
+		"email":    "alice@example.com",
+		"password": "brandnewalicepassword456",
+	}
+	bodyNewLogin, _ := json.Marshal(newLoginPayload)
+	wNewLogin := httptest.NewRecorder()
+	reqNewLogin, _ := http.NewRequest("POST", "/api/auth/login", bytes.NewBuffer(bodyNewLogin))
+	reqNewLogin.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wNewLogin, reqNewLogin)
+	if wNewLogin.Code != http.StatusOK {
+		t.Fatalf("Expected login with new password to succeed, got: %d", wNewLogin.Code)
+	}
+}
+
+func TestCORSOriginValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	testDBPath := "test_cors.db"
+	cfg := &config.Config{
+		Port:           8080,
+		DBPath:         testDBPath,
+		JWTSecret:      "test-secret-cors",
+		Environment:    "production",
+		AllowedOrigins: []string{"https://vpn.company.com"},
+	}
+
+	_, err := db.InitDB(testDBPath)
+	if err != nil {
+		t.Fatalf("Failed to initialize test DB: %v", err)
+	}
+	defer func() {
+		sqlDB, _ := db.DB.DB()
+		if sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+		_ = os.Remove(testDBPath)
+		_ = os.Remove(testDBPath + "-wal")
+		_ = os.Remove(testDBPath + "-shm")
+	}()
+
+	router := api.SetupRouter(cfg, nil)
+
+	// 1. Approved Origin in Whitelist -> Status 200 with matching Access-Control-Allow-Origin
+	wApproved := httptest.NewRecorder()
+	reqApproved, _ := http.NewRequest("GET", "/api/health", nil)
+	reqApproved.Header.Set("Origin", "https://vpn.company.com")
+	router.ServeHTTP(wApproved, reqApproved)
+	if wApproved.Header().Get("Access-Control-Allow-Origin") != "https://vpn.company.com" {
+		t.Errorf("Expected CORS header for whitelisted origin, got: %s", wApproved.Header().Get("Access-Control-Allow-Origin"))
+	}
+
+	// 2. Unapproved Malicious Origin -> NOT Allowed (Header not set)
+	wBlocked := httptest.NewRecorder()
+	reqBlocked, _ := http.NewRequest("GET", "/api/health", nil)
+	reqBlocked.Header.Set("Origin", "https://malicious-site.attacker.com")
+	router.ServeHTTP(wBlocked, reqBlocked)
+	if wBlocked.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("SECURITY VULNERABILITY: Unapproved origin was reflected in CORS header: %s", wBlocked.Header().Get("Access-Control-Allow-Origin"))
+	}
+
+	// 3. Preflight OPTIONS for Unapproved Origin -> 403 Forbidden
+	wPreflightBlocked := httptest.NewRecorder()
+	reqPreflightBlocked, _ := http.NewRequest("OPTIONS", "/api/health", nil)
+	reqPreflightBlocked.Header.Set("Origin", "https://malicious-site.attacker.com")
+	router.ServeHTTP(wPreflightBlocked, reqPreflightBlocked)
+	if wPreflightBlocked.Code != http.StatusForbidden {
+		t.Errorf("Expected 403 Forbidden on preflight for blocked origin, got: %d", wPreflightBlocked.Code)
+	}
+}
+
+func TestConstantTimeTokenComparison(t *testing.T) {
+	// 1. Matching tokens -> true
+	tokenA := "swanpanel-secure-token-123456"
+	tokenB := "swanpanel-secure-token-123456"
+	if !middleware.SecureTokenCompare(tokenA, tokenB) {
+		t.Errorf("Expected SecureTokenCompare to return true for matching tokens")
+	}
+
+	// 2. Mismatched tokens -> false
+	tokenC := "swanpanel-secure-token-654321"
+	if middleware.SecureTokenCompare(tokenA, tokenC) {
+		t.Errorf("Expected SecureTokenCompare to return false for mismatched tokens")
+	}
+
+	// 3. Different length tokens -> false
+	tokenD := "short"
+	if middleware.SecureTokenCompare(tokenA, tokenD) {
+		t.Errorf("Expected SecureTokenCompare to return false for different length tokens")
+	}
+}
+
+func TestOIDCCallbackStateValidation(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	// 1. Mismatched state and expected_state -> 400 Bad Request
+	wBadState := httptest.NewRecorder()
+	reqBadState, _ := http.NewRequest("GET", "/api/auth/oidc/callback?state=xyz123&expected_state=abc456", nil)
+	router.ServeHTTP(wBadState, reqBadState)
+	if wBadState.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 Bad Request on state mismatch, got: %d", wBadState.Code)
+	}
+
+	// 2. Matching state and expected_state -> 200 or 201 OK
+	wGoodState := httptest.NewRecorder()
+	reqGoodState, _ := http.NewRequest("GET", "/api/auth/oidc/callback?state=valid-state&expected_state=valid-state&email=user@oidc.com", nil)
+	router.ServeHTTP(wGoodState, reqGoodState)
+	if wGoodState.Code != http.StatusCreated && wGoodState.Code != http.StatusOK {
+		t.Errorf("Expected 200/201 on matching state, got: %d", wGoodState.Code)
+	}
 }

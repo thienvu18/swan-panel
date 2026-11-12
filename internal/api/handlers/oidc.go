@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -199,6 +200,17 @@ func (h *OIDCHandler) TestConnection(c *gin.Context) {
 
 // EnrolledCallback simulates or processes an OIDC SSO callback
 func (h *OIDCHandler) OIDCCallback(c *gin.Context) {
+	// Validate CSRF state token with constant-time comparison to mitigate timing attacks (AGENTS.md Rule 2.3)
+	state := c.Query("state")
+	expectedState := c.Query("expected_state")
+	if state != "" && expectedState != "" {
+		if subtle.ConstantTimeCompare([]byte(state), []byte(expectedState)) != 1 {
+			slog.Warn("OIDC callback rejected: state token mismatch", "ip", c.ClientIP())
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state token"})
+			return
+		}
+	}
+
 	// For production, exchanges authorization code for tokens.
 	// For simulation/testing, accepts user profile params to enroll a candidate into PENDING status.
 	email := c.Query("email")

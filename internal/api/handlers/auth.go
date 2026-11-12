@@ -92,3 +92,53 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	slog.Debug("User profile retrieved successfully", "user_id", userID, "email", user.Email)
 	c.JSON(http.StatusOK, gin.H{"user": user})
 }
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required"`
+	NewPassword     string `json:"new_password" binding:"required,min=8"`
+}
+
+// ChangePassword allows the authenticated user to safely update their account password
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		slog.Warn("Password change rejected: invalid input", "error", err, "ip", c.ClientIP())
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: new password must be at least 8 characters", "details": err.Error()})
+		return
+	}
+
+	var user db.User
+	if err := db.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Verify current password with constant-time bcrypt verification
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword)); err != nil {
+		slog.Warn("Password change rejected: current password mismatch", "user_id", userID, "ip", c.ClientIP())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Current password is incorrect"})
+		return
+	}
+
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		slog.Error("Failed to hash new password", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to securely hash password"})
+		return
+	}
+
+	if err := db.DB.Model(&user).Update("password_hash", string(newHash)).Error; err != nil {
+		slog.Error("Failed to persist updated password", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to persist password change"})
+		return
+	}
+
+	slog.Info("User password updated successfully", "user_id", user.ID, "email", user.Email)
+	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
+}

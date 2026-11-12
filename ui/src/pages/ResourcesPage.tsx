@@ -141,6 +141,7 @@ export const ResourcesPage: React.FC = () => {
   const getDownloadTooltip = (plat: string) => {
     if (plat === 'windows') return t('resources.download_windows');
     if (plat === 'linux') return t('resources.download_linux');
+    if (plat === 'android') return t('resources.download_android');
     return t('resources.download_apple');
   };
 
@@ -366,7 +367,7 @@ export const ResourcesPage: React.FC = () => {
                         <td className="py-2.5 px-3.5 text-subtle uppercase font-mono text-[11px]">{dev.platform}</td>
                         <td className="py-2.5 px-3.5 text-right space-x-1">
                           <button
-                            onClick={() => handleDownload(dev, dev.platform === 'linux' ? 'linux' : dev.platform === 'windows' ? 'windows' : 'apple')}
+                            onClick={() => handleDownload(dev, dev.platform === 'linux' ? 'linux' : dev.platform === 'windows' ? 'windows' : dev.platform === 'android' ? 'android' : 'apple')}
                             className="p-1.5 hover:bg-blue-500/10 rounded-md text-blue-500 transition-colors inline-block"
                             title={getDownloadTooltip(dev.platform)}
                           >
@@ -583,6 +584,7 @@ export const ResourcesPage: React.FC = () => {
               <option value="macos">macOS / iOS (Apple Profile)</option>
               <option value="windows">Windows 10/11 (PowerShell)</option>
               <option value="linux">Linux (swanctl.conf)</option>
+              <option value="android">Android (strongSwan .sswan)</option>
             </select>
           </div>
         </div>

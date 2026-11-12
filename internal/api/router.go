@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/swan-panel/swan-panel/internal/api/handlers"
@@ -27,28 +28,28 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
-	// Custom structured access logger using slog
+	// Custom structured access logger using slog with accurate request duration
 	r.Use(func(c *gin.Context) {
-		start := c.Request.Context()
+		start := time.Now()
 		c.Next()
+		latency := time.Since(start)
 		status := c.Writer.Status()
 		path := c.Request.URL.Path
 		method := c.Request.Method
 		clientIP := c.ClientIP()
 
 		if status >= 500 {
-			slog.Error("HTTP request failed with server error", "method", method, "path", path, "status", status, "ip", clientIP)
+			slog.Error("HTTP request failed with server error", "method", method, "path", path, "status", status, "latency", latency.String(), "ip", clientIP)
 		} else if status >= 400 {
-			slog.Warn("HTTP client request rejected", "method", method, "path", path, "status", status, "ip", clientIP)
+			slog.Warn("HTTP client request rejected", "method", method, "path", path, "status", status, "latency", latency.String(), "ip", clientIP)
 		} else {
-			slog.Debug("HTTP request processed", "method", method, "path", path, "status", status, "ip", clientIP)
+			slog.Debug("HTTP request processed", "method", method, "path", path, "status", status, "latency", latency.String(), "ip", clientIP)
 		}
-		_ = start
 	})
 
-	// Enterprise OWASP Security Headers & CORS Policy
+	// Enterprise OWASP Security Headers & CORS Whitelist Policy
 	r.Use(middleware.SecurityHeaders())
-	r.Use(middleware.CORSPolicy())
+	r.Use(middleware.CORSPolicy(cfg.AllowedOrigins, cfg.Environment != "production"))
 
 	// Global DDoS Rate Limiter (50 req/sec, burst 100)
 	r.Use(middleware.RateLimit(rate.Limit(50), 100))
@@ -88,6 +89,7 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 			protected.GET("/realtime/stream", realtime.DefaultBroker.SSEHandler())
 
 			protected.GET("/auth/me", authH.Me)
+			protected.PUT("/auth/password", authH.ChangePassword)
 			protected.GET("/dashboard/stats", dashboardH.GetStats)
 
 			// Device management & configuration profiles

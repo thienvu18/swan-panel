@@ -10,7 +10,6 @@ import {
   KeyRound,
   Settings,
   Terminal,
-  BookOpen,
   Sun,
   Moon,
   LogOut,
@@ -81,7 +80,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'oidc', label: t('nav.oidc_providers'), icon: KeyRound },
     { id: 'server', label: t('nav.server_settings'), icon: Settings },
     { id: 'logs', label: t('nav.system_logs'), icon: Terminal, dot: true },
-    { id: 'guide', label: t('nav.guide'), icon: BookOpen },
   ];
 
   return (
