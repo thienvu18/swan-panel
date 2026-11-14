@@ -34,11 +34,14 @@ else
     exit 1
 fi
 
-# Step 1: Admin Login (US-01)
-echo "[*] Authenticating as Root Administrator..."
-LOGIN_RESP=$(curl -s -X POST "${API_BASE}/api/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@swanpanel.internal","password":"admin123456"}')
+# Step 1: Login requires a previously bootstrapped administrator.
+# Never ship sample credentials in test scripts.
+: "${ADMIN_EMAIL:?Set ADMIN_EMAIL to the administrator account}"
+: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD to its password}"
+echo "[*] Authenticating as configured Administrator..."
+LOGIN_RESP=$(jq -nc --arg email "$ADMIN_EMAIL" --arg password "$ADMIN_PASSWORD" \
+  '{email:$email,password:$password}' | \
+  curl -fsS -X POST "${API_BASE}/api/auth/login" -H "Content-Type: application/json" -d @-)
 
 TOKEN=$(echo "$LOGIN_RESP" | jq -r '.token // empty')
 if [[ -n "$TOKEN" ]]; then
@@ -50,7 +53,7 @@ fi
 
 # Step 2: Auth Me (US-01)
 ME_RESP=$(curl -s -H "Authorization: Bearer $TOKEN" "${API_BASE}/api/auth/me")
-if [[ "$ME_RESP" =~ "admin@swanpanel.internal" ]]; then
+if echo "$ME_RESP" | jq -e --arg email "$ADMIN_EMAIL" '.user.email == $email and .user.is_admin == true' >/dev/null; then
     record_result "TC-03: User Info Verification (/api/auth/me)" "PASS" "Admin identity verified"
 else
     record_result "TC-03: User Info Verification (/api/auth/me)" "FAIL" "$ME_RESP"

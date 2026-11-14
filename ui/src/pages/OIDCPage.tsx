@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Key, Zap, Plus, Trash2, ShieldCheck, Search, Eye, EyeOff, X } from 'lucide-react';
+import { Key, Zap, Plus, Trash2, ShieldCheck, Search, Eye, EyeOff, X, Pencil } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
@@ -13,6 +13,11 @@ interface OIDCProviderItem {
   issuer_url: string;
   client_id: string;
   is_active: boolean;
+  authorization_url?: string;
+  token_url?: string;
+  jwks_url?: string;
+  userinfo_url?: string;
+  claim_mapping?: string;
 }
 
 export const OIDCPage: React.FC = () => {
@@ -22,6 +27,13 @@ export const OIDCPage: React.FC = () => {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSecret, setShowSecret] = useState(false);
+  const [editProvider, setEditProvider] = useState<string | null>(null);
+  const [providerActive, setProviderActive] = useState(true);
+  const [authorizationURL, setAuthorizationURL] = useState('');
+  const [tokenURL, setTokenURL] = useState('');
+  const [jwksURL, setJWKSURL] = useState('');
+  const [userinfoURL, setUserinfoURL] = useState('');
+  const [claimMapping, setClaimMapping] = useState('');
 
   // Form states
   const [name, setName] = useState('');
@@ -30,6 +42,22 @@ export const OIDCPage: React.FC = () => {
   const [clientID, setClientID] = useState('');
   const [clientSecret, setClientSecret] = useState('');
 
+  const clearForm = () => {
+    setEditProvider(null);
+    setName(''); setProviderType('google'); setIssuerURL('https://accounts.google.com');
+    setClientID(''); setClientSecret(''); setProviderActive(true);
+    setAuthorizationURL(''); setTokenURL(''); setJWKSURL('');
+    setUserinfoURL(''); setClaimMapping('');
+  };
+  const editForm = (p: OIDCProviderItem) => {
+    setEditProvider(p.id); setName(p.name); setProviderType(p.provider_type);
+    setIssuerURL(p.issuer_url); setClientID(p.client_id); setClientSecret('');
+    setProviderActive(p.is_active);
+    setAuthorizationURL(p.authorization_url || ''); setTokenURL(p.token_url || '');
+    setJWKSURL(p.jwks_url || ''); setUserinfoURL(p.userinfo_url || '');
+    setClaimMapping(p.claim_mapping || '');
+    setIsAddOpen(true);
+  };
   const redirectURI = `${window.location.origin}/api/auth/oidc/callback`;
 
   const { data } = useQuery<{ providers: OIDCProviderItem[] }>({
@@ -53,8 +81,8 @@ export const OIDCPage: React.FC = () => {
 
   const createProviderMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/oidc/providers', {
-        method: 'POST',
+      const res = await fetch(editProvider ? `/api/oidc/providers/${editProvider}` : '/api/oidc/providers', {
+        method: editProvider ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
@@ -65,6 +93,12 @@ export const OIDCPage: React.FC = () => {
           issuer_url: issuerURL,
           client_id: clientID,
           client_secret: clientSecret,
+          authorization_url: providerType === 'custom' ? authorizationURL.trim() : '',
+          token_url: providerType === 'custom' ? tokenURL.trim() : '',
+          jwks_url: providerType === 'custom' ? jwksURL.trim() : '',
+          userinfo_url: providerType === 'custom' ? userinfoURL.trim() : '',
+          claim_mapping: providerType === 'custom' ? claimMapping.trim() : '',
+          is_active: providerActive,
         }),
       });
       if (!res.ok) {
@@ -77,10 +111,7 @@ export const OIDCPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['oidc_providers'] });
       setIsAddOpen(false);
       createProviderMutation.reset();
-      setName('');
-      setIssuerURL('');
-      setClientID('');
-      setClientSecret('');
+      clearForm();
     },
   });
 
@@ -161,7 +192,7 @@ export const OIDCPage: React.FC = () => {
             <button
               type="button"
               data-action="add-oidc"
-              onClick={() => setIsAddOpen(true)}
+              onClick={() => { clearForm(); setIsAddOpen(true); }}
               className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs shrink-0"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -192,7 +223,7 @@ export const OIDCPage: React.FC = () => {
                       description={searchQuery ? `No SSO providers match '${searchQuery}'.` : 'Connect Google Workspace, Microsoft Entra ID, or Okta for federated zero-trust authentication.'}
                       actionLabel={searchQuery ? 'Clear Search' : t('oidc.add_provider')}
                       actionIcon={searchQuery ? X : Plus}
-                      onAction={searchQuery ? () => setSearchQuery('') : () => setIsAddOpen(true)}
+                      onAction={searchQuery ? () => setSearchQuery('') : () => { clearForm(); setIsAddOpen(true); }}
                       className="border-none shadow-none bg-transparent"
                     />
                   </td>
@@ -218,8 +249,8 @@ export const OIDCPage: React.FC = () => {
                       </div>
                     </td>
                     <td className="py-2.5 px-3.5">
-                      <span className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium">
-                        Active
+                      <span className={p.is_active ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium' : 'bg-slate-500/10 text-subtle px-2 py-0.5 rounded-md text-[10px] font-mono font-medium'}>
+                        {p.is_active ? 'Active' : 'Disabled'}
                       </span>
                     </td>
                     <td className="py-2.5 px-3.5 text-right space-x-1">
@@ -231,9 +262,12 @@ export const OIDCPage: React.FC = () => {
                       >
                         <Zap className="w-3.5 h-3.5" />
                       </button>
+                      <button type="button" onClick={() => editForm(p)} className="p-1.5 hover:bg-blue-500/10 rounded-md text-blue-500 transition-colors inline-block" title="Edit provider" aria-label={`Edit ${p.name}`}>
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
                       <button
                         type="button"
-                        onClick={() => deleteProviderMutation.mutate(p.id)}
+                        onClick={() => { if (window.confirm(`Delete provider "${p.name}"?`)) deleteProviderMutation.mutate(p.id); }}
                         className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors inline-block"
                         title={t('common.delete')}
                       >
@@ -254,8 +288,9 @@ export const OIDCPage: React.FC = () => {
         onClose={() => {
           setIsAddOpen(false);
           createProviderMutation.reset();
+          clearForm();
         }}
-        title={t('oidc.add_provider')}
+        title={editProvider ? 'Edit OIDC Provider' : t('oidc.add_provider')}
         error={(createProviderMutation.error as Error)?.message}
       >
         <div className="space-y-3 text-xs">
@@ -267,7 +302,8 @@ export const OIDCPage: React.FC = () => {
                 const val = e.target.value;
                 setProviderType(val);
                 if (val === 'google') setIssuerURL('https://accounts.google.com');
-                if (val === 'microsoft') setIssuerURL('https://login.microsoftonline.com/common/v2.0');
+                if (val === 'microsoft') setIssuerURL('');
+                if (val === 'keycloak' || val === 'custom') setIssuerURL('');
               }}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
             >
@@ -295,7 +331,7 @@ export const OIDCPage: React.FC = () => {
               type="text"
               value={issuerURL}
               onChange={(e) => setIssuerURL(e.target.value)}
-              placeholder="e.g. https://accounts.google.com"
+              placeholder={providerType === "microsoft" ? "https://login.microsoftonline.com/<tenant-id>/v2.0" : providerType === "keycloak" ? "https://sso.example.com/realms/company" : "https://accounts.google.com"}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -332,13 +368,38 @@ export const OIDCPage: React.FC = () => {
               </button>
             </div>
           </div>
+          {providerType === 'custom' && <>
+            <p className="text-[11px] text-subtle">Leave endpoints empty for standard OIDC Discovery. For a provider without Discovery, enter all three mandatory endpoints.</p>
+            {[
+              ['Authorization endpoint', authorizationURL, setAuthorizationURL, 'https://id.example.com/oauth/authorize'],
+              ['Token endpoint', tokenURL, setTokenURL, 'https://id.example.com/oauth/token'],
+              ['JWKS endpoint', jwksURL, setJWKSURL, 'https://id.example.com/.well-known/jwks.json'],
+              ['UserInfo endpoint (optional)', userinfoURL, setUserinfoURL, 'https://id.example.com/userinfo'],
+            ].map(([label, value, setter, placeholder]) => (
+              <div key={label as string}>
+                <label className="text-subtle block mb-1">{label as string}</label>
+                <input type="url" value={value as string} onChange={e => (setter as React.Dispatch<React.SetStateAction<string>>)(e.target.value)} placeholder={placeholder as string}
+                  className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs" />
+              </div>
+            ))}
+            <div>
+              <label className="text-subtle block mb-1">Claim mapping (JSON)</label>
+              <textarea rows={3} value={claimMapping} onChange={e => setClaimMapping(e.target.value)}
+                placeholder={'{"email":"email","name":"name","email_verified":"email_verified"}'}
+                className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs" />
+              <p className="text-[10px] text-subtle">The verified sub claim always remains the immutable identity. Mapping only affects profile fields.</p>
+            </div>
+          </>}
+          <label className="flex gap-2 items-center text-subtle">
+            <input type="checkbox" checked={providerActive} onChange={e => setProviderActive(e.target.checked)} /> Enabled
+          </label>
         </div>
 
         <div className="flex gap-2 pt-2 border-t subtle-border">
           <button
             type="button"
             onClick={() => createProviderMutation.mutate()}
-            disabled={!name || !issuerURL || !clientID || createProviderMutation.isPending}
+            disabled={!name.trim() || !issuerURL.trim() || !clientID.trim() || (!editProvider && !clientSecret.trim()) || createProviderMutation.isPending}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
             {createProviderMutation.isPending ? 'Saving...' : t('common.save')}
@@ -348,6 +409,7 @@ export const OIDCPage: React.FC = () => {
             onClick={() => {
               setIsAddOpen(false);
               createProviderMutation.reset();
+              clearForm();
             }}
             className="px-3 py-1.5 border subtle-border rounded-lg hover:bg-slate-500/10 text-xs"
           >

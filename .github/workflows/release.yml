@@ -1,62 +1,189 @@
 name: Release
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    name: Build & Publish Release Binaries
-    runs-on: ubuntu-latest
-
+  verify:
+    name: Verify tag before publishing
+    runs-on: ubuntu-24.04
+    env:
+      CGO_ENABLED: "1"
     steps:
-      - name: Checkout Code
+      - name: Checkout tagged commit
         uses: actions/checkout@v7
+
+      - name: Install native C compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
-          cache: 'npm'
+          node-version: "26"
+          cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      - name: Build Frontend SPA
+      - name: Install frontend
+        run: cd ui && npm ci
+
+      - name: Test frontend
+        run: cd ui && npm test
+
+      - name: Build embedded frontend
+        run: cd ui && npm run build
+
+      - name: Verify production frontend build
         run: |
-          cd ui
-          npm ci
-          npm run build
+          test -s ui/dist/index.html
+          find ui/dist/assets -type f -name '*.js' | grep -q .
+
+      - name: Upload embedded frontend assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: swan-panel-ui-dist
+          path: ui/dist/
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.27'
-          check-latest: true
+          go-version-file: go.mod
+          cache: true
 
-      - name: Cross-Compile Binaries
+      - name: Validate shell scripts
         run: |
-          mkdir -p dist
-          LDFLAGS="-s -w -X main.version=${{ github.ref_name }}"
+          bash -n install.sh
+          sh -n scripts/build-linux-static.sh
+          sh -n scripts/check-dependencies.sh
+          sh -n scripts/test-release-config.sh
+          sh -n scripts/check-descriptive-test-names.sh
 
-          echo "Compiling linux/amd64..."
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o dist/swan-panel-linux-amd64 ./cmd/server
+      - name: Enforce descriptive test naming
+        run: sh scripts/check-descriptive-test-names.sh
 
-          echo "Compiling linux/arm64..."
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o dist/swan-panel-linux-arm64 ./cmd/server
+      - name: Check release configuration invariants
+        run: sh scripts/test-release-config.sh
 
-          echo "Compiling darwin/amd64..."
-          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o dist/swan-panel-darwin-amd64 ./cmd/server
+      - name: Check reviewed dependencies
+        run: sh scripts/check-dependencies.sh
 
-          echo "Compiling darwin/arm64..."
-          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o dist/swan-panel-darwin-arm64 ./cmd/server
+      - name: Verify go.mod and go.sum are tidy
+        run: go mod tidy -diff
 
-      - name: Generate SHA256 Checksums
+      - name: Go formatting
         run: |
+          unformatted="$(gofmt -l embed.go embed_test.go $(find cmd internal -name '*.go'))"
+          if [ -n "$unformatted" ]; then
+            printf 'Unformatted Go files:\n%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.14.0
+          args: ./...
+
+      - name: Go regression tests with CGO and race detector
+        env:
+          SWANPANEL_REQUIRE_BUILT_UI: "1"
+        run: go test -count=1 -race ./...
+
+  build:
+    name: Linux ${{ matrix.arch }} (native musl, static CGO)
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      CGO_ENABLED: "1"
+      VERSION: ${{ github.ref_name }}
+      OUTPUT: dist/swan-panel-linux-${{ matrix.arch }}
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v7
+
+      - name: Install native musl and verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential musl-tools binutils file
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download verified frontend assets
+        uses: actions/download-artifact@v4
+        with:
+          name: swan-panel-ui-dist
+          path: ui/dist/
+
+      - name: Verify embedded frontend bundle exists
+        run: |
+          test -s ui/dist/index.html
+          find ui/dist/assets -type f -name '*.js' | grep -q .
+
+      - name: Test Go on native architecture with CGO
+        env:
+          SWANPANEL_REQUIRE_BUILT_UI: "1"
+        run: go test -count=1 ./...
+
+      - name: Build + validate static release binary
+        run: sh scripts/build-linux-static.sh
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: swan-panel-linux-${{ matrix.arch }}
+          path: dist/swan-panel-linux-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    name: Publish Linux release with checksums
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download all architecture artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: swan-panel-linux-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Verify both binaries and generate checksums
+        run: |
+          set -eu
           cd dist
-          sha256sum swan-panel-* > checksums.txt
+          test -s swan-panel-linux-amd64
+          test -s swan-panel-linux-arm64
+          file swan-panel-linux-amd64 swan-panel-linux-arm64
+          sha256sum swan-panel-linux-amd64 swan-panel-linux-arm64 > checksums.txt
           cat checksums.txt
 
       - name: Publish GitHub Release
@@ -66,11 +193,7 @@ jobs:
           files: |
             dist/swan-panel-linux-amd64
             dist/swan-panel-linux-arm64
-            dist/swan-panel-darwin-amd64
-            dist/swan-panel-darwin-arm64
             dist/checksums.txt
           generate_release_notes: true
           draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: ${{ contains(github.ref_name, '-') }}

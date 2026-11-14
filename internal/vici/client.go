@@ -26,18 +26,22 @@ type SessionInfo struct {
 
 // ConnectionConfig defines parameters for dynamic strongSwan IKEv2 connection loading
 type ConnectionConfig struct {
-	Name           string `json:"name"`
-	ServerIdentity string `json:"server_identity"`
-	ReauthTime     string `json:"reauth_time"`
-	RekeyTimeIKE   string `json:"rekey_time_ike"`
-	RekeyTimeChild string `json:"rekey_time_child"`
-	MobikeEnabled  bool   `json:"mobike_enabled"`
-	ForceEncapNATT bool   `json:"force_encap_natt"`
-	DPDDelay       string `json:"dpd_delay"`
-	DPDTimeout     string `json:"dpd_timeout"`
+	Name           string   `json:"name"`
+	ServerIdentity string   `json:"server_identity"`
+	ReauthTime     string   `json:"reauth_time"`
+	RekeyTimeIKE   string   `json:"rekey_time_ike"`
+	RekeyTimeChild string   `json:"rekey_time_child"`
+	MobikeEnabled  bool     `json:"mobike_enabled"`
+	ForceEncapNATT bool     `json:"force_encap_natt"`
+	DPDDelay       string   `json:"dpd_delay"`
+	DPDTimeout     string   `json:"dpd_timeout"`
 	IKEProposals   string   `json:"ike_proposals"`
 	ESPProposals   string   `json:"esp_proposals"`
 	Pools          []string `json:"pools"`
+	RemoteIdentity string   `json:"remote_identity"`
+	RemoteTS       []string `json:"remote_ts"`
+	LocalTS        []string `json:"local_ts"`
+	DPDAction      string   `json:"dpd_action"`
 }
 
 // DaemonStats represents live charon daemon runtime statistics
@@ -53,11 +57,9 @@ type DaemonStats struct {
 
 // Client wraps govici.Session with thread-safe auto-reconnect and robust VICI command handling
 type Client struct {
-	mu           sync.RWMutex
-	socketPath   string
-	session      *vici.Session
-	isSimulated  bool
-	mockSessions []SessionInfo
+	mu         sync.RWMutex
+	socketPath string
+	session    *vici.Session
 }
 
 // DefaultClient is the package singleton client
@@ -77,8 +79,10 @@ func GetClient(socketPath string) *Client {
 
 // resolveSocketPath discovers the active VICI socket on the filesystem
 func resolveSocketPath(explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
 	candidates := []string{
-		explicit,
 		os.Getenv("VICI_SOCKET"),
 		"/var/run/charon.vici",
 		"/run/charon.vici",
@@ -101,29 +105,7 @@ func resolveSocketPath(explicit string) string {
 
 // NewClient creates a new VICI client instance
 func NewClient(socketPath string) *Client {
-	c := &Client{
-		socketPath: socketPath,
-		mockSessions: []SessionInfo{
-			{
-				IKEName:      "ikev2-thienvu-macbook",
-				PeerIdentity: "thienvu-macbook",
-				VirtualIP:    "10.0.1.15",
-				RemoteWAN:    "113.161.42.18:500",
-				Uptime:       "3h 45m",
-				CipherSuite:  "AES_GCM_256",
-				Established:  13500,
-			},
-			{
-				IKEName:      "ikev2-db-primary-prod",
-				PeerIdentity: "db-primary-prod",
-				VirtualIP:    "10.100.1.5",
-				RemoteWAN:    "171.244.18.9:4500",
-				Uptime:       "14d 6h",
-				CipherSuite:  "AES_GCM_256",
-				Established:  1231200,
-			},
-		},
-	}
+	c := &Client{socketPath: socketPath}
 	_, _ = c.getSession()
 	return c
 }
@@ -141,7 +123,6 @@ func (c *Client) getSession() (*vici.Session, error) {
 	c.socketPath = targetSocket
 
 	if _, err := os.Stat(targetSocket); err != nil {
-		c.isSimulated = true
 		c.session = nil
 		slog.Debug("strongSwan VICI socket not found on filesystem", "socket", targetSocket)
 		return nil, fmt.Errorf("VICI socket not found at %s: %w", targetSocket, err)
@@ -149,14 +130,12 @@ func (c *Client) getSession() (*vici.Session, error) {
 
 	session, err := vici.NewSession(vici.WithSocketPath(targetSocket))
 	if err != nil {
-		c.isSimulated = true
 		c.session = nil
 		slog.Warn("Failed to establish VICI connection to strongSwan daemon", "socket", targetSocket, "error", err)
 		return nil, fmt.Errorf("failed to connect to %s: %w", targetSocket, err)
 	}
 
 	c.session = session
-	c.isSimulated = false
 	slog.Info("Successfully established VICI session with strongSwan charon daemon", "socket", targetSocket)
 	return c.session, nil
 }
@@ -182,35 +161,26 @@ func (c *Client) Reconnect() error {
 func (c *Client) IsConnected() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return !c.isSimulated && c.session != nil
+	return c.session != nil
 }
 
 // ListSAs queries active IKE and CHILD SAs
 func (c *Client) ListSAs(ctx context.Context) ([]SessionInfo, error) {
 	session, err := c.getSession()
 	if err != nil {
-		if c.isSimulated {
-			slog.Debug("Returning simulated active VICI sessions", "count", len(c.mockSessions))
-			c.mu.RLock()
-			defer c.mu.RUnlock()
-			res := make([]SessionInfo, len(c.mockSessions))
-			copy(res, c.mockSessions)
-			return res, nil
-		}
 		return nil, err
 	}
 
 	slog.Debug("Querying live strongSwan SAs via VICI list-sas")
 	req := vici.NewMessage()
-	msgs, err := session.StreamedCommandRequest("list-sas", "list-sa", req)
-	if err != nil {
-		c.invalidateSession()
-		slog.Error("VICI list-sas command failed, invalidated session", "error", err)
-		return nil, fmt.Errorf("failed to stream list-sas: %w", err)
-	}
-
 	var results []SessionInfo
-	for _, m := range msgs {
+	for m, streamErr := range session.CallStreaming(ctx, "list-sas", "list-sa", req) {
+		if streamErr != nil {
+			c.invalidateSession()
+			slog.Error("VICI list-sas command failed, invalidated session", "error", streamErr)
+			return nil, fmt.Errorf("failed to stream list-sas: %w", streamErr)
+		}
+
 		for _, ikeName := range m.Keys() {
 			ikeMap := m.Get(ikeName)
 			if ikeDict, ok := ikeMap.(*vici.Message); ok {
@@ -274,19 +244,6 @@ func (c *Client) ListSAs(ctx context.Context) ([]SessionInfo, error) {
 func (c *Client) TerminateSA(ctx context.Context, ikeName string) error {
 	session, err := c.getSession()
 	if err != nil {
-		if c.isSimulated {
-			c.mu.Lock()
-			defer c.mu.Unlock()
-			var updated []SessionInfo
-			for _, s := range c.mockSessions {
-				if s.IKEName != ikeName && s.PeerIdentity != ikeName {
-					updated = append(updated, s)
-				}
-			}
-			c.mockSessions = updated
-			slog.Info("Simulated SA session terminated successfully", "ike_name", ikeName)
-			return nil
-		}
 		return err
 	}
 
@@ -296,7 +253,7 @@ func (c *Client) TerminateSA(ctx context.Context, ikeName string) error {
 		return err
 	}
 
-	resp, err := session.CommandRequest("terminate", msg)
+	resp, err := session.Call(ctx, "terminate", msg)
 	if err != nil {
 		c.invalidateSession()
 		slog.Error("VICI terminate command failed", "ike", ikeName, "error", err)
@@ -304,22 +261,15 @@ func (c *Client) TerminateSA(ctx context.Context, ikeName string) error {
 	}
 
 	if success := resp.Get("success"); success != nil && success.(string) == "yes" {
-		slog.Info("strongSwan SA terminated successfully", "ike", ikeName)
 		return nil
 	}
-
-	slog.Warn("VICI terminate returned non-success response", "ike", ikeName, "errmsg", resp.Get("errmsg"))
-	return nil
+	return fmt.Errorf("VICI termination rejected for %s: %v", ikeName, resp.Get("errmsg"))
 }
 
 // LoadConnectionConfig dynamically loads strongSwan connection parameters into RAM via VICI load-conn
 func (c *Client) LoadConnectionConfig(ctx context.Context, cfg ConnectionConfig) error {
 	session, err := c.getSession()
 	if err != nil {
-		if c.isSimulated {
-			slog.Info("Simulated VICI load-conn executed successfully in RAM (zero downtime)", "conn", cfg.Name)
-			return nil
-		}
 		return fmt.Errorf("failed to get VICI session: %w", err)
 	}
 
@@ -387,12 +337,26 @@ func (c *Client) LoadConnectionConfig(ctx context.Context, cfg ConnectionConfig)
 	// Remote authentication round
 	remoteMsg := vici.NewMessage()
 	_ = remoteMsg.Set("auth", "pubkey")
+	if cfg.RemoteIdentity == "" {
+		return fmt.Errorf("remote identity must be explicit for each device")
+	}
+	_ = remoteMsg.Set("id", cfg.RemoteIdentity)
+	_ = remoteMsg.Set("revocation", "strict")
 	_ = connMsg.Set("remote", remoteMsg)
 
 	// Child SA configuration
 	childMsg := vici.NewMessage()
 	_ = childMsg.Set("mode", "tunnel")
-	_ = childMsg.Set("local_ts", []string{"0.0.0.0/0", "::/0"})
+	if len(cfg.RemoteTS) == 0 {
+		return fmt.Errorf("remote traffic selector required")
+	}
+	_ = childMsg.Set("remote_ts", cfg.RemoteTS)
+	if len(cfg.LocalTS) > 0 {
+		_ = childMsg.Set("local_ts", cfg.LocalTS)
+	} else {
+		// Tunnel may come up without grants, but nftables drops all forwarded traffic.
+		_ = childMsg.Set("local_ts", []string{"0.0.0.0/32"})
+	}
 	if cfg.ESPProposals != "" {
 		var espProps []string
 		for _, p := range strings.Split(cfg.ESPProposals, ",") {
@@ -408,7 +372,11 @@ func (c *Client) LoadConnectionConfig(ctx context.Context, cfg ConnectionConfig)
 	if cfg.RekeyTimeChild != "" {
 		_ = childMsg.Set("rekey_time", cfg.RekeyTimeChild)
 	}
-	_ = childMsg.Set("dpd_action", "clear")
+	if cfg.DPDAction != "" {
+		_ = childMsg.Set("dpd_action", cfg.DPDAction)
+	} else {
+		_ = childMsg.Set("dpd_action", "clear")
+	}
 
 	childrenMsg := vici.NewMessage()
 	_ = childrenMsg.Set("net", childMsg)
@@ -417,7 +385,7 @@ func (c *Client) LoadConnectionConfig(ctx context.Context, cfg ConnectionConfig)
 	rootMsg := vici.NewMessage()
 	_ = rootMsg.Set(connName, connMsg)
 
-	resp, err := session.CommandRequest("load-conn", rootMsg)
+	resp, err := session.Call(ctx, "load-conn", rootMsg)
 	if err != nil {
 		c.invalidateSession()
 		slog.Error("VICI load-conn command failed", "conn", connName, "error", err)
@@ -468,9 +436,6 @@ func (c *Client) LoadConnection(ctx context.Context, connName string, params map
 func (c *Client) LoadPool(ctx context.Context, poolName, cidr string) error {
 	session, err := c.getSession()
 	if err != nil {
-		if c.isSimulated {
-			return nil
-		}
 		return err
 	}
 
@@ -480,7 +445,7 @@ func (c *Client) LoadPool(ctx context.Context, poolName, cidr string) error {
 	rootMsg := vici.NewMessage()
 	_ = rootMsg.Set(poolName, subMsg)
 
-	resp, err := session.CommandRequest("load-pool", rootMsg)
+	resp, err := session.Call(ctx, "load-pool", rootMsg)
 	if err != nil {
 		c.invalidateSession()
 		slog.Error("VICI load-pool command failed", "pool", poolName, "error", err)
@@ -526,7 +491,7 @@ func (c *Client) GetDaemonStats(ctx context.Context) (*DaemonStats, error) {
 	session, err := c.getSession()
 	if err == nil && session != nil {
 		req := vici.NewMessage()
-		resp, err := session.CommandRequest("stats", req)
+		resp, err := session.Call(ctx, "stats", req)
 		if err == nil && resp != nil {
 			stats.Status = "active"
 
@@ -582,14 +547,6 @@ func (c *Client) GetDaemonStats(ctx context.Context) (*DaemonStats, error) {
 		}
 	}
 
-	// Simulation mode fallback for dev environments
-	if stats.Status == "inactive" && c.isSimulated {
-		stats.Status = "active"
-		stats.Uptime = "Development (simulated)"
-		stats.Memory = "12.4 MB"
-		stats.PID = 1
-	}
-
 	return stats, nil
 }
 
@@ -613,4 +570,25 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dm %ds", minutes, seconds)
 	}
 	return fmt.Sprintf("%ds", seconds)
+}
+
+// UnloadConnection removes an issued device identity from the daemon.
+func (c *Client) UnloadConnection(ctx context.Context, name string) error {
+	session, err := c.getSession()
+	if err != nil {
+		return err
+	}
+	request := vici.NewMessage()
+	if err := request.Set("name", name); err != nil {
+		return err
+	}
+	resp, err := session.Call(ctx, "unload-conn", request)
+	if err != nil {
+		c.invalidateSession()
+		return err
+	}
+	if resp.Get("success") == "yes" {
+		return nil
+	}
+	return fmt.Errorf("unload-conn failed: %v", resp.Get("errmsg"))
 }

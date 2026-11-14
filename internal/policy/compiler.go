@@ -3,119 +3,107 @@ package policy
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"net/netip"
+	"sort"
 	"strings"
 
 	"github.com/swan-panel/swan-panel/internal/db"
 	"gorm.io/gorm"
 )
 
-// CompilationResult represents compiled network traffic selectors and firewall filters for a device
 type CompilationResult struct {
 	DeviceID         string   `json:"device_id"`
 	VirtualIP        string   `json:"virtual_ip"`
-	AllowedSelectors []string `json:"allowed_selectors"` // Traffic Selectors (IKEv2 remote_ts)
-	DenyFilters      []string `json:"deny_filters"`      // Gateway Kernel nftables drop rules
+	AllowedSelectors []string `json:"allowed_selectors"`
+	DeniedSelectors  []string `json:"denied_selectors"`
+	DenyFilters      []string `json:"deny_filters"` // Legacy diagnostics; never execute these strings.
 }
 
-// Compiler compiles Zero-Trust access rules for enrolled devices
-type Compiler struct {
-	database *gorm.DB
-}
+type Compiler struct{ database *gorm.DB }
 
-// NewCompiler creates a new Policy Compiler
-func NewCompiler(database *gorm.DB) *Compiler {
-	return &Compiler{database: database}
-}
+func NewCompiler(database *gorm.DB) *Compiler { return &Compiler{database: database} }
 
-// CompileForDevice evaluates all access rules and generates runtime Traffic Selectors and nftables DROP rules
+// Default deny: enrollment into a subnet never grants access to that subnet.
 func (c *Compiler) CompileForDevice(ctx context.Context, deviceID string) (*CompilationResult, error) {
-	slog.Debug("Compiling Zero-Trust access policies for device", "device_id", deviceID)
-
 	var dev db.Device
-	if err := c.database.WithContext(ctx).Preload("User.UserGroups").Preload("ResourceGroup").Where("id = ?", deviceID).First(&dev).Error; err != nil {
-		slog.Error("Device not found for policy compilation", "device_id", deviceID, "error", err)
-		return nil, fmt.Errorf("device not found: %w", err)
+	if err := c.database.WithContext(ctx).Preload("User.UserGroups").First(&dev, "id = ?", deviceID).Error; err != nil {
+		return nil, err
 	}
-
-	result := &CompilationResult{
-		DeviceID:  dev.ID,
-		VirtualIP: dev.VirtualIP,
+	if dev.IsRevoked {
+		return nil, fmt.Errorf("device %s revoked", deviceID)
 	}
-
-	allowedSet := make(map[string]struct{})
-
-	// Base rule: Enrolled Resource Group subnet
-	if dev.ResourceGroup.CIDRBlock != "" {
-		allowedSet[dev.ResourceGroup.CIDRBlock] = struct{}{}
+	addr, err := netip.ParseAddr(dev.VirtualIP)
+	if err != nil || !addr.Is4() {
+		return nil, fmt.Errorf("invalid IPv4 device address: %s", dev.VirtualIP)
 	}
-
-	// 1. If device belongs to a User, evaluate User Groups and Direct Grants
-	if dev.UserID != nil && dev.User != nil {
-		userID := *dev.UserID
-
-		// Group Policies: find all groups user belongs to
-		for _, grp := range dev.User.UserGroups {
-			var rules []db.AccessRule
-			if err := c.database.WithContext(ctx).Where("subject_type = ? AND subject_id = ? AND action = ?", "user_group", grp.ID, "ALLOW").Find(&rules).Error; err == nil {
-				for _, r := range rules {
-					targetCIDR := c.resolveTargetCIDR(ctx, r.TargetType, r.TargetValue)
-					if targetCIDR != "" {
-						allowedSet[targetCIDR] = struct{}{}
-					}
-				}
-			}
+	result := &CompilationResult{DeviceID: dev.ID, VirtualIP: addr.String()}
+	allow := map[string]bool{}
+	deny := map[string]bool{}
+	subjectIDs := map[string]map[string]bool{"device": {dev.ID: true}}
+	if dev.UserID != nil && dev.User != nil && dev.User.Status == "ACTIVE" {
+		subjectIDs["user"] = map[string]bool{*dev.UserID: true}
+		subjectIDs["user_group"] = map[string]bool{}
+		for _, group := range dev.User.UserGroups {
+			subjectIDs["user_group"][group.ID] = true
 		}
-
-		// Direct Grants: ALLOW rules for this specific User
-		var directRules []db.AccessRule
-		if err := c.database.WithContext(ctx).Where("subject_type = ? AND subject_id = ? AND action = ?", "user", userID, "ALLOW").Find(&directRules).Error; err == nil {
-			for _, r := range directRules {
-				targetCIDR := c.resolveTargetCIDR(ctx, r.TargetType, r.TargetValue)
-				if targetCIDR != "" {
-					allowedSet[targetCIDR] = struct{}{}
-				}
-			}
+	} else if dev.DeviceType == "user" {
+		// Suspended or missing owner -> no grants, regardless of device-specific rules.
+		return result, nil
+	}
+	var rules []db.AccessRule
+	if err := c.database.WithContext(ctx).Find(&rules).Error; err != nil {
+		return nil, err
+	}
+	for _, rule := range rules {
+		if !subjectIDs[rule.SubjectType][rule.SubjectID] {
+			continue
 		}
-
-		// Deny Exclusions: DENY rules take ultimate precedence via gateway firewall
-		var denyRules []db.AccessRule
-		if err := c.database.WithContext(ctx).Where("subject_type = ? AND subject_id = ? AND action = ?", "user", userID, "DENY").Find(&denyRules).Error; err == nil {
-			for _, r := range denyRules {
-				targetCIDR := c.resolveTargetCIDR(ctx, r.TargetType, r.TargetValue)
-				if targetCIDR != "" {
-					// Synthesize nftables DROP rule for linux kernel gateway
-					ruleCmd := fmt.Sprintf("nft add rule inet filter forward ip saddr %s ip daddr %s drop", dev.VirtualIP, targetCIDR)
-					result.DenyFilters = append(result.DenyFilters, ruleCmd)
-					slog.Info("Generated kernel exclusion DROP filter", "device", dev.Hostname, "user_id", userID, "target", targetCIDR)
-				}
-			}
+		cidr, err := c.resolveTargetCIDR(ctx, rule.TargetType, rule.TargetValue)
+		if err != nil {
+			return nil, fmt.Errorf("rule %s: %w", rule.ID, err)
+		}
+		switch rule.Action {
+		case "ALLOW":
+			allow[cidr] = true
+		case "DENY":
+			deny[cidr] = true
+		default:
+			return nil, fmt.Errorf("invalid policy action for %s", rule.ID)
 		}
 	}
-
-	for cidr := range allowedSet {
+	for cidr := range allow {
 		result.AllowedSelectors = append(result.AllowedSelectors, cidr)
 	}
-
-	slog.Info("Policy compilation complete", "device", dev.Hostname, "selectors_count", len(result.AllowedSelectors), "deny_filters_count", len(result.DenyFilters))
+	for cidr := range deny {
+		result.DeniedSelectors = append(result.DeniedSelectors, cidr)
+		result.DenyFilters = append(result.DenyFilters, fmt.Sprintf("nft add rule inet swanpanel forward ip saddr %s ip daddr %s drop", dev.VirtualIP, cidr))
+	}
+	sort.Strings(result.AllowedSelectors)
+	sort.Strings(result.DeniedSelectors)
+	sort.Strings(result.DenyFilters)
 	return result, nil
 }
 
-func (c *Compiler) resolveTargetCIDR(ctx context.Context, targetType, targetValue string) string {
-	if targetType == "cidr_ip" {
-		val := strings.TrimSpace(targetValue)
-		if !strings.Contains(val, "/") {
-			val += "/32"
+func (c *Compiler) resolveTargetCIDR(ctx context.Context, kind, value string) (string, error) {
+	if kind == "resource_group" {
+		var group db.ResourceGroup
+		if err := c.database.WithContext(ctx).Where("id = ?", value).First(&group).Error; err != nil {
+			return "", err
 		}
-		return val
+		value = group.CIDRBlock
+	} else if kind != "cidr_ip" {
+		return "", fmt.Errorf("invalid target type")
 	}
-
-	if targetType == "resource_group" {
-		var rg db.ResourceGroup
-		if err := c.database.WithContext(ctx).Where("id = ? OR name = ?", targetValue, targetValue).First(&rg).Error; err == nil {
-			return rg.CIDRBlock
+	value = strings.TrimSpace(value)
+	if addr, err := netip.ParseAddr(value); err == nil {
+		if !addr.Is4() {
+			return "", fmt.Errorf("IPv6 policy is not supported")
 		}
+		return netip.PrefixFrom(addr, 32).String(), nil
 	}
-
-	return ""
+	prefix, err := netip.ParsePrefix(value)
+	if err != nil || !prefix.Addr().Is4() {
+		return "", fmt.Errorf("invalid IPv4 CIDR %q", value)
+	}
+	return prefix.Masked().String(), nil
 }

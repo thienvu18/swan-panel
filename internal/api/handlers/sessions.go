@@ -23,7 +23,7 @@ func (h *SessionsHandler) ListSessions(c *gin.Context) {
 	sessions, err := viciClient.ListSAs(c.Request.Context())
 	if err != nil {
 		slog.Error("Failed to list active sessions from VICI", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch active sessions"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "strongSwan runtime unavailable"})
 		return
 	}
 
@@ -45,7 +45,7 @@ func (h *SessionsHandler) TerminateSession(c *gin.Context) {
 	viciClient := vici.GetClient("")
 	if err := viciClient.TerminateSA(c.Request.Context(), req.IKEName); err != nil {
 		slog.Error("Failed to terminate session via VICI", "ike_name", req.IKEName, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to terminate session"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Unable to terminate IKE session"})
 		return
 	}
 

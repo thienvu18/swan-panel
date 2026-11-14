@@ -42,7 +42,8 @@ services:
       - VICI_SOCKET=/var/run/charon.vici
       - ENVIRONMENT=production
       - LOG_LEVEL=info
-      - JWT_SECRET=${JWT_SECRET:-swanpanel-change-in-production-random-secret-key}
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET to a cryptographically random secret of at least 32 characters}
+      - PUBLIC_URL=${PUBLIC_URL:-}
 
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://127.0.0.1:8080/api/health"]

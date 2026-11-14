@@ -53,15 +53,17 @@ As this control plane manages critical corporate network access, security is par
 ### 3.1. Never Reinvent the Wheel
 * Use cohesive, battle-tested, high-star libraries:
   * HTTP & Routing: `github.com/gin-gonic/gin` (~78k stars)
-  * Database & ORM: `gorm.io/gorm` (~37k stars) with pure Go SQLite `github.com/glebarez/sqlite`
+  * Database & ORM: `gorm.io/gorm` with its official `gorm.io/driver/sqlite` dialect (native SQLite using CGO)
   * DNS Engine: `github.com/miekg/dns` (~8.3k stars)
   * strongSwan IPC: `github.com/strongswan/govici` (Official strongSwan project)
   * OIDC / SSO: `github.com/coreos/go-oidc/v3` + `golang.org/x/oauth2`
   * Frontend: React 19, Vite, Tailwind CSS v4, Lucide React, `react-i18next`, `@tanstack/react-query`
 * **RULE:** Do NOT install fragmented micro-libraries for simple tasks (e.g. left-pad, date formatting, simple math). Keep the dependency footprint clean and cohesive.
 
-### 3.2. Pure Go & Cross-Platform Compilation
-* Avoid CGO wherever possible so the binary can be compiled across macOS, Linux, and Windows without requiring cross-compilation C toolchains.
+### 3.2. Linux Gateway Release Builds (CGO)
+* SwanPanel gateway production artifacts target Linux AMD64/ARM64. SQLite uses the official GORM driver and **requires CGO**.
+* CI and release jobs must compile on native Linux runners, link SQLite statically using musl, and validate that release artifacts have no dynamic ELF interpreter.
+* A macOS developer build may use local Clang; there are no macOS/Windows SwanPanel gateway binary releases. Those systems remain supported as VPN clients.
 
 ### 3.3. Modern Toolchain & Latest Dependencies
 * Always target modern, cutting-edge stable dependencies: Go 1.26+ (Go 1.27 active), Tailwind CSS v4/v5, React 19, Vite 6.

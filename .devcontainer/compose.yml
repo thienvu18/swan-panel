@@ -1,0 +1,52 @@
+name: swan-panel-dev
+
+services:
+  workspace:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    image: swan-panel-dev:local
+    container_name: swan-panel-workspace
+    working_dir: /workspace/swan-panel
+    # The development gateway needs Linux network administration for nftables and XFRM.
+    # This grants privileges inside Docker Desktop's Linux VM, not the macOS kernel.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    init: false
+    ports:
+      - "0.0.0.0:3000:3000/tcp"  # Vite, proxy /api, HMR, same-origin on LAN
+      - "0.0.0.0:8080:8080/tcp"  # Direct backend API for debugging
+      - "0.0.0.0:500:500/udp"    # IKEv2 (kernel support on Docker Desktop is not guaranteed)
+      - "0.0.0.0:4500:4500/udp"  # IPsec NAT-T
+      - "0.0.0.0:${SWAN_DEV_DNS_PORT:-1053}:53/udp"
+      - "0.0.0.0:${SWAN_DEV_DNS_PORT:-1053}:53/tcp"
+    environment:
+      APP_ENV: development
+      ENVIRONMENT: development
+      PORT: "8080"
+      ENABLE_DNS: "true"
+      DNS_PORT: "53"
+      DB_PATH: /var/lib/swan-panel/swanpanel.db
+      PKI_DATA_DIR: /var/lib/swan-panel/pki
+      VICI_SOCKET: /var/run/charon.vici
+      # Set PUBLIC_URL in the container manually only when testing HTTPS OIDC.
+      LOG_LEVEL: debug
+      VITE_USE_POLLING: "true"
+    volumes:
+      - ..:/workspace/swan-panel:cached
+      - swanpanel_go_mod:/go/pkg/mod
+      - swanpanel_go_build:/root/.cache/go-build
+      - swanpanel_node_modules:/workspace/swan-panel/ui/node_modules
+      - swanpanel_dev_data:/var/lib/swan-panel
+    # Keep Docker daemon access restricted and allow VS Code to control lifecycle.
+    # Supervisor restarts crashed Air/Vite/charon processes inside this container.
+    restart: "no"
+
+volumes:
+  swanpanel_go_mod:
+  swanpanel_go_build:
+  swanpanel_node_modules:
+  swanpanel_dev_data:

@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/glebarez/sqlite"
-	"golang.org/x/crypto/bcrypt"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -34,28 +33,42 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 	}
 	sqlDB.SetMaxOpenConns(1) // SQLite single writer pool recommendation
 
-	if err := db.Exec("PRAGMA journal_mode = WAL;").Error; err != nil {
-		slog.Warn("Failed to configure PRAGMA journal_mode = WAL", "error", err)
-	} else {
-		slog.Debug("PRAGMA journal_mode = WAL configured successfully")
+	// SQLite PRAGMAs are connection-local (except WAL). With one pooled
+	// connection they apply to every GORM query. Never silently continue when
+	// foreign-key checks, locking or WAL mode cannot be enabled.
+	for _, statement := range []string{
+		"PRAGMA journal_mode = WAL;",
+		"PRAGMA foreign_keys = ON;",
+		"PRAGMA busy_timeout = 5000;",
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			_ = sqlDB.Close()
+			return nil, fmt.Errorf("configure SQLite (%s): %w", statement, err)
+		}
+	}
+	var journalMode string
+	if err := db.Raw("PRAGMA journal_mode;").Scan(&journalMode).Error; err != nil || journalMode != "wal" {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("SQLite WAL mode not enabled: mode=%q, error=%v", journalMode, err)
+	}
+	var foreignKeys, busyTimeout int
+	if err := db.Raw("PRAGMA foreign_keys;").Scan(&foreignKeys).Error; err != nil || foreignKeys != 1 {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("SQLite foreign_keys not enabled: value=%d, error=%v", foreignKeys, err)
+	}
+	if err := db.Raw("PRAGMA busy_timeout;").Scan(&busyTimeout).Error; err != nil || busyTimeout != 5000 {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("SQLite busy_timeout not enabled: value=%d, error=%v", busyTimeout, err)
 	}
 
-	if err := db.Exec("PRAGMA foreign_keys = ON;").Error; err != nil {
-		slog.Warn("Failed to configure PRAGMA foreign_keys = ON", "error", err)
-	} else {
-		slog.Debug("PRAGMA foreign_keys = ON configured successfully")
-	}
-
-	if err := db.Exec("PRAGMA busy_timeout = 5000;").Error; err != nil {
-		slog.Warn("Failed to configure PRAGMA busy_timeout = 5000", "error", err)
-	} else {
-		slog.Debug("PRAGMA busy_timeout = 5000 configured successfully")
-	}
-
-	// Automatically migrate all relational tables
+	// Initialize the current relational schema for fresh installations.
 	slog.Debug("Starting database auto-migration for core models")
 	err = db.AutoMigrate(
 		&OIDCProvider{},
+		&BootstrapState{},
+		&OIDCLoginAttempt{},
+		&OIDCLoginTicket{},
+		&CertificateRevocation{},
 		&User{},
 		&UserGroup{},
 		&ResourceGroup{},
@@ -73,42 +86,18 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 
 	DB = db
 
-	// Seed initial baseline records if fresh database
+	// Installer token is generated before any server listener is started.
+	if err := initializeBootstrap(db, dbPath); err != nil {
+		return nil, fmt.Errorf("initial bootstrap: %w", err)
+	}
+	// Seed non-credential defaults only.
 	seedDefaults(db)
 
 	return db, nil
 }
 
 func seedDefaults(db *gorm.DB) {
-	// 1. Check & seed default Root Admin account
-	var userCount int64
-	if err := db.Model(&User{}).Count(&userCount).Error; err != nil {
-		slog.Error("Failed to query user count during database initialization", "error", err)
-	} else if userCount == 0 {
-		slog.Info("Empty user table detected; bootstrapping default Root Admin credentials")
-		hash, err := bcrypt.GenerateFromPassword([]byte("admin123456"), bcrypt.DefaultCost)
-		if err != nil {
-			slog.Error("Failed to generate bcrypt password hash for default admin", "error", err)
-		} else {
-			defaultAdmin := User{
-				ID:           "usr_root_admin",
-				Email:        "admin@swanpanel.internal",
-				Name:         "System Administrator",
-				AuthType:     "local",
-				PasswordHash: string(hash),
-				IsAdmin:      true,
-				Status:       "ACTIVE",
-			}
-			if err := db.Create(&defaultAdmin).Error; err != nil {
-				slog.Error("Failed to seed default Root Admin account", "error", err)
-			} else {
-				slog.Info("Default Root Admin initialized successfully", "email", defaultAdmin.Email)
-			}
-		}
-	} else {
-		slog.Debug("User table already populated, skipping root admin seeding", "user_count", userCount)
-	}
-
+	// 1. No users or passwords are seeded automatically.
 	// 2. Seed default DNS settings
 	var dnsCount int64
 	if err := db.Model(&DNSSettings{}).Count(&dnsCount).Error; err != nil {

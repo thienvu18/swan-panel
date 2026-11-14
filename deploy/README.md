@@ -12,12 +12,21 @@ This directory contains production deployment configurations for **SwanPanel**:
 SwanPanel compiles into a single, self-contained binary containing:
 * Go 1.27 backend control plane
 * Embedded React 19 SPA
-* Embedded SQLite database engine (WAL mode)
+* Native SQLite engine via the official GORM SQLite driver (CGO at build time, statically linked into Linux release binaries; WAL mode)
 * Autonomous internal PKI (X.509 RSA-4096 / ECC)
 * Embedded Split-DNS server (`:53`)
 * strongSwan VICI IPC integration (`/var/run/charon.vici`)
 
 ---
+
+## Release binaries and native SQLite
+
+- Supported SwanPanel **gateway/server** platforms: Linux AMD64 and Linux ARM64.
+- GitHub Release publishes `swan-panel-linux-amd64`, `swan-panel-linux-arm64` and `checksums.txt`.
+- Each binary is built on a native Linux runner with `CGO_ENABLED=1` and musl static linking. GCC, musl, and libsqlite3 **are not required on the target machine**. Compilation from source requires an appropriate native C compiler.
+- Local macOS builds are for development only; macOS is supported as a **VPN client**, not a SwanPanel gateway/server release target.
+- To inspect a released binary: `./swan-panel-linux-amd64 --version` and `file swan-panel-linux-amd64`.
+- To verify the published checksums: `sha256sum -c checksums.txt` on Linux after downloading both binaries.
 
 ## 1. Docker Compose Deployment (Recommended)
 
@@ -48,11 +57,10 @@ SwanPanel compiles into a single, self-contained binary containing:
    docker compose logs -f
    ```
 
-5. Access the Web Dashboard:
-   * **URL:** `http://<SERVER_IP>:8080`
-   * **Default Admin Email:** `admin@swanpanel.internal`
-   * **Default Password:** `admin123456`
-   *(Change the default password immediately after first sign-in)*
+5. Open the Web Dashboard at `http://<SERVER_IP>:8080` (use HTTPS in production).
+   * **No default administrator account exists.**
+   * Read the one-time token from the server: `docker compose exec swan-panel cat /var/lib/swan-panel/swanpanel.db.setup-token`.
+   * Enter it in the initial setup screen and create an administrator with your own email and password.
 
 ---
 

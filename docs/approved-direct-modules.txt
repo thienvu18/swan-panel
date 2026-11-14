@@ -1,0 +1,16 @@
+# Approved direct Go modules
+# Adding or removing a module requires updating docs/DEPENDENCY_POLICY.md.
+# Versions remain pinned in go.mod/go.sum; this file only approves module identities.
+github.com/coreos/go-oidc/v3
+github.com/gin-gonic/gin
+gorm.io/driver/sqlite
+github.com/golang-jwt/jwt/v5
+github.com/google/uuid
+github.com/miekg/dns
+github.com/smallstep/pkcs7
+github.com/strongswan/govici
+golang.org/x/crypto
+golang.org/x/oauth2
+golang.org/x/time
+gorm.io/gorm
+software.sslmate.com/src/go-pkcs12

@@ -54,8 +54,13 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 			"total_devices":   totalDevices,
 			"total_users":     totalUsers,
 			"pending_users":   pendingUsers,
-			"gateway_status":  "online",
-			"uptime_seconds":  uptimeSeconds,
+			"gateway_status": func() string {
+				if viciClient.IsConnected() {
+					return "online"
+				}
+				return "offline"
+			}(),
+			"uptime_seconds": uptimeSeconds,
 		},
 		"devices": devices,
 	})

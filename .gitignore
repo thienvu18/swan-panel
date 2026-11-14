@@ -18,6 +18,12 @@ swan-panel
 *.db
 *.db-wal
 *.db-shm
+# Installer tokens and private keys must never be committed.
+*.setup-token
+.swanpanel_pki/
+*.p12
+*.pfx
+*.mobileconfig
 
 # Frontend dependencies and build outputs
 ui/node_modules/

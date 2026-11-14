@@ -5,6 +5,8 @@ import { Download, Trash2, ShieldAlert, Laptop, Server, Network, Plus, Search, F
 import { Modal } from '../components/Modal';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
+import { downloadDeviceProfile } from '../lib/profileDownload';
+import { buildDeviceProvisioningPayload, requiresDeviceOwnerSelection } from '../lib/deviceProvisioning';
 
 interface DeviceItem {
   id: string;
@@ -27,7 +29,18 @@ interface ResourceGroupItem {
   enrolled_node_count: number;
 }
 
-export const ResourcesPage: React.FC = () => {
+interface ResourcesPageProps {
+  isAdmin: boolean;
+}
+
+interface DeviceOwnerOption {
+  id: string;
+  name: string;
+  email: string;
+  status: 'ACTIVE' | 'PENDING' | 'SUSPENDED';
+}
+
+export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [activeSubView, setActiveSubView] = useState<'devices' | 'groups'>('devices');
@@ -38,7 +51,8 @@ export const ResourcesPage: React.FC = () => {
   const [ownershipFilter, setOwnershipFilter] = useState<'all' | 'company' | 'user'>('all');
 
   // Form states for Add Device
-  const [deviceType, setDeviceType] = useState<'company' | 'user'>('company');
+  const [deviceType, setDeviceType] = useState<'company' | 'user'>(isAdmin ? 'company' : 'user');
+  const [selectedOwnerUserID, setSelectedOwnerUserID] = useState('');
   const [hostname, setHostname] = useState('');
   const [selectedGroupID, setSelectedGroupID] = useState('');
   const [ipAllocType, setIpAllocType] = useState<'dynamic' | 'static'>('dynamic');
@@ -74,20 +88,42 @@ export const ResourcesPage: React.FC = () => {
     },
   });
 
+  const { data: ownersData, isPending: isOwnersPending, isError: isOwnersError } = useQuery<{ users: DeviceOwnerOption[] }>({
+    queryKey: ['users', 'active'],
+    enabled: isAdmin && isAddDeviceOpen && deviceType === 'user',
+    queryFn: async () => {
+      const res = await fetch('/api/users?status=ACTIVE', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      if (!res.ok) throw new Error('Failed to load active users');
+      return res.json();
+    },
+  });
+
   const devices = devicesData?.devices || [];
   const resourceGroups = groupsData?.resource_groups || [];
+  const activeOwners = (ownersData?.users || []).filter((user) => user.status === 'ACTIVE');
+  const ownerRequired = requiresDeviceOwnerSelection(isAdmin, deviceType);
+  const validOwnerSelected = !ownerRequired || activeOwners.some((user) => user.id === selectedOwnerUserID);
+  const canCreateDevice = Boolean(
+    hostname.trim() &&
+    (selectedGroupID || resourceGroups[0]?.id) &&
+    validOwnerSelected
+  );
 
   // Create Device Mutation
   const createDeviceMutation = useMutation({
     mutationFn: async () => {
-      const payload = {
+      const payload = buildDeviceProvisioningPayload({
         hostname,
-        device_type: deviceType,
-        resource_group_id: selectedGroupID || resourceGroups[0]?.id,
-        ip_allocation_type: ipAllocType,
-        virtual_ip: ipAllocType === 'static' ? staticIP : '',
+        deviceType,
+        resourceGroupID: selectedGroupID || resourceGroups[0]?.id || '',
+        ipAllocationType: ipAllocType,
+        staticIP,
         platform,
-      };
+        isAdmin,
+        ownerUserID: selectedOwnerUserID,
+      });
       const res = await fetch('/api/devices', {
         method: 'POST',
         headers: {
@@ -108,6 +144,7 @@ export const ResourcesPage: React.FC = () => {
       createDeviceMutation.reset();
       setHostname('');
       setStaticIP('');
+      setSelectedOwnerUserID('');
     },
   });
 
@@ -165,17 +202,28 @@ export const ResourcesPage: React.FC = () => {
     return g.name.toLowerCase().includes(q) || g.cidr_block.toLowerCase().includes(q);
   });
 
-  const handleDownload = (dev: DeviceItem, os: string) => {
-    window.open(`/api/devices/${dev.id}/config/${os}?token=${localStorage.getItem('token') || ''}`, '_blank');
+  const handleDownload = async (dev: DeviceItem, os: string) => {
+    try {
+      await downloadDeviceProfile(dev.id, os, dev.hostname);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'VPN profile download failed');
+    }
   };
 
   const handleRevoke = async (dev: DeviceItem) => {
-    if (confirm(`Revoke security certificate for ${dev.hostname}? The tunnel will immediately terminate.`)) {
-      await fetch(`/api/devices/${dev.id}/revoke`, {
+    if (!confirm(`Revoke security certificate for ${dev.hostname}? The tunnel will immediately terminate.`)) return;
+    try {
+      const response = await fetch(`/api/devices/${encodeURIComponent(dev.id)}/revoke`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
       });
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({}));
+        throw new Error(failure.error || 'Certificate revocation could not be enforced');
+      }
       queryClient.invalidateQueries({ queryKey: ['devices'] });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Revocation failed');
     }
   };
 
@@ -373,6 +421,13 @@ export const ResourcesPage: React.FC = () => {
                           >
                             <Download className="w-3.5 h-3.5" />
                           </button>
+                          {dev.platform === 'android' && (
+                            <button type="button" onClick={() => handleDownload(dev, 'android-native')}
+                              className="inline-block px-1.5 py-1 rounded-md text-blue-500 hover:bg-blue-500/10 text-[10px]"
+                              title="Android 11+ native IKEv2/IPsec RSA: certificates and manual setup instructions">
+                              Native
+                            </button>
+                          )}
                           <button
                             onClick={() => handleRevoke(dev)}
                             className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors inline-block"
@@ -483,6 +538,7 @@ export const ResourcesPage: React.FC = () => {
         isOpen={isAddDeviceOpen}
         onClose={() => {
           setIsAddDeviceOpen(false);
+          setSelectedOwnerUserID('');
           createDeviceMutation.reset();
         }}
         title={t('resources.provision_title')}
@@ -491,9 +547,12 @@ export const ResourcesPage: React.FC = () => {
         <div className="space-y-3 text-xs">
           <div>
             <label className="text-subtle block mb-1">{t('resources.device_ownership')}</label>
-            <div className="grid grid-cols-2 gap-2">
-              <label
-                onClick={() => setDeviceType('company')}
+            <div className={`grid gap-2 ${isAdmin ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {isAdmin && <label
+                onClick={() => {
+                  setDeviceType('company');
+                  setSelectedOwnerUserID('');
+                }}
                 className={`flex items-center gap-2 p-2 border rounded-lg cursor-pointer ${
                   deviceType === 'company' ? 'border-blue-500 bg-blue-600/10' : 'subtle-border surface-header'
                 }`}
@@ -502,7 +561,7 @@ export const ResourcesPage: React.FC = () => {
                   <div className="font-medium text-slate-900 dark:text-white">{t('resources.company_node')}</div>
                   <div className="text-[10px] text-dim">{t('resources.company_node_desc')}</div>
                 </div>
-              </label>
+              </label>}
               <label
                 onClick={() => setDeviceType('user')}
                 className={`flex items-center gap-2 p-2 border rounded-lg cursor-pointer ${
@@ -516,6 +575,35 @@ export const ResourcesPage: React.FC = () => {
               </label>
             </div>
           </div>
+
+          {ownerRequired && (
+            <div>
+              <label className="text-subtle block mb-1" htmlFor="device-owner">
+                {t('resources.assign_employee')} <span className="text-rose-500" aria-hidden="true">*</span>
+              </label>
+              <select
+                id="device-owner"
+                value={selectedOwnerUserID}
+                onChange={(e) => setSelectedOwnerUserID(e.target.value)}
+                disabled={isOwnersPending || isOwnersError || activeOwners.length === 0}
+                required
+                aria-required="true"
+                className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 disabled:opacity-60"
+              >
+                <option value="">{t('resources.select_owner')}</option>
+                {activeOwners.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name} ({user.email})
+                  </option>
+                ))}
+              </select>
+              {isOwnersPending && <p className="text-dim mt-1">{t('resources.loading_users')}</p>}
+              {isOwnersError && <p role="alert" className="text-rose-500 mt-1">{t('resources.failed_to_load_users')}</p>}
+              {!isOwnersPending && !isOwnersError && activeOwners.length === 0 && (
+                <p className="text-dim mt-1">{t('resources.no_active_users')}</p>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="text-subtle block mb-1">{t('resources.device_hostname')}</label>
@@ -592,7 +680,7 @@ export const ResourcesPage: React.FC = () => {
         <div className="flex gap-2 pt-2 border-t subtle-border">
           <button
             onClick={() => createDeviceMutation.mutate()}
-            disabled={!hostname || createDeviceMutation.isPending}
+            disabled={!canCreateDevice || createDeviceMutation.isPending}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
             {createDeviceMutation.isPending ? 'Provisioning...' : t('resources.create_and_download')}
@@ -600,6 +688,7 @@ export const ResourcesPage: React.FC = () => {
           <button
             onClick={() => {
               setIsAddDeviceOpen(false);
+              setSelectedOwnerUserID('');
               createDeviceMutation.reset();
             }}
             className="px-3 py-1.5 border subtle-border rounded-lg hover:bg-slate-500/10 text-xs"

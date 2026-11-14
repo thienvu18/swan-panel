@@ -45,7 +45,7 @@ Whether you are hosting a private homelab or managing corporate remote access fo
 
 * **Bloated Multi-Container Overhead:**
   Many modern VPN management web panels demand complex Docker Compose deployments requiring separate Node.js runtimes, Python daemons, PostgreSQL databases, and Redis caches, consuming hundreds of megabytes of RAM before the first user even connects.
-  * **SwanPanel Solution:** Compiled into a **single self-contained binary**. Pure Go backend, embedded React 19 SPA, embedded SQLite in high-performance WAL mode, internal PKI, and built-in Split-DNS. Runs on less than 30MB of idle RAM on a $5 VPS or a Raspberry Pi.
+  * **SwanPanel Solution:** Compiled into a **single self-contained binary**. Go backend with native SQLite (CGO linked statically in Linux releases), embedded React 19 SPA, SQLite in WAL mode, internal PKI, and built-in Split-DNS. Runs on less than 30MB of idle RAM on a $5 VPS or a Raspberry Pi.
 
 ---
 
@@ -55,8 +55,8 @@ SwanPanel provisions native OS connection profiles with embedded cryptographic c
 
 | Client Platform | Protocol | Third-Party App Required? | Provisioning Method |
 | :--- | :--- | :--- | :--- |
-| **Apple iOS** | Native IKEv2 / IPsec | **NO (0 Apps)** | 1-click signed `.mobileconfig` profile with embedded PKCS#12 cert & CA trust chain |
-| **Apple macOS** | Native IKEv2 / IPsec | **NO (0 Apps)** | 1-click signed `.mobileconfig` profile installed directly into System Settings |
+| **Apple iOS** | Native IKEv2 / IPsec | **NO (0 Apps)** | S/MIME-signed `.mobileconfig` with embedded PKCS#12 identity and CA certificate; requires trusting SwanPanel's signing CA |
+| **Apple macOS** | Native IKEv2 / IPsec | **NO (0 Apps)** | S/MIME-signed native IKEv2 `.mobileconfig` with PKCS#12 identity; signer trust must be established |
 | **Windows 10 / 11** | Native IKEv2 / IPsec | **NO (0 Apps)** | Automated idempotent PowerShell script (`Add-VpnConnection`) with split-tunnel routing |
 | **Linux Desktop** | Native IKEv2 / IPsec | **NO (0 Apps)** | Auto-generated NetworkManager `.nmconnection` profile or standard `swanctl.conf` |
 | **Android** | Native IKEv2 / IPsec | **NO (0 Apps)** | Standard native IKEv2 RSA certificate & MSCHAPv2 profile parameters |
@@ -190,11 +190,20 @@ go build -o swan-panel ./cmd/server
 ```
 Access the web control plane at `http://localhost:8080`.
 
-### Default Admin Credentials
-* **Email:** `admin@swanpanel.internal`
-* **Password:** `admin123456`
+### Initial Administrator Setup
 
-*(Important: Change the default password immediately upon initial login).*
+New installations **do not create a default administrator or password**. On first startup, SwanPanel generates a cryptographically random one-time token, stores only its SHA-256 digest in SQLite, and writes the token to a root-readable file:
+
+```bash
+# Default path is DB_PATH + ".setup-token", for example:
+sudo cat /var/lib/swan-panel/swanpanel.db.setup-token
+```
+
+Open the SwanPanel web UI, enter this token, then provide your administrator name, email and a strong password (12–72 bytes). The token is consumed atomically and the file is removed after successful setup. Do not copy it to tickets, version control, CI logs or screenshots.
+
+OIDC providers use Authorization Code + PKCE with verified ID tokens. Production OIDC requires `PUBLIC_URL=https://your-panel.example` and an HTTPS identity provider; custom providers can configure authorization, token, JWKS and UserInfo endpoints and claim mapping. User account enrollment requires administrator approval.
+
+**Operational prerequisites:** strongSwan with VICI and `swanctl`, nftables, and Linux `NET_ADMIN`. Gateway policy changes fail closed if nftables/strongSwan cannot be updated. Back up database **and** PKI state together.
 
 ---
 
@@ -242,7 +251,7 @@ Configure SwanPanel via environment variables or an `/etc/swan-panel/swan-panel.
 SwanPanel is actively maintained. Here is our prioritized engineering roadmap:
 
 * **Current Stable Release (v0.0.2):**
-  * Single-binary delivery with embedded React 19 UI and pure Go SQLite WAL.
+  * Single-binary Linux delivery with embedded React 19 UI and native SQLite WAL (CGO compiled, statically linked).
   * 1-click native client provisioning for Apple iOS/macOS, Windows, Linux, and Android.
   * strongSwan VICI IPC hot-reload without tunnel disruption.
   * Automated internal PKI and PKCS#12 bundle export.

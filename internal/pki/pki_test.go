@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/smallstep/pkcs7"
 	"github.com/swan-panel/swan-panel/internal/pki"
 )
 
@@ -35,12 +36,22 @@ func TestPKIManager(t *testing.T) {
 	}
 
 	// 2. Test Apple Mobileconfig Generation
-	mobileconfig := pki.GenerateAppleMobileconfig("vpn.company.com", "test-laptop", clientBundle)
-	if !strings.Contains(mobileconfig, "com.apple.vpn.managed") {
-		t.Errorf("Mobileconfig missing com.apple.vpn.managed payload")
+	mobileconfig, err := pki.GenerateAppleMobileconfig("vpn.company.com", "test-laptop", clientBundle)
+	if err != nil {
+		t.Fatalf("sign Apple profile: %v", err)
 	}
-	if !strings.Contains(mobileconfig, "vpn.company.com") {
-		t.Errorf("Mobileconfig missing server FQDN")
+	parsed, err := pkcs7.Parse(mobileconfig)
+	if err != nil {
+		t.Fatalf("parse signed Apple mobileconfig: %v", err)
+	}
+	if err := parsed.Verify(); err != nil {
+		t.Fatalf("verify Apple mobileconfig signature: %v", err)
+	}
+	if !strings.Contains(string(parsed.Content), "com.apple.vpn.managed") {
+		t.Error("signed mobileconfig missing IKEv2 VPN payload")
+	}
+	if !strings.Contains(string(parsed.Content), "vpn.company.com") {
+		t.Error("signed mobileconfig missing gateway name")
 	}
 
 	// 3. Test Windows PowerShell Script Generation

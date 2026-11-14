@@ -26,6 +26,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
   const [dpdAction, setDpdAction] = useState('clear');
 
   const [serverFqdn, setServerFqdn] = useState('vpn.company.com');
+  const [serverIdentity, setServerIdentity] = useState('');
   const [mssClamping, setMssClamping] = useState(1360);
 
   const [cipherPreset, setCipherPreset] = useState<'modern' | 'balanced' | 'custom'>('balanced');
@@ -33,15 +34,16 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
   const [espProposals, setEspProposals] = useState('aes256gcm16,aes128gcm16,chacha20poly1305');
 
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveWarning, setSaveWarning] = useState('');
 
   // Fetch configuration from API
-  const { data } = useQuery({
+  const { data, isPending: isSettingsPending, isError: isSettingsError } = useQuery({
     queryKey: ['strongswan_settings'],
     queryFn: async () => {
       const res = await fetch('/api/settings/strongswan', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
       });
-      if (!res.ok) return null;
+      if (!res.ok) throw new Error('Failed to load gateway settings');
       return res.json();
     },
   });
@@ -62,6 +64,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
       if (data.dpd_timeout) setDpdTimeout(data.dpd_timeout);
       if (data.dpd_action) setDpdAction(data.dpd_action);
       if (data.server_endpoint) setServerFqdn(data.server_endpoint);
+      setServerIdentity(data.server_identity || '');
       if (data.mss_clamping) setMssClamping(data.mss_clamping);
       if (data.cipher_preset) setCipherPreset(data.cipher_preset as any);
       if (data.ike_proposals) setIkeProposals(data.ike_proposals);
@@ -93,7 +96,8 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
         dpd_delay: dpdDelay,
         dpd_timeout: dpdTimeout,
         dpd_action: dpdAction,
-        server_endpoint: serverFqdn,
+        server_endpoint: serverFqdn.trim(),
+        server_identity: serverIdentity.trim(),
         mss_clamping: Number(mssClamping),
         cipher_preset: cipherPreset,
         ike_proposals: ikeProposals,
@@ -109,14 +113,26 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error('Save failed');
-      return res.json();
+      const response = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(response.error || t('server.save_failed'));
+      return response;
     },
-    onSuccess: () => {
+    onMutate: () => {
+      setSaveSuccess(false);
+      setSaveWarning('');
+    },
+    onSuccess: (response) => {
+      if (response.runtime_status !== 'applied') {
+        setSaveWarning(response.error || t('server.saved_not_applied'));
+        return;
+      }
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     },
   });
+
+  const cannotSave = isSettingsPending || isSettingsError ||
+    !serverFqdn.trim() || !serverIdentity.trim();
 
   // Register contextual Save Changes action button on Header
   useEffect(() => {
@@ -124,7 +140,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
       onRegisterSaveButton(
         <button
           onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
+          disabled={saveMutation.isPending || cannotSave}
           className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs"
         >
           <Check className="w-3.5 h-3.5" />
@@ -132,7 +148,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
         </button>
       );
     }
-  }, [onRegisterSaveButton, saveMutation.isPending, t]);
+  }, [onRegisterSaveButton, saveMutation.isPending, cannotSave, t]);
 
   return (
     <div className="space-y-4">
@@ -140,6 +156,22 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
         <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs flex items-center gap-2">
           <Check className="w-4 h-4" />
           <span>{t('server.applied_success')}</span>
+        </div>
+      )}
+
+      {isSettingsError && (
+        <div role="alert" className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-500 rounded-xl text-xs">
+          {t('server.load_failed')}
+        </div>
+      )}
+      {saveMutation.error && (
+        <div role="alert" className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-500 rounded-xl text-xs">
+          {saveMutation.error.message}
+        </div>
+      )}
+      {saveWarning && (
+        <div role="status" className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-500 rounded-xl text-xs">
+          {saveWarning}
         </div>
       )}
 
@@ -339,6 +371,20 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
                 className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
               />
               <span className="text-[11px] text-dim block mt-0.5">{t('server.public_hostname_hint')}</span>
+            </div>
+
+            <div>
+              <label className="text-subtle font-medium block mb-1" htmlFor="gateway-identity">{t('server.gateway_identity')}</label>
+              <input
+                id="gateway-identity"
+                type="text"
+                value={serverIdentity}
+                onChange={(e) => setServerIdentity(e.target.value)}
+                required
+                placeholder="vpn.company.com"
+                className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
+              />
+              <span className="text-[11px] text-dim block mt-0.5">{t('server.gateway_identity_hint')}</span>
             </div>
 
             <div className="flex items-center gap-3">

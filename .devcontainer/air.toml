@@ -1,0 +1,29 @@
+root = "."
+tmp_dir = "/tmp/swanpanel-air"
+testdata_dir = "testdata"
+
+[build]
+  cmd = "CGO_ENABLED=1 go build -tags sqlite_omit_load_extension -o /tmp/swanpanel-air/server ./cmd/server"
+  entrypoint = ["/tmp/swanpanel-air/server"]
+  include_ext = ["go"]
+  include_file = ["go.mod", "go.sum"]
+  exclude_dir = [".git", ".devcontainer", "ui", "docs", "wiki", "data"]
+  exclude_regex = ["_test.go"]
+  delay = 900
+  stop_on_error = true
+  send_interrupt = true
+  kill_delay = "800ms"
+  poll = true
+  poll_interval = 1000
+
+[log]
+  time = true
+
+[color]
+  main = "cyan"
+  watcher = "yellow"
+  build = "green"
+  runner = "magenta"
+
+[misc]
+  clean_on_exit = true

@@ -20,10 +20,10 @@ type LogEntry struct {
 }
 
 var (
-	logMu       sync.RWMutex
-	logBuffer   []LogEntry
-	maxLogs     = 1000
-	LevelVar    = new(slog.LevelVar)
+	logMu     sync.RWMutex
+	logBuffer []LogEntry
+	maxLogs   = 1000
+	LevelVar  = new(slog.LevelVar)
 )
 
 // AddLogEntry records a log entry in the ring buffer

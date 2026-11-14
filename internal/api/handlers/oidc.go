@@ -1,17 +1,12 @@
 package handlers
 
 import (
-	"crypto/subtle"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/swan-panel/swan-panel/internal/api/realtime"
 	"github.com/swan-panel/swan-panel/internal/config"
 	"github.com/swan-panel/swan-panel/internal/db"
 )
@@ -28,11 +23,16 @@ func NewOIDCHandler(cfg *config.Config) *OIDCHandler {
 
 // CreateProviderRequest payload for adding an identity provider
 type CreateProviderRequest struct {
-	Name         string `json:"name" binding:"required"`
-	ProviderType string `json:"provider_type" binding:"required"` // 'google', 'microsoft', 'keycloak', 'custom'
-	IssuerURL    string `json:"issuer_url" binding:"required"`
-	ClientID     string `json:"client_id" binding:"required"`
-	ClientSecret string `json:"client_secret" binding:"required"`
+	Name             string `json:"name" binding:"required"`
+	ProviderType     string `json:"provider_type" binding:"required"` // 'google', 'microsoft', 'keycloak', 'custom'
+	IssuerURL        string `json:"issuer_url" binding:"required"`
+	ClientID         string `json:"client_id" binding:"required"`
+	ClientSecret     string `json:"client_secret" binding:"required"`
+	AuthorizationURL string `json:"authorization_url"`
+	TokenURL         string `json:"token_url"`
+	JWKSURL          string `json:"jwks_url"`
+	UserInfoURL      string `json:"userinfo_url"`
+	ClaimMapping     string `json:"claim_mapping"`
 }
 
 // ListProviders returns all configured OIDC identity providers
@@ -57,14 +57,23 @@ func (h *OIDCHandler) CreateProvider(c *gin.Context) {
 		return
 	}
 
+	if err := validateOIDCConfiguration(req.ProviderType, req.IssuerURL, req.AuthorizationURL, req.TokenURL, req.JWKSURL, req.UserInfoURL, req.ClaimMapping); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	provider := db.OIDCProvider{
-		ID:           "idp_" + uuid.New().String()[:8],
-		Name:         req.Name,
-		ProviderType: req.ProviderType,
-		IssuerURL:    strings.TrimSuffix(req.IssuerURL, "/"),
-		ClientID:     req.ClientID,
-		ClientSecret: req.ClientSecret,
-		IsActive:     true,
+		ID:               "idp_" + uuid.New().String()[:8],
+		Name:             req.Name,
+		ProviderType:     req.ProviderType,
+		IssuerURL:        strings.TrimSuffix(req.IssuerURL, "/"),
+		ClientID:         req.ClientID,
+		ClientSecret:     req.ClientSecret,
+		AuthorizationURL: req.AuthorizationURL,
+		TokenURL:         req.TokenURL,
+		JWKSURL:          req.JWKSURL,
+		UserInfoURL:      req.UserInfoURL,
+		ClaimMapping:     req.ClaimMapping,
+		IsActive:         true,
 	}
 
 	if err := db.DB.Create(&provider).Error; err != nil {
@@ -88,12 +97,17 @@ func (h *OIDCHandler) UpdateProvider(c *gin.Context) {
 	}
 
 	var req struct {
-		Name         string `json:"name"`
-		ProviderType string `json:"provider_type"`
-		IssuerURL    string `json:"issuer_url"`
-		ClientID     string `json:"client_id"`
-		ClientSecret string `json:"client_secret"`
-		IsActive     *bool  `json:"is_active"`
+		Name             string  `json:"name"`
+		ProviderType     string  `json:"provider_type"`
+		IssuerURL        string  `json:"issuer_url"`
+		ClientID         string  `json:"client_id"`
+		ClientSecret     string  `json:"client_secret"`
+		IsActive         *bool   `json:"is_active"`
+		AuthorizationURL *string `json:"authorization_url"`
+		TokenURL         *string `json:"token_url"`
+		JWKSURL          *string `json:"jwks_url"`
+		UserInfoURL      *string `json:"userinfo_url"`
+		ClaimMapping     *string `json:"claim_mapping"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -116,10 +130,47 @@ func (h *OIDCHandler) UpdateProvider(c *gin.Context) {
 	if req.ClientSecret != "" {
 		provider.ClientSecret = req.ClientSecret
 	}
+	if req.AuthorizationURL != nil {
+		provider.AuthorizationURL = *req.AuthorizationURL
+	}
+	if req.TokenURL != nil {
+		provider.TokenURL = *req.TokenURL
+	}
+	if req.JWKSURL != nil {
+		provider.JWKSURL = *req.JWKSURL
+	}
+	if req.UserInfoURL != nil {
+		provider.UserInfoURL = *req.UserInfoURL
+	}
+	if req.ClaimMapping != nil {
+		provider.ClaimMapping = *req.ClaimMapping
+	}
+	if err := validateOIDCConfiguration(provider.ProviderType, provider.IssuerURL, provider.AuthorizationURL, provider.TokenURL, provider.JWKSURL, provider.UserInfoURL, provider.ClaimMapping); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if req.IsActive != nil {
 		provider.IsActive = *req.IsActive
 	}
 
+	// Provider ID is part of the identity binding. Once users exist, changing
+	// issuer/client ID/type could authenticate them against a different issuer.
+	var linked int64
+	if err := db.DB.Model(&db.User{}).Where("idp_provider_id = ?", id).Count(&linked).Error; err != nil {
+		c.JSON(500, gin.H{"error": "Identity directory unavailable"})
+		return
+	}
+	if linked > 0 {
+		var previous db.OIDCProvider
+		if err := db.DB.First(&previous, "id = ?", id).Error; err != nil {
+			c.JSON(404, gin.H{"error": "Provider missing"})
+			return
+		}
+		if previous.IssuerURL != provider.IssuerURL || previous.ClientID != provider.ClientID || previous.ProviderType != provider.ProviderType {
+			c.JSON(http.StatusConflict, gin.H{"error": "Issuer, client ID and provider type cannot be changed after users are linked; create a new provider"})
+			return
+		}
+	}
 	if err := db.DB.Save(&provider).Error; err != nil {
 		slog.Error("Failed to update OIDC provider", "id", id, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update provider"})
@@ -133,6 +184,15 @@ func (h *OIDCHandler) UpdateProvider(c *gin.Context) {
 // DeleteProvider deletes an OIDC provider
 func (h *OIDCHandler) DeleteProvider(c *gin.Context) {
 	id := c.Param("id")
+	var linked int64
+	if err := db.DB.Model(&db.User{}).Where("idp_provider_id = ?", id).Count(&linked).Error; err != nil {
+		c.JSON(500, gin.H{"error": "Identity directory unavailable"})
+		return
+	}
+	if linked > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "Provider has linked identities; disable it instead of deleting it"})
+		return
+	}
 	if err := db.DB.Where("id = ?", id).Delete(&db.OIDCProvider{}).Error; err != nil {
 		slog.Error("Failed to delete OIDC provider", "id", id, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete provider"})
@@ -143,127 +203,23 @@ func (h *OIDCHandler) DeleteProvider(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Provider deleted successfully"})
 }
 
-// TestConnection performs an OpenID Connect discovery endpoint handshake
+// TestConnection validates the provider metadata via the same library used for sign-in.
 func (h *OIDCHandler) TestConnection(c *gin.Context) {
-	id := c.Param("id")
 	var provider db.OIDCProvider
-	if err := db.DB.Where("id = ?", id).First(&provider).Error; err != nil {
+	if err := db.DB.First(&provider, "id = ?", c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Provider not found"})
 		return
 	}
-
-	discoveryURL := fmt.Sprintf("%s/.well-known/openid-configuration", provider.IssuerURL)
-	slog.Info("Testing OIDC discovery handshake", "id", id, "url", discoveryURL)
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(discoveryURL)
+	upstream, _, err := buildOIDCClient(c.Request.Context(), provider, "")
 	if err != nil {
-		slog.Warn("OIDC discovery handshake connection failed", "url", discoveryURL, "error", err)
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": fmt.Sprintf("Discovery request failed: %v", err),
-		})
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "OIDC metadata verification failed"})
 		return
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		slog.Warn("OIDC discovery returned non-200 status", "status", resp.StatusCode)
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": fmt.Sprintf("Discovery returned HTTP status %d", resp.StatusCode),
-		})
-		return
-	}
-
-	var discoveryDoc map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&discoveryDoc); err != nil {
-		slog.Warn("Invalid JSON in OIDC discovery response", "error", err)
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": "Discovery document was not valid JSON",
-		})
-		return
-	}
-
-	authEndpoint, _ := discoveryDoc["authorization_endpoint"].(string)
-	tokenEndpoint, _ := discoveryDoc["token_endpoint"].(string)
-
-	slog.Info("OIDC discovery handshake verified successfully", "id", id, "auth_endpoint", authEndpoint)
+	endpoint := upstream.Endpoint()
 	c.JSON(http.StatusOK, gin.H{
 		"success":                true,
-		"message":                "Connection verified successfully",
-		"authorization_endpoint": authEndpoint,
-		"token_endpoint":         tokenEndpoint,
-	})
-}
-
-// EnrolledCallback simulates or processes an OIDC SSO callback
-func (h *OIDCHandler) OIDCCallback(c *gin.Context) {
-	// Validate CSRF state token with constant-time comparison to mitigate timing attacks (AGENTS.md Rule 2.3)
-	state := c.Query("state")
-	expectedState := c.Query("expected_state")
-	if state != "" && expectedState != "" {
-		if subtle.ConstantTimeCompare([]byte(state), []byte(expectedState)) != 1 {
-			slog.Warn("OIDC callback rejected: state token mismatch", "ip", c.ClientIP())
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state token"})
-			return
-		}
-	}
-
-	// For production, exchanges authorization code for tokens.
-	// For simulation/testing, accepts user profile params to enroll a candidate into PENDING status.
-	email := c.Query("email")
-	name := c.Query("name")
-	providerID := c.Query("provider_id")
-
-	if email == "" {
-		email = "candidate-" + uuid.New().String()[:6] + "@company.com"
-	}
-	if name == "" {
-		name = "New Candidate"
-	}
-
-	var user db.User
-	if err := db.DB.Where("email = ?", email).First(&user).Error; err == nil {
-		// Existing active user
-		slog.Info("Existing user signed in via OIDC", "email", email, "status", user.Status)
-		c.JSON(http.StatusOK, gin.H{"user": user, "enrolled": false})
-		return
-	}
-
-	var providerIDPtr *string
-	if providerID != "" {
-		providerIDPtr = &providerID
-	}
-
-	// Create new pending user
-	newUser := db.User{
-		ID:            "usr_" + uuid.New().String()[:8],
-		Email:         email,
-		Name:          name,
-		AuthType:      "oidc",
-		IDPProviderID: providerIDPtr,
-		IsAdmin:       false,
-		Status:        "PENDING",
-	}
-
-	if err := db.DB.Create(&newUser).Error; err != nil {
-		slog.Error("Failed to enroll new candidate into approval queue", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to enroll user"})
-		return
-	}
-
-	slog.Info("New user enrolled into approval queue (PENDING)", "email", email, "id", newUser.ID)
-	realtime.DefaultBroker.Broadcast("approval_queue_update", map[string]interface{}{
-		"user_id": newUser.ID,
-		"email":   newUser.Email,
-		"status":  newUser.Status,
-	})
-
-	c.JSON(http.StatusCreated, gin.H{
-		"user":     newUser,
-		"enrolled": true,
-		"message":  "Account created and placed in approval queue",
+		"message":                "Provider metadata verified",
+		"authorization_endpoint": endpoint.AuthURL,
+		"token_endpoint":         endpoint.TokenURL,
 	})
 }

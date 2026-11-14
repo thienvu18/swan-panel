@@ -30,10 +30,7 @@ Once the installer finishes, navigate to:
 http://<YOUR_SERVER_IP>:8080
 ```
 
-- **Default Administrator Email:** `admin@swanpanel.internal`
-- **Default Password:** `Admin@SwanPanel123`
-
-You will be prompted to change the administrative password and configure your external server IP / hostname in **Server Settings**.
+SwanPanel has no default login. Retrieve the one-time setup token using `sudo cat /var/lib/swan-panel/swanpanel.db.setup-token`, enter it in the web setup form, and create your first administrator. Then configure the external server IP/hostname in **Server Settings**.
 
 ---
 

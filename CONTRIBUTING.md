@@ -13,7 +13,7 @@ SwanPanel has adopted the [Contributor Covenant](CODE_OF_CONDUCT.md). By partici
 ## Getting Started
 
 ### Prerequisites
-- **Go 1.26+** (compiled with `CGO_ENABLED=0` for pure Go static builds)
+- **Go version from `go.mod`**, with a native C compiler (CGO required by SQLite; use Xcode Command Line Tools on macOS or GCC on Linux)
 - **Node.js 20+** and **npm**
 - **strongSwan 5.9+** with `charon.vici` enabled (optional for local mock testing)
 
@@ -27,11 +27,11 @@ SwanPanel has adopted the [Contributor Covenant](CODE_OF_CONDUCT.md). By partici
 
 2. **Build and Run Backend:**
    ```bash
-   # Run all backend unit and integration tests
-   go test -v ./...
+   # Run unit/integration tests against the CGO SQLite driver
+   CGO_ENABLED=1 go test -v ./...
 
-   # Start local backend server (starts mock VICI when socket is absent)
-   go run ./cmd/server
+   # Start local backend server (missing VICI is reported degraded, not simulated)
+   CGO_ENABLED=1 go run ./cmd/server
    ```
 
 3. **Run Frontend Development Server:**

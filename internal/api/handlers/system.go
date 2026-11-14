@@ -11,7 +11,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
+	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/logger"
+	"github.com/swan-panel/swan-panel/internal/policy"
 	"github.com/swan-panel/swan-panel/internal/vici"
 )
 
@@ -71,52 +73,50 @@ func (h *SystemHandler) ControlDaemon(c *gin.Context) {
 
 	slog.Info("Admin initiated strongSwan daemon control command", "action", action)
 
-	var execErr error
-	var execOutput []byte
-
-	// 1. If running under systemd init, use systemctl
+	var command *exec.Cmd
 	if isSystemdAvailable() {
-		execOutput, execErr = exec.Command("systemctl", action, "strongswan").CombinedOutput()
-		if execErr == nil {
-			slog.Info("Daemon control executed via systemctl", "action", action)
-		} else {
-			slog.Warn("systemctl failed, falling back to native CLI", "action", action, "output", string(execOutput), "error", execErr)
-		}
+		command = exec.CommandContext(c.Request.Context(), "systemctl", action, "strongswan")
+	} else if _, err := exec.LookPath("ipsec"); err == nil {
+		command = exec.CommandContext(c.Request.Context(), "ipsec", action)
+	} else {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Neither systemd strongswan unit nor ipsec CLI is available"})
+		return
 	}
-
-	// 2. Fall back to native strongSwan ipsec CLI (Alpine container / standalone)
-	if execErr != nil || !isSystemdAvailable() {
-		if _, err := exec.LookPath("ipsec"); err == nil {
-			execOutput, execErr = exec.Command("ipsec", action).CombinedOutput()
-			if execErr == nil {
-				slog.Info("Daemon control executed via ipsec CLI", "action", action)
-			} else {
-				slog.Warn("ipsec CLI action returned warning/error", "action", action, "output", string(execOutput), "error", execErr)
-			}
-		}
+	output, err := command.CombinedOutput()
+	if err != nil {
+		slog.Error("Daemon command failed", "action", action, "error", err, "output", string(output))
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "strongSwan control command failed"})
+		return
 	}
-
-	// 3. If restart or start, allow daemon socket initialization and reconnect VICI session
 	if action == "restart" || action == "start" {
 		time.Sleep(1 * time.Second)
-		_ = vici.GetClient("").Reconnect()
+		if err := vici.GetClient("").Reconnect(); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon command completed but VICI is unavailable"})
+			return
+		}
+		if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
+			slog.Error("Daemon resumed without enforced policy", "error", err)
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon started but security policy was not applied"})
+			return
+		}
 	}
-
-	status := "active"
+	runtime, err := vici.GetClient("").GetDaemonStats(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Cannot verify daemon state"})
+		return
+	}
+	expected := "active"
 	if action == "stop" {
-		status = "inactive"
+		expected = "inactive"
 	}
-
-	realtime.DefaultBroker.Broadcast("gateway_status", map[string]interface{}{
-		"action": action,
-		"status": status,
-	})
-
+	if runtime.Status != expected {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon command returned, but runtime state does not match request", "status": runtime.Status})
+		return
+	}
+	realtime.DefaultBroker.Broadcast("gateway_status", map[string]any{"action": action, "status": runtime.Status})
 	c.JSON(http.StatusOK, gin.H{
-		"message":   fmt.Sprintf("Daemon %s executed successfully", action),
-		"action":    action,
-		"status":    status,
-		"timestamp": time.Now().Format(time.RFC3339),
+		"message": fmt.Sprintf("Daemon %s completed and verified", action),
+		"action":  action, "status": runtime.Status, "timestamp": time.Now().Format(time.RFC3339),
 	})
 }
 

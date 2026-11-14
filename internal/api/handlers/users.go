@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/policy"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -152,6 +153,11 @@ func (h *UsersHandler) ApproveUser(c *gin.Context) {
 		"status":  user.Status,
 	})
 
+	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
+		slog.Error("Approved user policy update pending", "user_id", user.ID, "error", err)
+		c.JSON(http.StatusAccepted, gin.H{"user": user, "runtime_status": "pending", "message": "User approved, gateway update pending"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"user": user, "message": "User approved successfully"})
 }
 
@@ -178,13 +184,40 @@ func (h *UsersHandler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	_ = db.DB.Model(&user).Association("UserGroups").Clear()
-	if err := db.DB.Delete(&user).Error; err != nil {
-		slog.Error("Failed to delete user", "id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
+	if user.IsAdmin && user.Status == "ACTIVE" {
+		var activeAdmins int64
+		if err := db.DB.Model(&db.User{}).Where("is_admin = ? AND status = ?", true, "ACTIVE").Count(&activeAdmins).Error; err != nil {
+			c.JSON(500, gin.H{"error": "Cannot validate administrator count"})
+			return
+		}
+		if activeAdmins <= 1 {
+			c.JSON(409, gin.H{"error": "Cannot delete the last active administrator"})
+			return
+		}
+	}
+	var devices []db.Device
+	if err := db.DB.Where("user_id = ?", id).Find(&devices).Error; err != nil {
+		c.JSON(500, gin.H{"error": "Cannot inspect user's VPN devices"})
 		return
 	}
-
+	for _, dev := range devices {
+		if err := applyRevocation(c.Request.Context(), &dev); err != nil {
+			c.JSON(503, gin.H{"error": "User deletion blocked until all VPN identities are revoked and enforced"})
+			return
+		}
+	}
+	if err := db.DB.Model(&user).Association("UserGroups").Clear(); err != nil {
+		c.JSON(500, gin.H{"error": "Failed to clear group membership"})
+		return
+	}
+	if err := db.DB.Delete(&user).Error; err != nil {
+		c.JSON(500, gin.H{"error": "Failed to delete user"})
+		return
+	}
+	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
+		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "message": "User deleted; policy synchronization pending"})
+		return
+	}
 	slog.Info("User deleted", "id", id, "email", user.Email)
 	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
 }
@@ -257,5 +290,9 @@ func (h *UsersHandler) DeleteUserGroup(c *gin.Context) {
 	}
 
 	slog.Info("User group deleted", "id", id)
+	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
+		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "error": "Group deleted but gateway policy is pending"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "User group deleted successfully"})
 }

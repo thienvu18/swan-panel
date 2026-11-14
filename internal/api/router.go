@@ -78,10 +78,15 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 		authGroup.Use(middleware.RateLimit(rate.Limit(5), 10))
 		{
 			authGroup.POST("/login", authH.Login)
+			authGroup.GET("/setup/status", handlers.SetupStatus)
+			authGroup.POST("/setup", handlers.SetupAdmin)
+			authGroup.GET("/oidc/providers", oidcH.PublicProviders)
+			authGroup.GET("/oidc/:id/start", oidcH.StartLogin)
+			authGroup.POST("/oidc/exchange", oidcH.ExchangeTicket)
 			authGroup.GET("/oidc/callback", oidcH.OIDCCallback)
 		}
 
-		// 2. Protected API (Requires valid Bearer JWT Token or ?token=)
+		// 2. Protected API (requires Bearer JWT; credentials in query strings are prohibited)
 		protected := api.Group("")
 		protected.Use(middleware.RequireAuth(cfg.JWTSecret))
 		{

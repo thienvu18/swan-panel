@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/glebarez/sqlite"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/dns"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -15,6 +15,15 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
+
+	// :memory: databases are per-connection in SQLite: keep all test queries
+	// on the same physical connection, otherwise parallel GORM queries may
+	// see an empty schema.
+	raw, err := testDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw.SetMaxOpenConns(1)
 
 	if err := testDB.AutoMigrate(&db.DNSSettings{}, &db.DNSOverride{}, &db.Device{}, &db.ResourceGroup{}); err != nil {
 		t.Fatalf("Auto-migrate failed: %v", err)

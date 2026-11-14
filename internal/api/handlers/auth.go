@@ -35,6 +35,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	if setup, err := db.SetupRequired(); err != nil || setup {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Complete one-time administrator setup first"})
+		return
+	}
 	var user db.User
 	// GORM Parameterized Query: strict immunity against SQL injection
 	if err := db.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
@@ -46,6 +50,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if user.Status != "ACTIVE" {
 		slog.Warn("Login rejected: account is not active", "email", req.Email, "status", user.Status, "ip", c.ClientIP())
 		c.JSON(http.StatusForbidden, gin.H{"error": "Account is pending approval or suspended"})
+		return
+	}
+
+	if user.AuthType != "local" || user.PasswordHash == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Use your identity provider to sign in"})
 		return
 	}
 
@@ -119,6 +128,10 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
+	if user.AuthType != "local" || user.PasswordHash == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "SSO accounts cannot change local passwords"})
+		return
+	}
 	// Verify current password with constant-time bcrypt verification
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword)); err != nil {
 		slog.Warn("Password change rejected: current password mismatch", "user_id", userID, "ip", c.ClientIP())

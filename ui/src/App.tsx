@@ -114,7 +114,7 @@ export const App: React.FC = () => {
       case 'dashboard':
         return <DashboardPage />;
       case 'resources':
-        return <ResourcesPage />;
+        return <ResourcesPage isAdmin={Boolean(currentUser?.is_admin)} />;
       case 'access':
         return <AccessRulesPage />;
       case 'users':

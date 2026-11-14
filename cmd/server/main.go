@@ -17,10 +17,18 @@ import (
 	"github.com/swan-panel/swan-panel/internal/dns"
 	"github.com/swan-panel/swan-panel/internal/logger"
 	"github.com/swan-panel/swan-panel/internal/pki"
+	"github.com/swan-panel/swan-panel/internal/policy"
 	"github.com/swan-panel/swan-panel/internal/vici"
 )
 
+// version is set using -ldflags "-X main.version=vX.Y.Z" in release builds.
+var version = "dev"
+
 func main() {
+	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-version") {
+		fmt.Println("SwanPanel", version)
+		return
+	}
 	// 1. Load configuration and initialize structured logger
 	cfg := config.Load()
 	logger.InitLogger(cfg.LogLevel, cfg.Environment)
@@ -43,55 +51,84 @@ func main() {
 	// 3. Initialize Router and embedded SPA filesystem
 	staticFS, err := swanpanel.StaticFS()
 	if err != nil {
-		slog.Warn("Failed to load embedded static filesystem; running in API-only mode", "error", err)
+		if cfg.Environment == "production" {
+			slog.Error("Production frontend bundle unavailable; refusing to start", "error", err)
+			os.Exit(1)
+		}
+		// In local development Vite serves the UI independently from port 3000.
+		slog.Info("Embedded frontend not available; use the Vite development UI", "error", err)
 	} else {
 		slog.Info("Embedded React SPA filesystem loaded", "single_binary", true)
 	}
 
 	router := api.SetupRouter(cfg, staticFS)
 
-	// 4. Initialize PKI & synchronize strongSwan Server and CA certificates
-	pkiMgr, err := pki.GetPKIManager()
+	// 4. Initialize the persistent CA, gateway identity, CRL and data plane.
+	// A missing data plane is reported as degraded. It must never be simulated.
+	manager, err := pki.GetPKIManager()
 	if err != nil {
-		slog.Error("Failed to initialize PKI manager", "error", err)
-	} else {
-		_ = pkiMgr.EnsureServerCertificates("swan-panel", []string{"172.18.0.2", "127.0.0.1"})
+		slog.Error("PKI initialization failed", "error", err)
+		os.Exit(1)
 	}
-
-	// 5. Initialize strongSwan VICI client and sync stored configuration into RAM
-	viciClient := vici.GetClient(cfg.VICISocket)
-	if viciClient.IsConnected() {
-		slog.Info("strongSwan daemon connected via VICI on startup", "socket", cfg.VICISocket)
-
-		// 5.1 Pre-load default IP address pool into strongSwan RAM
-		_ = viciClient.LoadPool(context.Background(), "swanpanel-pool", "10.0.1.0/24")
-
-		// 5.2 Load stored connection settings
-		var swanSettings db.StrongswanSettings
-		if err := db.DB.First(&swanSettings, 1).Error; err == nil {
-			connCfg := vici.ConnectionConfig{
-				Name:           "swanpanel-ikev2",
-				ServerIdentity: swanSettings.ServerIdentity,
-				ReauthTime:     swanSettings.ReauthTime,
-				RekeyTimeIKE:   swanSettings.RekeyTimeIKE,
-				RekeyTimeChild: swanSettings.RekeyTimeChild,
-				MobikeEnabled:  swanSettings.MobikeEnabled,
-				ForceEncapNATT: swanSettings.ForceEncapNATT,
-				DPDDelay:       swanSettings.DPDDelay,
-				DPDTimeout:     swanSettings.DPDTimeout,
-				IKEProposals:   swanSettings.IKEProposals,
-				ESPProposals:   swanSettings.ESPProposals,
-				Pools:          []string{"swanpanel-pool"},
-			}
-			if err := viciClient.LoadConnectionConfig(context.Background(), connCfg); err != nil {
-				slog.Warn("Failed to pre-load stored strongSwan settings on startup", "error", err)
-			} else {
-				slog.Info("Stored strongSwan configuration applied dynamically to daemon in RAM on startup")
+	var sw db.StrongswanSettings
+	if err := db.DB.First(&sw, 1).Error; err != nil {
+		slog.Error("Missing gateway settings", "error", err)
+		os.Exit(1)
+	}
+	if err := manager.EnsureServerCertificates(sw.ServerIdentity, []string{sw.ServerEndpoint}); err != nil {
+		slog.Error("Gateway certificate deployment failed", "error", err)
+		if cfg.Environment == "production" {
+			os.Exit(1)
+		}
+	}
+	syncRevocations := func(ctx context.Context) error {
+		var rows []db.CertificateRevocation
+		if err := db.DB.WithContext(ctx).Find(&rows).Error; err != nil {
+			return err
+		}
+		certs := make([]pki.RevokedCertificate, 0, len(rows))
+		for _, r := range rows {
+			certs = append(certs, pki.RevokedCertificate{Serial: r.Serial, RevokedAt: r.RevokedAt})
+		}
+		return manager.PublishCRL(ctx, certs)
+	}
+	if err := syncRevocations(context.Background()); err != nil {
+		slog.Error("Cannot synchronize signed CRL", "error", err)
+		if cfg.Environment == "production" {
+			os.Exit(1)
+		}
+	}
+	client := vici.GetClient(cfg.VICISocket)
+	if !client.IsConnected() {
+		slog.Warn("strongSwan VICI unavailable; VPN functions remain unavailable")
+	}
+	if err := policy.Reconcile(context.Background(), db.DB); err != nil {
+		slog.Warn("Data plane initial reconciliation failed; no applied state is claimed", "error", err)
+		if cfg.Environment == "production" {
+			os.Exit(1)
+		}
+	}
+	// Refresh the short-lived CRL and reapply the desired runtime policy after daemon restarts.
+	stopReconciliation := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(12 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopReconciliation:
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				if err := syncRevocations(ctx); err != nil {
+					slog.Error("CRL refresh failed", "error", err)
+				}
+				if err := policy.Reconcile(ctx, db.DB); err != nil {
+					slog.Error("Periodic policy reconciliation failed", "error", err)
+				}
+				cancel()
 			}
 		}
-	} else {
-		slog.Info("strongSwan daemon socket not active on startup; VICI client will auto-connect on demand", "socket", cfg.VICISocket)
-	}
+	}()
 
 	// 6. Start Embedded DNS Server if enabled
 	var dnsServer *dns.Server
@@ -106,10 +143,12 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:        fmt.Sprintf(":%d", cfg.Port),
+		Handler:     router,
+		ReadTimeout: 15 * time.Second,
+		// SSE responses are intentionally long-lived. A global WriteTimeout would
+		// terminate every authenticated event stream after 15 seconds.
+		WriteTimeout: 0,
 		IdleTimeout:  60 * time.Second,
 	}
 
@@ -129,6 +168,7 @@ func main() {
 
 	slog.Info("Termination signal received; commencing graceful shutdown", "signal", sig.String())
 
+	close(stopReconciliation)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

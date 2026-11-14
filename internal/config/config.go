@@ -1,8 +1,6 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"log/slog"
 	"os"
 	"strconv"
@@ -45,11 +43,16 @@ func Load() *Config {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		if env == "production" {
-			slog.Warn("SECURITY ALERT: JWT_SECRET environment variable is missing in production! Generating secure ephemeral random key.")
-			jwtSecret = generateSecureRandomKey(32)
+			slog.Error("JWT_SECRET must be configured explicitly (32+ characters) in production")
+			os.Exit(1)
 		} else {
 			jwtSecret = "swanpanel-secure-default-jwt-secret-key-change-in-prod"
 		}
+	}
+
+	if env == "production" && len(jwtSecret) < 32 {
+		slog.Error("JWT_SECRET must contain at least 32 characters in production")
+		os.Exit(1)
 	}
 
 	viciSocket := os.Getenv("VICI_SOCKET")
@@ -98,15 +101,6 @@ func parseAllowedOrigins(raw string) []string {
 		}
 	}
 	return origins
-}
-
-func generateSecureRandomKey(length int) string {
-	b := make([]byte, length)
-	if _, err := rand.Read(b); err != nil {
-		slog.Error("Failed to read secure random bytes for JWT secret", "error", err)
-		return "swanpanel-fallback-secure-crypto-random-key"
-	}
-	return hex.EncodeToString(b)
 }
 
 func getEnvAsInt(key string, defaultVal int) int {

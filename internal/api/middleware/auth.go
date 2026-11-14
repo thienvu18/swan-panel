@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"gorm.io/gorm"
 )
 
 // SecureTokenCompare performs a constant-time comparison of two cryptographic strings
@@ -50,7 +51,7 @@ func GenerateToken(user *db.User, secret string, duration time.Duration) (string
 	return signedToken, nil
 }
 
-// RequireAuth enforces a valid Bearer JWT token in the Authorization header or query parameter
+// RequireAuth enforces Bearer JWTs; query-string tokens are intentionally prohibited.
 func RequireAuth(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tokenStr string
@@ -64,9 +65,6 @@ func RequireAuth(secret string) gin.HandlerFunc {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization header format"})
 				return
 			}
-		} else {
-			// Fallback to query parameter (required for browser native EventSource / SSE)
-			tokenStr = c.Query("token")
 		}
 
 		if tokenStr == "" {
@@ -78,12 +76,12 @@ func RequireAuth(secret string) gin.HandlerFunc {
 		claims := &JWTClaims{}
 
 		token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 				slog.Warn("JWT validation rejected: unexpected signing method", "alg", token.Header["alg"])
 				return nil, errors.New("unexpected signing algorithm")
 			}
 			return []byte(secret), nil
-		})
+		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer("SwanPanel"), jwt.WithExpirationRequired())
 
 		if err != nil || !token.Valid {
 			slog.Warn("Authentication failed: Token is invalid or expired", "ip", c.ClientIP(), "error", err)
@@ -91,10 +89,27 @@ func RequireAuth(secret string) gin.HandlerFunc {
 			return
 		}
 
-		slog.Debug("User authenticated via JWT", "user_id", claims.UserID, "email", claims.Email, "is_admin", claims.IsAdmin)
-		c.Set("user_id", claims.UserID)
-		c.Set("email", claims.Email)
-		c.Set("is_admin", claims.IsAdmin)
+		if required, err := db.SetupRequired(); err != nil || required {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Complete one-time administrator setup before accessing the API"})
+			return
+		}
+		// Re-evaluate account status and privilege on EVERY request; never authorize by stale JWT claims.
+		var user db.User
+		if err := db.DB.WithContext(c.Request.Context()).Where("id = ?", claims.UserID).First(&user).Error; err != nil {
+			status := http.StatusUnauthorized
+			if err != gorm.ErrRecordNotFound {
+				status = http.StatusServiceUnavailable
+			}
+			c.AbortWithStatusJSON(status, gin.H{"error": "Account unavailable"})
+			return
+		}
+		if user.Status != "ACTIVE" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Account suspended or pending approval"})
+			return
+		}
+		c.Set("user_id", user.ID)
+		c.Set("email", user.Email)
+		c.Set("is_admin", user.IsAdmin)
 		c.Next()
 	}
 }

@@ -45,18 +45,17 @@ Client shows "Connecting..." and fails with "The VPN server did not respond".
    ```bash
    sudo ss -ulnp | grep -E '500|4500'
    ```
-3. Verify that your server's public IP or domain in **Server Settings** exactly matches the server identifier in the client configuration.
+3. In **Server Settings**, set **Server Endpoint** to the reachable IP/DNS address and **Gateway Identity** to the identity covered by the server certificate. These values can differ (e.g. a LAN endpoint IP and a DNS-name certificate identity); the client must trust the CA and verify the configured identity.
+4. For a client stuck at IKE_SA_INIT, run `swanctl --log` inside the strongSwan container and capture UDP 500/4500 on the macOS host with `sudo tcpdump -ni en0 'udp port 500 or udp port 4500'` (replace `en0` with the active interface). Repeated IKE_SA_INIT requests without IKE_AUTH indicate an incomplete exchange; verify that replies actually return to the client.
+5. On **Docker Desktop for macOS**, UDP port publishing may not preserve the IKEv2 return path. If the host receives the phone's request but replies are addressed elsewhere, investigate Docker's UDP/NAT forwarding; use a bridged Linux VM or Linux host for reliable end-to-end IPsec tests.
 
 ---
 
-## 3. Apple `.mobileconfig` Shows "Unsigned Profile"
+## 3. Apple `.mobileconfig` Signature Cannot Be Verified
 
-### Symptom:
-macOS / iOS displays a yellow "Not Signed" badge when importing the `.mobileconfig`.
+SwanPanel signs the profile using an attached SHA-256 CMS/PKCS#7 signature and a dedicated signing certificate. If macOS/iOS says the signer cannot be verified, the device does not yet trust the SwanPanel Root CA. Trust must be established **out-of-band** (for example, via a managed trust store); embedding a CA certificate inside a downloaded profile does not establish independent trust in that same profile.
 
-### Resolution:
-- This is standard behavior for internally generated VPN profiles using an internal Root CA.
-- Click **Continue** / **Install** and approve the profile in **System Settings -> Profiles**. The internal Root CA embedded in the profile will be added to the local keychain for tunnel validation.
+For inspection, run `openssl cms -verify -inform DER -in profile.mobileconfig -CAfile ca.crt -out profile.plist` with a trusted local copy of `ca.crt`. A tampered profile must fail verification. Do not override a failed cryptographic signature.
 
 ---
 

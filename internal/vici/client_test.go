@@ -7,43 +7,22 @@ import (
 	"github.com/swan-panel/swan-panel/internal/vici"
 )
 
-func TestVICIClient(t *testing.T) {
-	client := vici.NewClient("/tmp/test-charon-not-exist.vici")
+func TestVICIClientFailClosedWithoutSocket(t *testing.T) {
+	client := vici.NewClient("/tmp/swanpanel-test-charon-nonexistent.vici")
 	ctx := context.Background()
-
-	// 1. Test listing sessions
-	sessions, err := client.ListSAs(ctx)
-	if err != nil {
-		t.Fatalf("Failed to list SAs: %v", err)
+	if _, err := client.ListSAs(ctx); err == nil {
+		t.Fatal("Missing VICI socket must not return simulated sessions")
 	}
-
-	if len(sessions) == 0 {
-		t.Fatalf("Expected baseline sessions, got 0")
+	if err := client.TerminateSA(ctx, "unavailable"); err == nil {
+		t.Fatal("Cannot claim a session was terminated without VICI")
 	}
-
-	initialCount := len(sessions)
-	targetName := sessions[0].IKEName
-
-	// 2. Test terminating session
-	if err := client.TerminateSA(ctx, targetName); err != nil {
-		t.Fatalf("Failed to terminate SA: %v", err)
+	if err := client.LoadConnection(ctx, "test-conn", map[string]any{"version": "2"}); err == nil {
+		t.Fatal("Cannot claim a connection was applied without VICI")
 	}
-
-	updatedSessions, err := client.ListSAs(ctx)
-	if err != nil {
-		t.Fatalf("Failed to list updated SAs: %v", err)
+	if err := client.LoadPool(ctx, "test-pool", "10.10.10.0/24"); err == nil {
+		t.Fatal("Cannot claim a pool was installed without VICI")
 	}
-
-	if len(updatedSessions) != initialCount-1 {
-		t.Errorf("Expected %d sessions after termination, got %d", initialCount-1, len(updatedSessions))
-	}
-
-	// 3. Test dynamic load-conn
-	params := map[string]interface{}{
-		"version": "2",
-		"mobike":  "yes",
-	}
-	if err := client.LoadConnection(ctx, "test-conn", params); err != nil {
-		t.Fatalf("Failed to load connection: %v", err)
+	if client.IsConnected() {
+		t.Fatal("Disconnected client reported connected")
 	}
 }

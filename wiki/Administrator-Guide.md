@@ -56,14 +56,12 @@ Navigate your browser to the gateway address: `https://<gateway-fqdn>:8080` (or 
 
 ![SwanPanel Login Screen (Dark Mode)](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/01_login_page.png)
 
-### 2.2. Root Administrator Credentials
-Upon first initialization, SwanPanel provisions the default system administrator:
-* **Default Email:** `admin@swanpanel.internal`
-* **Default Password:** `admin123456`
-* **1-Click Auto-Fill:** On developer/testing environments, click the blue **"Root Administrator"** badge at the bottom of the card to automatically fill credentials.
+### 2.2. One-Time Administrator Setup
+On first startup SwanPanel creates **no default login**. It generates a 256-bit one-time setup token, writes it to `DB_PATH + ".setup-token"` with file mode `0600`, and stores only the token hash in SQLite.
 
-> [!IMPORTANT]
-> Immediately upon initial login, navigate to **Users Page** to update the root administrator password or link an enterprise OIDC Identity Provider.
+Read the token locally on the gateway (for example, `sudo cat /var/lib/swan-panel/swanpanel.db.setup-token`), enter it in the web setup page, and choose the first administrator's name, email and a password of 12–72 bytes. The token is consumed immediately after the administrator is created. Do not paste it into chat, tickets or logs.
+
+OIDC is configured separately after initial setup; SSO candidates must be approved by an administrator.
 
 ### 2.3. Language & Theme Customization
 * **Internationalization (i18n):** Toggle between **English (EN)** and **Tiếng Việt (VI)** instantly using the globe switcher in the sidebar header.

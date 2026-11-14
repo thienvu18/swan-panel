@@ -2,19 +2,56 @@ package db
 
 import (
 	"time"
+
+	"gorm.io/gorm"
 )
+
+// BootstrapState stores only a hash of the one-time installer token.
+type BootstrapState struct {
+	ID        uint      `gorm:"primaryKey" json:"-"`
+	TokenHash string    `gorm:"size:64;not null" json:"-"`
+	CreatedAt time.Time `json:"-"`
+}
+
+// OIDCLoginAttempt is single-use state bound to a browser cookie and PKCE verifier.
+type OIDCLoginAttempt struct {
+	StateHash    string `gorm:"primaryKey;size:64"`
+	ProviderID   string `gorm:"size:64;not null"`
+	Nonce        string `gorm:"size:128;not null"`
+	PKCEVerifier string `gorm:"size:128;not null"`
+	ExpiresAt    time.Time
+}
+
+// OIDCLoginTicket is a single-use post-callback ticket; it never appears in the URL.
+type OIDCLoginTicket struct {
+	TicketHash string `gorm:"primaryKey;size:64"`
+	UserID     string `gorm:"size:64;not null"`
+	ExpiresAt  time.Time
+}
+
+// CertificateRevocation is retained even when a device is deleted, so a CRL cannot lose old serials.
+type CertificateRevocation struct {
+	Serial    string    `gorm:"primaryKey;size:128"`
+	DeviceID  string    `gorm:"size:64;index"`
+	RevokedAt time.Time `gorm:"not null"`
+}
 
 // OIDCProvider represents an OpenID Connect identity provider (Google, Microsoft, Keycloak, etc.)
 type OIDCProvider struct {
-	ID           string    `gorm:"primaryKey;size:64" json:"id"`
-	Name         string    `gorm:"size:128;not null" json:"name"`
-	ProviderType string    `gorm:"size:32;not null" json:"provider_type"` // 'google', 'microsoft', 'keycloak', 'custom'
-	IssuerURL    string    `gorm:"size:512;not null" json:"issuer_url"`
-	ClientID     string    `gorm:"size:256;not null" json:"client_id"`
-	ClientSecret string    `gorm:"size:512;not null" json:"-"` // Never serialized to JSON
-	IsActive     bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt    time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	ID               string    `gorm:"primaryKey;size:64" json:"id"`
+	Name             string    `gorm:"size:128;not null" json:"name"`
+	ProviderType     string    `gorm:"size:32;not null" json:"provider_type"` // 'google', 'microsoft', 'keycloak', 'custom'
+	IssuerURL        string    `gorm:"size:512;not null" json:"issuer_url"`
+	ClientID         string    `gorm:"size:256;not null" json:"client_id"`
+	ClientSecret     string    `gorm:"size:512;not null" json:"-"` // Never serialized to JSON
+	AuthorizationURL string    `gorm:"size:1024" json:"authorization_url,omitempty"`
+	TokenURL         string    `gorm:"size:1024" json:"token_url,omitempty"`
+	JWKSURL          string    `gorm:"size:1024" json:"jwks_url,omitempty"`
+	UserInfoURL      string    `gorm:"size:1024" json:"userinfo_url,omitempty"`
+	ClaimMapping     string    `gorm:"type:text" json:"claim_mapping,omitempty"`
+	IsActive         bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt        time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt        time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 // User represents an internal user (OIDC SSO or local admin/member)
@@ -24,7 +61,8 @@ type User struct {
 	Name          string        `gorm:"size:128;not null" json:"name"`
 	AuthType      string        `gorm:"size:16;default:'oidc'" json:"auth_type"` // 'oidc' or 'local'
 	PasswordHash  string        `gorm:"size:256" json:"-"`                       // Stored only for local users (bcrypt)
-	IDPProviderID *string       `gorm:"size:64" json:"idp_provider_id,omitempty"`
+	IDPProviderID *string       `gorm:"column:idp_provider_id;size:64;uniqueIndex:ux_oidc_provider_subject" json:"idp_provider_id,omitempty"`
+	IDPSubject    string        `gorm:"column:idp_subject;size:512;uniqueIndex:ux_oidc_provider_subject" json:"-"`
 	IDPProvider   *OIDCProvider `gorm:"foreignKey:IDPProviderID;constraint:OnDelete:SET NULL" json:"idp_provider,omitempty"`
 	IsAdmin       bool          `gorm:"default:false" json:"is_admin"`
 	Status        string        `gorm:"size:32;default:'PENDING'" json:"status"` // 'PENDING', 'ACTIVE', 'SUSPENDED'
@@ -57,21 +95,23 @@ type ResourceGroup struct {
 
 // Device represents a network peer (Company Node or User Device)
 type Device struct {
-	ID               string        `gorm:"primaryKey;size:64" json:"id"`
-	Hostname         string        `gorm:"size:128;uniqueIndex;not null" json:"hostname"`
-	DeviceType       string        `gorm:"size:32;not null" json:"device_type"` // 'company' (Node) or 'user' (Device)
-	UserID           *string       `gorm:"size:64" json:"user_id,omitempty"`
-	User             *User         `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"user,omitempty"`
-	ResourceGroupID  string        `gorm:"size:64;not null" json:"resource_group_id"`
-	ResourceGroup    ResourceGroup `gorm:"foreignKey:ResourceGroupID" json:"resource_group"`
-	IPAllocationType string        `gorm:"size:16;not null" json:"ip_allocation_type"` // 'dynamic' or 'static'
-	VirtualIP        string        `gorm:"size:64;not null" json:"virtual_ip"`
-	Platform         string        `gorm:"size:32;not null" json:"platform"` // 'macos', 'ios', 'windows', 'linux', 'android'
-	CertFingerprint  string        `gorm:"size:128" json:"cert_fingerprint,omitempty"`
-	IsRevoked        bool          `gorm:"default:false" json:"is_revoked"`
-	LastSeenAt       *time.Time    `json:"last_seen_at,omitempty"`
-	CreatedAt        time.Time     `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt        time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
+	ID               string         `gorm:"primaryKey;size:64" json:"id"`
+	Hostname         string         `gorm:"size:128;uniqueIndex;not null" json:"hostname"`
+	DeviceType       string         `gorm:"size:32;not null" json:"device_type"` // 'company' (Node) or 'user' (Device)
+	UserID           *string        `gorm:"size:64" json:"user_id,omitempty"`
+	User             *User          `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL" json:"user,omitempty"`
+	ResourceGroupID  string         `gorm:"size:64;not null" json:"resource_group_id"`
+	ResourceGroup    ResourceGroup  `gorm:"foreignKey:ResourceGroupID" json:"resource_group"`
+	IPAllocationType string         `gorm:"size:16;not null" json:"ip_allocation_type"` // 'dynamic' or 'static'
+	VirtualIP        string         `gorm:"size:64;uniqueIndex;not null" json:"virtual_ip"`
+	Platform         string         `gorm:"size:32;not null" json:"platform"` // 'macos', 'ios', 'windows', 'linux', 'android'
+	CertFingerprint  string         `gorm:"size:128" json:"cert_fingerprint,omitempty"`
+	CertSerial       string         `gorm:"size:128;index" json:"cert_serial,omitempty"`
+	IsRevoked        bool           `gorm:"default:false" json:"is_revoked"`
+	DeletedAt        gorm.DeletedAt `gorm:"index" json:"-"`
+	LastSeenAt       *time.Time     `json:"last_seen_at,omitempty"`
+	CreatedAt        time.Time      `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt        time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 // AccessRule defines network access control policies (ALLOW or DENY exclusions)

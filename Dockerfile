@@ -3,7 +3,7 @@
 # https://github.com/thienvu18/swan-panel
 #
 # Stage 1: Build modern React SPA with Vite & Node 26 (Alpine 3.23)
-# Stage 2: Compile pure Go 1.27 static binary with CGO_ENABLED=0 (Alpine 3.23)
+# Stage 2: Compile CGO-enabled Go with musl into a static Linux binary
 # Stage 3: Lightweight Alpine 3.23 runtime with strongSwan, iptables, & nftables
 # ==============================================================================
 
@@ -23,14 +23,15 @@ COPY ui/ ./
 RUN npm run build
 
 # ------------------------------------------------------------------------------
-# Stage 2: Go Backend Builder (Pure Go, Statically Linked)
+# Stage 2: Go Backend Builder (CGO SQLite, statically linked with musl)
 # ------------------------------------------------------------------------------
 FROM golang:1.27-alpine3.23 AS backend-builder
 
 WORKDIR /build
 
-# Install CA certificates and git
-RUN apk add --no-cache ca-certificates git
+# SQLite driver github.com/mattn/go-sqlite3 requires CGO and a native C compiler.
+# Alpine uses musl, allowing a static release binary without glibc dependency.
+RUN apk add --no-cache ca-certificates git gcc musl-dev binutils file
 
 # Cache Go modules
 COPY go.mod go.sum ./
@@ -42,12 +43,22 @@ COPY . .
 # Copy compiled React SPA assets from Stage 1 into ui/dist for embed.go
 COPY --from=frontend-builder /build/ui/dist ./ui/dist
 
-# Compile pure static binary with symbols stripped for minimal size
-RUN CGO_ENABLED=0 GOOS=linux go build \
+# A release must embed the actual React bundle, never an empty directory
+# or the development placeholder. Abort image builds without JavaScript.
+RUN test -s ui/dist/index.html \
+    && find ui/dist/assets -type f -name '*.js' | grep -q .
+
+# Compile with the official GORM SQLite driver; omit loadable SQLite extensions.
+# Static linking avoids requiring an external libc or libsqlite3 in the runtime.
+RUN CGO_ENABLED=1 CC=gcc GOOS=linux go build \
     -trimpath \
-    -ldflags="-s -w -extldflags '-static'" \
+    -tags "netgo,osusergo,sqlite_omit_load_extension" \
+    -ldflags="-s -w -linkmode external -extldflags '-static'" \
     -o /build/swan-panel \
-    ./cmd/server
+    ./cmd/server \
+    && file /build/swan-panel \
+    && file /build/swan-panel | grep -q 'statically linked' \
+    && ! readelf -l /build/swan-panel | grep -q INTERP
 
 # ------------------------------------------------------------------------------
 # Stage 3: Lightweight Runtime Image
@@ -61,11 +72,12 @@ LABEL org.opencontainers.image.url="https://github.com/thienvu18/swan-panel"
 LABEL org.opencontainers.image.source="https://github.com/thienvu18/swan-panel"
 LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
-# Install strongSwan, firewall tooling, and runtime utilities
+# Install strongSwan, firewall tooling, and runtime utilities.
+# Alpine 3.23's iptables package supplies ip6tables; there is no separate
+# ip6tables package for this release.
 RUN apk add --no-cache \
     strongswan \
     iptables \
-    ip6tables \
     nftables \
     iproute2 \
     ca-certificates \
@@ -75,8 +87,9 @@ RUN apk add --no-cache \
     tini
 
 # Setup application, state, and runtime socket directories
-RUN mkdir -p /var/lib/swan-panel /etc/swan-panel /var/run /etc/ipsec.d && \
-    chmod 750 /var/lib/swan-panel
+RUN mkdir -p /var/lib/swan-panel /etc/swan-panel /var/run /etc/ipsec.d \
+    /etc/swanctl/x509ca /etc/swanctl/x509 /etc/swanctl/rsa /etc/swanctl/x509crl && \
+    chmod 750 /var/lib/swan-panel && chmod 700 /etc/swanctl/rsa
 
 # Copy statically compiled binary and entrypoint
 COPY --from=backend-builder /build/swan-panel /usr/local/bin/swan-panel

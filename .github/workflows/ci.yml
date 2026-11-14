@@ -2,48 +2,110 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
-    name: Build & Test
-    runs-on: ubuntu-latest
+    name: Test + CGO SQLite + static Linux binary
+    runs-on: ubuntu-24.04
+    env:
+      CGO_ENABLED: "1"
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential musl-tools binutils file
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
-          cache: 'npm'
+          node-version: "26"
+          cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      - name: Build Frontend SPA
+      - name: Validate Dev Container configuration and LAN port mappings
         run: |
-          cd ui
-          npm ci
-          npm run build
+          node scripts/test-devcontainer-config.mjs
+          docker compose -f .devcontainer/compose.yml config --quiet
+
+      - name: Install frontend
+        run: cd ui && npm ci
+
+      - name: Frontend regression tests
+        run: cd ui && npm test
+
+      - name: Build embedded frontend
+        run: cd ui && npm run build
 
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.27'
-          check-latest: true
+          go-version-file: go.mod
+          cache: true
 
-      - name: Go Vet
+      - name: Validate shell scripts
+        run: |
+          bash -n install.sh
+          sh -n scripts/build-linux-static.sh
+          sh -n scripts/check-dependencies.sh
+          sh -n scripts/test-release-config.sh
+          sh -n scripts/check-descriptive-test-names.sh
+
+      - name: Enforce descriptive test naming
+        run: sh scripts/check-descriptive-test-names.sh
+
+      - name: Check release configuration invariants
+        run: sh scripts/test-release-config.sh
+
+      - name: Check approved direct dependencies
+        run: sh scripts/check-dependencies.sh
+
+      - name: Verify tidy Go module files
+        run: go mod tidy -diff
+
+      - name: Go formatting
+        run: |
+          unformatted="$(gofmt -l embed.go embed_test.go $(find cmd internal -name '*.go'))"
+          if [ -n "$unformatted" ]; then
+            printf 'Unformatted Go files:\n%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Go vet
         run: go vet ./...
 
-      - name: Run Test Suite (Race Detector Enabled)
-        run: go test -v -race ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.14.0
+          args: ./...
 
-      - name: Compile Single Binary
+      - name: Run Go tests with race detector and CGO
+        env:
+          SWANPANEL_REQUIRE_BUILT_UI: "1"
+        run: go test -count=1 -race ./...
+
+      - name: Build native static Linux AMD64 binary
+        env:
+          VERSION: ci
+          OUTPUT: dist/swan-panel-linux-amd64
+        run: sh scripts/build-linux-static.sh
+
+      - name: Verify production Docker image builds with CGO SQLite
+        run: docker build --pull --tag swan-panel:ci .
+
+      - name: Smoke test release image binary
         run: |
-          CGO_ENABLED=0 go build -ldflags="-s -w" -o swan-panel ./cmd/server
-          ls -lh swan-panel
+          docker run --rm --entrypoint /usr/local/bin/swan-panel swan-panel:ci --version | grep -Fx 'SwanPanel dev'
 
-      - name: Verify Docker Build
-        run: docker build -t swan-panel:ci .
+      - name: Build VS Code Dev Container image
+        run: docker compose -f .devcontainer/compose.yml build workspace

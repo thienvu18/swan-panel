@@ -3,10 +3,13 @@ package handlers
 import (
 	"log/slog"
 	"net/http"
+	"net/netip"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/policy"
 )
 
 // AccessHandler manages Zero-Trust access control policies (ALLOW/DENY)
@@ -43,17 +46,18 @@ func (h *AccessHandler) ListAccessRules(c *gin.Context) {
 	var dtos []RuleDTO
 	for _, r := range rules {
 		subjName := r.SubjectID
-		if r.SubjectType == "user_group" {
+		switch r.SubjectType {
+		case "user_group":
 			var g db.UserGroup
 			if err := db.DB.Where("id = ?", r.SubjectID).First(&g).Error; err == nil {
 				subjName = g.Name
 			}
-		} else if r.SubjectType == "user" {
+		case "user":
 			var u db.User
 			if err := db.DB.Where("id = ?", r.SubjectID).First(&u).Error; err == nil {
 				subjName = u.Name
 			}
-		} else if r.SubjectType == "device" {
+		case "device":
 			var d db.Device
 			if err := db.DB.Where("id = ?", r.SubjectID).First(&d).Error; err == nil {
 				subjName = d.Hostname
@@ -100,6 +104,53 @@ func (h *AccessHandler) CreateAccessRule(c *gin.Context) {
 		return
 	}
 
+	if req.Action != "ALLOW" && req.Action != "DENY" {
+		c.JSON(400, gin.H{"error": "Invalid policy action"})
+		return
+	}
+	if req.SubjectType != "user" && req.SubjectType != "user_group" && req.SubjectType != "device" {
+		c.JSON(400, gin.H{"error": "Invalid subject type"})
+		return
+	}
+	var subjectCount int64
+	model := any(&db.User{})
+	switch req.SubjectType {
+	case "user_group":
+		model = &db.UserGroup{}
+	case "device":
+		model = &db.Device{}
+	}
+	if err := db.DB.Model(model).Where("id = ?", req.SubjectID).Count(&subjectCount).Error; err != nil || subjectCount == 0 {
+		c.JSON(400, gin.H{"error": "Subject does not exist"})
+		return
+	}
+	switch req.TargetType {
+	case "resource_group":
+		var count int64
+		if err := db.DB.Model(&db.ResourceGroup{}).Where("id = ?", req.TargetValue).Count(&count).Error; err != nil || count == 0 {
+			c.JSON(400, gin.H{"error": "Target resource group does not exist"})
+			return
+		}
+	case "cidr_ip":
+		target := strings.TrimSpace(req.TargetValue)
+		if addr, err := netip.ParseAddr(target); err == nil {
+			if !addr.Is4() {
+				c.JSON(400, gin.H{"error": "IPv6 policies not supported"})
+				return
+			}
+			req.TargetValue = netip.PrefixFrom(addr, 32).String()
+		} else {
+			prefix, err := netip.ParsePrefix(target)
+			if err != nil || !prefix.Addr().Is4() {
+				c.JSON(400, gin.H{"error": "Invalid IPv4 policy target"})
+				return
+			}
+			req.TargetValue = prefix.Masked().String()
+		}
+	default:
+		c.JSON(400, gin.H{"error": "Invalid target type"})
+		return
+	}
 	ruleNature := req.RuleNature
 	if ruleNature == "" {
 		if req.Action == "DENY" {
@@ -128,7 +179,12 @@ func (h *AccessHandler) CreateAccessRule(c *gin.Context) {
 	}
 
 	slog.Info("Access rule created", "id", rule.ID, "action", rule.Action, "nature", rule.RuleNature)
-	c.JSON(http.StatusCreated, gin.H{"access_rule": rule})
+	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
+		slog.Error("Policy saved but could not be enforced", "rule", rule.ID, "error", err)
+		c.JSON(http.StatusAccepted, gin.H{"access_rule": rule, "runtime_status": "pending", "error": "Gateway policy reconciliation failed"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"access_rule": rule, "runtime_status": "applied"})
 }
 
 // DeleteAccessRule deletes an access rule
@@ -141,5 +197,10 @@ func (h *AccessHandler) DeleteAccessRule(c *gin.Context) {
 	}
 
 	slog.Info("Access rule deleted", "id", id)
-	c.JSON(http.StatusOK, gin.H{"message": "Access rule deleted successfully"})
+	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
+		slog.Error("Policy deletion pending reconciliation", "rule", id, "error", err)
+		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "error": "Rule deleted but gateway policy not synchronized"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Access rule deleted and enforced"})
 }

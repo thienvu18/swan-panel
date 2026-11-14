@@ -13,7 +13,7 @@ SwanPanel integrates five primary subsystem modules into a single self-contained
 |            |                       |                      |            |
 |  +--------------------+  +--------------------+  +------------------+  |
 |  |   SQLite Database  |  |   VICI IPC Driver  |  |  Split-DNS Server|  |
-|  |   (Pure Go GORM)   |  |   (govici UNIX)    |  |  (miekg/dns :53) |  |
+|  |   (Native CGO GORM)   |  |   (govici UNIX)    |  |  (miekg/dns :53) |  |
 |  +--------------------+  +--------------------+  +------------------+  |
 +------------------------------------|-----------------------------------+
                                      | UNIX Socket

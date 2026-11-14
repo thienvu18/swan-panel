@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Laptop, Power, ShieldAlert, Download, Activity } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
+import { downloadDeviceProfile } from '../lib/profileDownload';
 
 interface SessionInfo {
   ike_name: string;
@@ -120,11 +121,12 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
-  const handleDownloadProfile = (deviceId: string, platform: string) => {
-    window.open(
-      `/api/devices/${deviceId}/config/${platform}?token=${localStorage.getItem('token') || ''}`,
-      '_blank'
-    );
+  const handleDownloadProfile = async (deviceId: string, platform: string, hostname: string) => {
+    try {
+      await downloadDeviceProfile(deviceId, platform, hostname);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'VPN profile download failed');
+    }
   };
 
   return (
@@ -335,7 +337,7 @@ export const DashboardPage: React.FC = () => {
                           {!dev.is_revoked && (
                             <>
                               <button
-                                onClick={() => handleDownloadProfile(dev.id, dev.platform || 'macos')}
+                                onClick={() => handleDownloadProfile(dev.id, dev.platform || 'macos', dev.hostname)}
                                 className="p-1.5 hover:bg-blue-500/10 rounded-md text-blue-400 transition-colors"
                                 title={t('dashboard.download_profile')}
                                 aria-label={t('dashboard.download_profile')}

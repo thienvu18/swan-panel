@@ -23,3 +23,16 @@ wiki
 *.md
 LICENSE
 Makefile
+
+# Development environment and local state must never enter production image builds
+.devcontainer
+.env
+.env.*
+data/
+**/data/
+*.setup-token
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileconfig

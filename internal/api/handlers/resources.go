@@ -1,19 +1,28 @@
 package handlers
 
 import (
+	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
 	"net"
 	"net/http"
+	"net/netip"
+	"os"
+	"regexp"
 	"strings"
+	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/pki"
+	"github.com/swan-panel/swan-panel/internal/policy"
 	"github.com/swan-panel/swan-panel/internal/vici"
 )
 
@@ -56,260 +65,327 @@ func (h *ResourcesHandler) ListDevices(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"devices": devices})
 }
 
-// CreateDevice provisions a new Company Node (US-04) or User Device (US-05)
+// CreateDevice enrolls a distinct VPN identity. Its certificate never changes on download.
+var safeDeviceHostname = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,126}[A-Za-z0-9]$`)
+
 func (h *ResourcesHandler) CreateDevice(c *gin.Context) {
 	var req struct {
 		Hostname         string  `json:"hostname" binding:"required"`
-		DeviceType       string  `json:"device_type" binding:"required"` // 'company' or 'user'
+		DeviceType       string  `json:"device_type" binding:"required"`
 		UserID           *string `json:"user_id"`
 		ResourceGroupID  string  `json:"resource_group_id" binding:"required"`
-		IPAllocationType string  `json:"ip_allocation_type"` // 'dynamic' or 'static'
+		IPAllocationType string  `json:"ip_allocation_type"`
 		VirtualIP        string  `json:"virtual_ip"`
-		Platform         string  `json:"platform"` // 'macos', 'windows', 'linux', 'ios', 'android'
+		Platform         string  `json:"platform"`
 	}
-
 	if err := c.ShouldBindJSON(&req); err != nil {
-		slog.Warn("Invalid create device payload", "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		c.JSON(400, gin.H{"error": "Invalid device payload"})
 		return
 	}
-
+	if !safeDeviceHostname.MatchString(req.Hostname) || strings.Contains(req.Hostname, "..") {
+		c.JSON(400, gin.H{"error": "Hostname must be a DNS-compatible identity"})
+		return
+	}
 	if req.DeviceType != "company" && req.DeviceType != "user" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device type; must be 'company' or 'user'"})
+		c.JSON(400, gin.H{"error": "Invalid device type"})
 		return
 	}
-
-	isAdmin := c.GetBool("is_admin")
-	currentUserID := c.GetString("user_id")
-	if !isAdmin {
-		if req.DeviceType != "user" {
-			slog.Warn("Non-admin user attempted to provision company node", "user_id", currentUserID)
-			c.JSON(http.StatusForbidden, gin.H{"error": "Only administrators can provision company nodes"})
-			return
-		}
-		// Enforce ownership to current user
-		req.UserID = &currentUserID
-	}
-
 	if req.IPAllocationType == "" {
 		req.IPAllocationType = "dynamic"
+	}
+	if req.IPAllocationType != "dynamic" && req.IPAllocationType != "static" {
+		c.JSON(400, gin.H{"error": "Invalid IP allocation type"})
+		return
 	}
 	if req.Platform == "" {
 		req.Platform = "macos"
 	}
-
-	// Verify Resource Group exists
-	var rg db.ResourceGroup
-	if err := db.DB.Where("id = ?", req.ResourceGroupID).First(&rg).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Resource Group not found"})
+	switch req.Platform {
+	case "macos", "ios", "windows", "linux", "android":
+	default:
+		c.JSON(400, gin.H{"error": "Unsupported platform"})
 		return
 	}
-
-	// Calculate or assign Virtual IP
-	virtualIP := req.VirtualIP
-	if req.IPAllocationType == "static" {
-		if virtualIP == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Static IP must be specified when using static allocation"})
+	if !c.GetBool("is_admin") {
+		if req.DeviceType != "user" {
+			c.JSON(403, gin.H{"error": "Cannot provision company node"})
 			return
 		}
-		// Validate static IP falls within subnet
-		_, ipNet, err := net.ParseCIDR(rg.CIDRBlock)
-		if err != nil || !ipNet.Contains(net.ParseIP(virtualIP)) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Static IP %s does not belong to subnet %s", virtualIP, rg.CIDRBlock)})
-			return
-		}
-	} else {
-		// Dynamic IP allocation: pick next available IP in subnet
-		allocated, err := allocateDynamicIP(rg.CIDRBlock)
-		if err != nil {
-			slog.Error("Failed to allocate dynamic IP from subnet", "cidr", rg.CIDRBlock, "error", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to allocate IP from subnet pool"})
-			return
-		}
-		virtualIP = allocated
+		current := c.GetString("user_id")
+		req.UserID = &current
 	}
-
-	// Issue X.509 client certificate
-	pkiMgr, err := pki.GetPKIManager()
-	if err != nil {
-		slog.Error("Failed to get PKI manager", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "PKI engine unavailable"})
+	if req.DeviceType == "user" && (req.UserID == nil || *req.UserID == "") {
+		c.JSON(400, gin.H{"error": "User devices require an owner"})
 		return
 	}
-
-	identity := req.Hostname
-	if req.DeviceType == "user" && req.UserID != nil {
-		var u db.User
-		if err := db.DB.Where("id = ?", *req.UserID).First(&u).Error; err == nil {
-			identity = u.Email
-		}
-	}
-
-	certBundle, err := pkiMgr.GenerateClientCertificate(req.Hostname, identity)
-	if err != nil {
-		slog.Error("Failed to generate client certificate", "hostname", req.Hostname, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate certificate"})
-		return
-	}
-
-	// Check for Company Node vs User Device ownership
-	var assignedUserID *string
-	if req.DeviceType == "user" {
-		assignedUserID = req.UserID
-	}
-
 	newDevice := db.Device{
-		ID:               "dev_" + uuid.New().String()[:8],
-		Hostname:         req.Hostname,
-		DeviceType:       req.DeviceType,
-		UserID:           assignedUserID,
-		ResourceGroupID:  req.ResourceGroupID,
-		IPAllocationType: req.IPAllocationType,
-		VirtualIP:        virtualIP,
-		Platform:         req.Platform,
-		CertFingerprint:  certBundle.Fingerprint,
-		IsRevoked:        false,
+		ID: "dev_" + uuid.NewString(), Hostname: req.Hostname,
+		DeviceType: req.DeviceType, ResourceGroupID: req.ResourceGroupID,
+		IPAllocationType: req.IPAllocationType, Platform: req.Platform,
+		UserID: req.UserID,
 	}
-
-	if err := db.DB.Create(&newDevice).Error; err != nil {
-		slog.Error("Failed to save device record", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save device"})
+	// Certificates can be generated before the DB transaction, then persisted
+	// exactly once. Never derive any client IKE ID from an unverified email.
+	manager, err := pki.GetPKIManager()
+	if err != nil {
+		c.JSON(503, gin.H{"error": "CA unavailable"})
 		return
 	}
-
-	slog.Info("Device provisioned successfully", "id", newDevice.ID, "hostname", newDevice.Hostname, "ip", newDevice.VirtualIP, "type", newDevice.DeviceType)
-	realtime.DefaultBroker.Broadcast("device_created", map[string]interface{}{
-		"device_id": newDevice.ID,
-		"hostname":  newDevice.Hostname,
-		"ip":        newDevice.VirtualIP,
+	bundle, err := manager.GenerateClientCertificate(req.Hostname, req.Hostname)
+	if err != nil {
+		c.JSON(503, gin.H{"error": "Certificate issuance failed"})
+		return
+	}
+	newDevice.CertSerial = bundle.SerialNumber
+	newDevice.CertFingerprint = bundle.Fingerprint
+	if err := manager.StoreDeviceBundle(newDevice.ID, bundle); err != nil {
+		c.JSON(503, gin.H{"error": "Failed to persist client identity"})
+		return
+	}
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
+		var group db.ResourceGroup
+		if err := tx.Where("id = ?", req.ResourceGroupID).First(&group).Error; err != nil {
+			return fmt.Errorf("resource group not found")
+		}
+		if req.UserID != nil {
+			var owner db.User
+			if err := tx.Where("id = ? AND status = ?", *req.UserID, "ACTIVE").First(&owner).Error; err != nil {
+				return fmt.Errorf("device owner is not active")
+			}
+		}
+		if req.IPAllocationType == "static" {
+			ip, err := netip.ParseAddr(req.VirtualIP)
+			cidr, errCIDR := netip.ParsePrefix(group.CIDRBlock)
+			if err != nil || errCIDR != nil || !ip.Is4() || !cidr.Contains(ip) || ip == cidr.Masked().Addr() {
+				return fmt.Errorf("static IPv4 address is not a usable address within resource group")
+			}
+			newDevice.VirtualIP = ip.String()
+		} else {
+			ip, err := allocateDynamicIP(tx, group.CIDRBlock)
+			if err != nil {
+				return err
+			}
+			newDevice.VirtualIP = ip
+		}
+		return tx.Create(&newDevice).Error // Unique virtual_ip prevents parallel duplicate assignment.
 	})
-
-	c.JSON(http.StatusCreated, gin.H{
-		"device":     newDevice,
-		"cert_pem":   certBundle.CertPEM,
-		"ca_pem":     certBundle.CACertPEM,
-		"message":    "Device provisioned and certificate issued",
-	})
+	if err != nil {
+		_ = manager.DeleteDeviceBundle(newDevice.ID)
+		c.JSON(409, gin.H{"error": err.Error()})
+		return
+	}
+	realtime.DefaultBroker.Broadcast("device_created", map[string]any{"device_id": newDevice.ID})
+	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
+		slog.Error("Device enrolled but runtime cannot be enforced", "id", newDevice.ID, "error", err)
+		c.JSON(http.StatusAccepted, gin.H{"device": newDevice, "runtime_status": "pending", "message": "Identity persisted but gateway policy application failed"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"device": newDevice, "runtime_status": "applied", "message": "Device enrolled; configuration ready for download"})
 }
 
-// DownloadDeviceConfig generates and serves signed configuration profiles (.mobileconfig, .ps1, swanctl.conf) (US-04, US-05)
+// DownloadDeviceConfig delivers the previously issued identity. Legacy devices
+// whose private keys were not persisted must be re-enrolled, not silently reissued.
 func (h *ResourcesHandler) DownloadDeviceConfig(c *gin.Context) {
-	id := c.Param("id")
-	platform := c.Param("platform")
-	if platform == "" {
-		platform = c.Query("platform")
-	}
-
 	var dev db.Device
-	if err := db.DB.Where("id = ?", id).First(&dev).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+	if err := db.DB.First(&dev, "id = ?", c.Param("id")).Error; err != nil {
+		c.JSON(404, gin.H{"error": "Device not found"})
 		return
 	}
-
-	// Enforce Object-Level Authorization (BOLA): Non-admins can only download configs for devices they own
-	isAdmin := c.GetBool("is_admin")
-	currentUserID := c.GetString("user_id")
-	if !isAdmin && (dev.UserID == nil || *dev.UserID != currentUserID) {
-		slog.Warn("Unauthorized access attempt to device configuration", "device_id", id, "user_id", currentUserID)
-		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: you do not own this device"})
+	if !c.GetBool("is_admin") && (dev.UserID == nil || *dev.UserID != c.GetString("user_id")) {
+		c.JSON(403, gin.H{"error": "Device does not belong to you"})
 		return
 	}
-
 	if dev.IsRevoked {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Device certificate has been revoked"})
+		c.JSON(403, gin.H{"error": "Device identity revoked"})
 		return
 	}
-
-	// Get strongSwan settings for server endpoint
+	manager, err := pki.GetPKIManager()
+	if err != nil {
+		c.JSON(503, gin.H{"error": "CA unavailable"})
+		return
+	}
+	bundle, err := manager.LoadDeviceBundle(dev.ID)
+	if err != nil || dev.CertSerial == "" || bundle.SerialNumber != dev.CertSerial || bundle.Fingerprint != dev.CertFingerprint {
+		c.JSON(409, gin.H{"error": "Existing identity cannot be recovered safely; revoke and re-enroll the device"})
+		return
+	}
 	var sw db.StrongswanSettings
 	if err := db.DB.First(&sw, 1).Error; err != nil {
-		sw.ServerEndpoint = "vpn.company.com"
-	}
-
-	pkiMgr, _ := pki.GetPKIManager()
-	certBundle, err := pkiMgr.GenerateClientCertificate(dev.Hostname, dev.Hostname)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate certificate bundle"})
+		c.JSON(503, gin.H{"error": "Gateway settings unavailable"})
 		return
 	}
-
-	switch strings.ToLower(platform) {
-	case "apple", "macos", "ios":
-		cfg := pki.GenerateAppleMobileconfig(sw.ServerEndpoint, dev.Hostname, certBundle)
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.mobileconfig\"", dev.Hostname))
-		c.Data(http.StatusOK, "application/x-apple-aspen-config", []byte(cfg))
-
+	result, err := policy.NewCompiler(db.DB).CompileForDevice(c.Request.Context(), dev.ID)
+	if err != nil {
+		c.JSON(503, gin.H{"error": "Policy compilation failed"})
+		return
+	}
+	c.Header("Cache-Control", "no-store, private")
+	c.Header("Pragma", "no-cache")
+	platform := strings.ToLower(c.Param("platform"))
+	if platform == "android-native" || platform == "android-p12" {
+		archive, err := pki.BuildAndroidNativeBundle(sw.ServerEndpoint, sw.ServerIdentity, dev.Hostname, bundle)
+		if err != nil {
+			c.JSON(503, gin.H{"error": "Unable to export native Android credentials"})
+			return
+		}
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", dev.Hostname+"-android-native.zip"))
+		c.Data(http.StatusOK, "application/zip", archive)
+		return
+	}
+	if platform == "apple" || platform == "macos" || platform == "ios" {
+		profile, profileErr := pki.BuildAppleProfile(sw.ServerEndpoint, sw.ServerIdentity, dev.Hostname, bundle)
+		if profileErr != nil {
+			c.JSON(503, gin.H{"error": "Cannot generate Apple IKEv2 profile"})
+			return
+		}
+		signed, signErr := manager.SignAppleProfile([]byte(profile))
+		if signErr != nil {
+			slog.Error("Apple profile S/MIME signing failed", "device_id", dev.ID, "error", signErr)
+			c.JSON(503, gin.H{"error": "Cannot sign Apple configuration profile"})
+			return
+		}
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", dev.Hostname+".mobileconfig"))
+		c.Data(http.StatusOK, "application/x-apple-aspen-config", signed)
+		return
+	}
+	var filename, contentType, body string
+	switch platform {
 	case "windows", "ps1":
-		cfg := pki.GenerateWindowsPowerShellScript(sw.ServerEndpoint, dev.Hostname, certBundle)
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"setup-%s.ps1\"", dev.Hostname))
-		c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(cfg))
-
+		filename = "setup-" + dev.Hostname + ".ps1"
+		contentType = "text/plain; charset=utf-8"
+		body, err = pki.BuildWindowsInstallerWithRoutes(sw.ServerEndpoint, dev.Hostname, bundle, result.AllowedSelectors)
 	case "linux", "swanctl", "sh":
 		if c.Query("format") == "conf" {
-			cfg := pki.GenerateSwanctlConfig(sw.ServerEndpoint, dev.Hostname, certBundle)
-			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"swanctl-%s.conf\"", dev.Hostname))
-			c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(cfg))
+			filename = "swanctl-" + dev.Hostname + ".conf"
+			contentType = "text/plain; charset=utf-8"
+			body, err = pki.BuildLinuxConfig(sw.ServerEndpoint, sw.ServerIdentity, dev.Hostname, result.AllowedSelectors)
 		} else {
-			cfg := pki.GenerateLinuxInstallerScript(sw.ServerEndpoint, dev.Hostname, certBundle)
-			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"setup-%s.sh\"", dev.Hostname))
-			c.Data(http.StatusOK, "text/x-shellscript; charset=utf-8", []byte(cfg))
+			filename = "setup-" + dev.Hostname + ".sh"
+			contentType = "text/x-shellscript; charset=utf-8"
+			body, err = pki.BuildLinuxInstaller(sw.ServerEndpoint, sw.ServerIdentity, dev.Hostname, bundle, result.AllowedSelectors)
 		}
-
 	case "android", "sswan":
-		cfg := pki.GenerateAndroidProfile(sw.ServerEndpoint, dev.Hostname, certBundle)
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.sswan\"", dev.Hostname))
-		c.Data(http.StatusOK, "application/vnd.strongswan.profile", []byte(cfg))
-
+		filename = dev.Hostname + ".sswan"
+		contentType = "application/vnd.strongswan.profile"
+		body, err = pki.BuildAndroidProfile(sw.ServerEndpoint, sw.ServerIdentity, dev.Hostname, bundle, result.AllowedSelectors)
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported platform; must be 'apple', 'windows', 'linux', or 'android'"})
+		c.JSON(400, gin.H{"error": "Unsupported platform"})
+		return
 	}
+	if err != nil || body == "" {
+		slog.Error("Client profile generation failed", "device_id", dev.ID, "platform", platform, "error", err)
+		c.JSON(503, gin.H{"error": "Unable to generate a valid VPN profile"})
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	c.Data(200, contentType, []byte(body))
 }
 
-// RevokeDevice revokes device certificate and closes session (US-18)
+func applyRevocation(ctx context.Context, dev *db.Device) error {
+	if dev.CertSerial == "" {
+		return errors.New("issued certificate serial is missing")
+	}
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(dev).Update("is_revoked", true).Error; err != nil {
+			return err
+		}
+		rev := db.CertificateRevocation{Serial: dev.CertSerial, DeviceID: dev.ID, RevokedAt: time.Now().UTC()}
+		return tx.Where("serial = ?", rev.Serial).FirstOrCreate(&rev).Error
+	})
+	if err != nil {
+		return err
+	}
+	// Continue every revocation action even if one enforcement component fails.
+	// A failed nftables update must not prevent terminating live IKE sessions.
+	var failures []error
+	if err := policy.NewFirewall(db.DB).Apply(ctx); err != nil {
+		failures = append(failures, fmt.Errorf("firewall revocation: %w", err))
+	}
+	if err := publishRevocationLedger(ctx); err != nil {
+		failures = append(failures, fmt.Errorf("signed CRL publication: %w", err))
+	}
+	if err := policy.Reconcile(ctx, db.DB); err != nil {
+		failures = append(failures, fmt.Errorf("device policy reconciliation: %w", err))
+	}
+	if os.Getenv("APP_ENV") != "test" {
+		client := vici.GetClient("")
+		// Best effort: even if the central reconciler stopped at nftables,
+		// disallow new handshakes using the old per-device VICI connection.
+		if err := client.UnloadConnection(ctx, policy.ConnectionName(dev.ID)); err != nil {
+			slog.Warn("Device connection may already have been unloaded", "id", dev.ID, "error", err)
+		}
+		active, err := client.ListSAs(ctx)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("inspect active IKE SAs: %w", err))
+		} else {
+			for _, sa := range active {
+				if sa.PeerIdentity == dev.Hostname || sa.IKEName == policy.ConnectionName(dev.ID) {
+					if err := client.TerminateSA(ctx, sa.IKEName); err != nil {
+						failures = append(failures, fmt.Errorf("terminate IKE SA %s: %w", sa.IKEName, err))
+					}
+				}
+			}
+		}
+	}
+	manager, err := pki.GetPKIManager()
+	if err != nil {
+		failures = append(failures, err)
+	} else if err := manager.DeleteDeviceBundle(dev.ID); err != nil {
+		failures = append(failures, fmt.Errorf("remove exported device identity: %w", err))
+	}
+	return errors.Join(failures...)
+}
+
+func publishRevocationLedger(ctx context.Context) error {
+	var records []db.CertificateRevocation
+	if err := db.DB.WithContext(ctx).Find(&records).Error; err != nil {
+		return err
+	}
+	entries := make([]pki.RevokedCertificate, 0, len(records))
+	for _, record := range records {
+		entries = append(entries, pki.RevokedCertificate{Serial: record.Serial, RevokedAt: record.RevokedAt})
+	}
+	manager, err := pki.GetPKIManager()
+	if err != nil {
+		return err
+	}
+	return manager.PublishCRL(ctx, entries)
+}
+
 func (h *ResourcesHandler) RevokeDevice(c *gin.Context) {
-	id := c.Param("id")
 	var dev db.Device
-	if err := db.DB.Where("id = ?", id).First(&dev).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+	if err := db.DB.First(&dev, "id = ?", c.Param("id")).Error; err != nil {
+		c.JSON(404, gin.H{"error": "Device not found"})
 		return
 	}
-
-	// Enforce Object-Level Authorization (BOLA): Non-admins can only revoke devices they own
-	isAdmin := c.GetBool("is_admin")
-	currentUserID := c.GetString("user_id")
-	if !isAdmin && (dev.UserID == nil || *dev.UserID != currentUserID) {
-		slog.Warn("Unauthorized attempt to revoke device", "device_id", id, "user_id", currentUserID)
-		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: you do not own this device"})
+	if !c.GetBool("is_admin") && (dev.UserID == nil || *dev.UserID != c.GetString("user_id")) {
+		c.JSON(403, gin.H{"error": "Device does not belong to you"})
 		return
 	}
-
-	dev.IsRevoked = true
-	if err := db.DB.Save(&dev).Error; err != nil {
-		slog.Error("Failed to revoke device", "id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to revoke device"})
+	if err := applyRevocation(c.Request.Context(), &dev); err != nil {
+		slog.Error("Device revoked in database; enforcement reconciliation pending", "id", dev.ID, "error", err)
+		c.JSON(503, gin.H{"error": "Device revocation recorded, but gateway enforcement is pending", "revocation_pending": true})
 		return
 	}
-
-	// Terminate active tunnel if currently connected
-	viciClient := vici.GetClient("")
-	_ = viciClient.TerminateSA(c.Request.Context(), dev.Hostname)
-
-	slog.Info("Device revoked and certificate invalidated", "id", id, "hostname", dev.Hostname)
-	realtime.DefaultBroker.Broadcast("device_revoked", map[string]interface{}{"device_id": id})
-	c.JSON(http.StatusOK, gin.H{"message": "Device revoked successfully", "device": dev})
+	realtime.DefaultBroker.Broadcast("device_revoked", map[string]any{"device_id": dev.ID})
+	c.JSON(200, gin.H{"message": "Device certificate revoked and active sessions terminated"})
 }
 
-// DeleteDevice deletes a device
 func (h *ResourcesHandler) DeleteDevice(c *gin.Context) {
-	id := c.Param("id")
-	if err := db.DB.Where("id = ?", id).Delete(&db.Device{}).Error; err != nil {
-		slog.Error("Failed to delete device", "id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete device"})
+	var dev db.Device
+	if err := db.DB.First(&dev, "id = ?", c.Param("id")).Error; err != nil {
+		c.JSON(404, gin.H{"error": "Device not found"})
 		return
 	}
-
-	slog.Info("Device record deleted", "id", id)
-	c.JSON(http.StatusOK, gin.H{"message": "Device deleted successfully"})
+	if err := applyRevocation(c.Request.Context(), &dev); err != nil {
+		c.JSON(503, gin.H{"error": "Cannot delete a device until certificate revocation is enforced"})
+		return
+	}
+	if err := db.DB.Delete(&dev).Error; err != nil {
+		c.JSON(500, gin.H{"error": "Failed to delete device"})
+		return
+	}
+	c.JSON(200, gin.H{"message": "Device revoked and deleted"})
 }
 
 // ListResourceGroups returns subnets with node capacity
@@ -323,12 +399,12 @@ func (h *ResourcesHandler) ListResourceGroups(c *gin.Context) {
 	}
 
 	type GroupDTO struct {
-		ID               string `json:"id"`
-		Name             string `json:"name"`
-		CIDRBlock        string `json:"cidr_block"`
-		Description      string `json:"description"`
-		Capacity         int    `json:"capacity"`
-		EnrolledNodeCount int   `json:"enrolled_node_count"`
+		ID                string `json:"id"`
+		Name              string `json:"name"`
+		CIDRBlock         string `json:"cidr_block"`
+		Description       string `json:"description"`
+		Capacity          int    `json:"capacity"`
+		EnrolledNodeCount int    `json:"enrolled_node_count"`
 	}
 
 	var dtoList []GroupDTO
@@ -366,10 +442,25 @@ func (h *ResourcesHandler) CreateResourceGroup(c *gin.Context) {
 		return
 	}
 
-	// Validate CIDR format
-	if _, _, err := net.ParseCIDR(req.CIDRBlock); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid CIDR block format (e.g. 10.100.0.0/16)"})
+	// Normalize IPv4 subnet and disallow overlapping VPN virtual-address pools.
+	newPrefix, err := netip.ParsePrefix(req.CIDRBlock)
+	if err != nil || !newPrefix.Addr().Is4() || newPrefix.Bits() < 8 || newPrefix.Bits() > 30 {
+		c.JSON(400, gin.H{"error": "Resource group must be a valid IPv4 CIDR (/8 to /30)"})
 		return
+	}
+	newPrefix = newPrefix.Masked()
+	req.CIDRBlock = newPrefix.String()
+	var existingGroups []db.ResourceGroup
+	if err := db.DB.Find(&existingGroups).Error; err != nil {
+		c.JSON(500, gin.H{"error": "Unable to validate subnet overlaps"})
+		return
+	}
+	for _, g := range existingGroups {
+		oldPrefix, err := netip.ParsePrefix(g.CIDRBlock)
+		if err == nil && (newPrefix.Contains(oldPrefix.Addr()) || oldPrefix.Contains(newPrefix.Addr())) {
+			c.JSON(409, gin.H{"error": "This VPN subnet overlaps an existing resource group"})
+			return
+		}
 	}
 
 	rg := db.ResourceGroup{
@@ -397,6 +488,15 @@ func (h *ResourcesHandler) DeleteResourceGroup(c *gin.Context) {
 	db.DB.Model(&db.Device{}).Where("resource_group_id = ?", id).Count(&devCount)
 	if devCount > 0 {
 		c.JSON(http.StatusConflict, gin.H{"error": "Cannot delete resource group while devices are attached to it"})
+		return
+	}
+	var referenced int64
+	if err := db.DB.Model(&db.AccessRule{}).Where("target_type = ? AND target_value = ?", "resource_group", id).Count(&referenced).Error; err != nil {
+		c.JSON(500, gin.H{"error": "Could not validate policy references"})
+		return
+	}
+	if referenced > 0 {
+		c.JSON(409, gin.H{"error": "Remove referencing access rules before deleting this subnet"})
 		return
 	}
 
@@ -428,7 +528,7 @@ func calculateCIDRCapacity(cidr string) int {
 	return capacity
 }
 
-func allocateDynamicIP(cidr string) (string, error) {
+func allocateDynamicIP(tx *gorm.DB, cidr string) (string, error) {
 	_, ipNet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return "", err
@@ -436,7 +536,7 @@ func allocateDynamicIP(cidr string) (string, error) {
 
 	// Fetch existing IPs in this subnet
 	var existingIPs []string
-	db.DB.Model(&db.Device{}).Pluck("virtual_ip", &existingIPs)
+	tx.Model(&db.Device{}).Unscoped().Pluck("virtual_ip", &existingIPs)
 	usedSet := make(map[string]bool)
 	for _, ip := range existingIPs {
 		usedSet[ip] = true

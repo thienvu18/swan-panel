@@ -7,21 +7,41 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/smallstep/pkcs7"
 	swanpanel "github.com/swan-panel/swan-panel"
 	"github.com/swan-panel/swan-panel/internal/api"
 	"github.com/swan-panel/swan-panel/internal/api/middleware"
 	"github.com/swan-panel/swan-panel/internal/config"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/vici"
 )
+
+func TestMain(m *testing.M) {
+	directory, err := os.MkdirTemp("", "swanpanel-api-pki-")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("PKI_DATA_DIR", directory)
+	_ = os.Setenv("APP_ENV", "test")
+	// API tests exercise offline/degraded gateway behavior. Bind the process-wide
+	// VICI singleton to a nonexistent test socket, so an active development or
+	// production daemon is never contacted by these tests.
+	vici.GetClient(filepath.Join(directory, "unavailable-charon.vici"))
+	code := m.Run()
+	_ = os.RemoveAll(directory)
+	os.Exit(code)
+}
 
 func setupTestRouter(t *testing.T) (*gin.Engine, func()) {
 	gin.SetMode(gin.TestMode)
-	testDBPath := "test_swanpanel.db"
+	t.Setenv("APP_ENV", "test")
+	testDBPath := filepath.Join(t.TempDir(), "test_swanpanel.db")
 
 	cfg := &config.Config{
 		Port:        8080,
@@ -51,9 +71,26 @@ func setupTestRouter(t *testing.T) (*gin.Engine, func()) {
 }
 
 func getAdminToken(t *testing.T, router *gin.Engine) string {
+	setupToken, err := os.ReadFile(db.BootstrapTokenFile())
+	if err != nil {
+		t.Fatalf("Read one-time installer token: %v", err)
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"token":    strings.TrimSpace(string(setupToken)),
+		"name":     "Test Administrator",
+		"email":    "admin@swanpanel.internal",
+		"password": "admin123456789!",
+	})
+	setupReq, _ := http.NewRequest("POST", "/api/auth/setup", bytes.NewReader(payload))
+	setupReq.Header.Set("Content-Type", "application/json")
+	setupRes := httptest.NewRecorder()
+	router.ServeHTTP(setupRes, setupReq)
+	if setupRes.Code != http.StatusCreated {
+		t.Fatalf("Bootstrap failed: %d %s", setupRes.Code, setupRes.Body.String())
+	}
 	loginPayload := map[string]string{
 		"email":    "admin@swanpanel.internal",
-		"password": "admin123456",
+		"password": "admin123456789!",
 	}
 	body, _ := json.Marshal(loginPayload)
 	w := httptest.NewRecorder()
@@ -142,7 +179,7 @@ func TestLoginAndProtectedStatsFlow(t *testing.T) {
 	var statsRes map[string]interface{}
 	_ = json.Unmarshal(w3.Body.Bytes(), &statsRes)
 	stats, ok := statsRes["stats"].(map[string]interface{})
-	if !ok || stats["gateway_status"] != "online" {
+	if !ok || stats["gateway_status"] != "offline" {
 		t.Errorf("Stats payload incorrect: %v", statsRes)
 	}
 }
@@ -251,22 +288,18 @@ func TestUsersAndApprovalQueueFlow(t *testing.T) {
 		t.Errorf("Expected is_admin to be true after toggle")
 	}
 
-	// 4. Test OIDC Candidate Auto-Enrollment into Approval Queue (US-02)
-	wEnroll := httptest.NewRecorder()
-	reqEnroll, _ := http.NewRequest("GET", "/api/auth/oidc/callback?email=candidate@corp.com&name=Candidate+Bao", nil)
-	router.ServeHTTP(wEnroll, reqEnroll)
-	if wEnroll.Code != http.StatusCreated {
-		t.Fatalf("Expected candidate enrollment 201, got: %d", wEnroll.Code)
+	// Simulated callbacks must be rejected; enrollment requires a signed ID token.
+	wRejected := httptest.NewRecorder()
+	callbackReq, _ := http.NewRequest("GET", "/api/auth/oidc/callback?email=candidate@corp.com&name=Candidate", nil)
+	router.ServeHTTP(wRejected, callbackReq)
+	if wRejected.Code != http.StatusBadRequest {
+		t.Fatalf("Unsigned callback must fail, got %d", wRejected.Code)
 	}
-
-	var enrollRes map[string]interface{}
-	_ = json.Unmarshal(wEnroll.Body.Bytes(), &enrollRes)
-	candidate := enrollRes["user"].(map[string]interface{})
-	candidateID := candidate["id"].(string)
-
-	if candidate["status"] != "PENDING" {
-		t.Errorf("Expected candidate status to be PENDING, got: %v", candidate["status"])
+	pending := db.User{ID: "usr_candidate_test", Email: "candidate@corp.com", Name: "Candidate Bao", AuthType: "oidc", Status: "PENDING"}
+	if err := db.DB.Create(&pending).Error; err != nil {
+		t.Fatal(err)
 	}
+	candidateID := pending.ID
 
 	// 5. Approve Candidate (US-02)
 	wApprove := httptest.NewRecorder()
@@ -339,8 +372,15 @@ func TestResourcesAndDeviceProvisioningFlow(t *testing.T) {
 	if wApple.Code != http.StatusOK {
 		t.Fatalf("Failed to download Apple mobileconfig: %d", wApple.Code)
 	}
-	if !strings.Contains(wApple.Body.String(), "com.apple.vpn.managed") {
-		t.Errorf("Apple profile missing com.apple.vpn.managed payload")
+	signed, err := pkcs7.Parse(wApple.Body.Bytes())
+	if err != nil {
+		t.Fatalf("Apple mobileconfig must be signed CMS, got: %v", err)
+	}
+	if err := signed.Verify(); err != nil {
+		t.Fatalf("Apple profile signature invalid: %v", err)
+	}
+	if !bytes.Contains(signed.Content, []byte("com.apple.vpn.managed")) {
+		t.Error("signed Apple profile missing VPN payload")
 	}
 
 	// 4. Download Windows PowerShell Script (US-05)
@@ -371,9 +411,13 @@ func TestAccessRulesPolicyFlow(t *testing.T) {
 	token := getAdminToken(t, router)
 
 	// Create Exclusion DENY Rule (US-07)
+	var currentAdmin db.User
+	if err := db.DB.Where("email = ?", "admin@swanpanel.internal").First(&currentAdmin).Error; err != nil {
+		t.Fatal(err)
+	}
 	rulePayload := map[string]string{
 		"subject_type": "user",
-		"subject_id":   "usr_test",
+		"subject_id":   currentAdmin.ID,
 		"action":       "DENY",
 		"target_type":  "cidr_ip",
 		"target_value": "10.99.0.0/24",
@@ -446,8 +490,8 @@ func TestSessionsAndDaemonControlFlow(t *testing.T) {
 	reqSess, _ := http.NewRequest("GET", "/api/sessions", nil)
 	reqSess.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(wSess, reqSess)
-	if wSess.Code != http.StatusOK {
-		t.Fatalf("Failed to list active sessions: %d", wSess.Code)
+	if wSess.Code != http.StatusServiceUnavailable {
+		t.Fatalf("Disconnected daemon must return 503, got %d", wSess.Code)
 	}
 
 	// 2. Terminate session (US-10)
@@ -458,20 +502,21 @@ func TestSessionsAndDaemonControlFlow(t *testing.T) {
 	reqTerm.Header.Set("Content-Type", "application/json")
 	reqTerm.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(wTerm, reqTerm)
-	if wTerm.Code != http.StatusOK {
-		t.Fatalf("Failed to terminate session: %d", wTerm.Code)
+	if wTerm.Code != http.StatusServiceUnavailable {
+		t.Fatalf("Termination without VICI must return 503, got %d", wTerm.Code)
 	}
 
-	// 3. Daemon Control: Restart (US-11)
-	daemonPayload := map[string]string{"action": "restart"}
+	// 3. Validate daemon control input without invoking a real ipsec/systemctl
+	// command. This test may run in a container with a live strongSwan daemon.
+	daemonPayload := map[string]string{"action": "invalid-action"}
 	bodyD, _ := json.Marshal(daemonPayload)
 	wD := httptest.NewRecorder()
 	reqD, _ := http.NewRequest("POST", "/api/system/daemon", bytes.NewBuffer(bodyD))
 	reqD.Header.Set("Content-Type", "application/json")
 	reqD.Header.Set("Authorization", "Bearer "+token)
 	router.ServeHTTP(wD, reqD)
-	if wD.Code != http.StatusOK {
-		t.Fatalf("Failed to control daemon: %d", wD.Code)
+	if wD.Code != http.StatusBadRequest {
+		t.Fatalf("Invalid daemon control action must return 400, got %d", wD.Code)
 	}
 
 	// 4. Query Contextual Logs with Filter (US-12)
@@ -489,7 +534,8 @@ func TestEmbeddedStaticServing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to load staticFS: %v", err)
 	}
-	testDBPath := "test_static.db"
+	t.Setenv("APP_ENV", "test")
+	testDBPath := filepath.Join(t.TempDir(), "test_static.db")
 	cfg := &config.Config{
 		Port:        8080,
 		DBPath:      testDBPath,
@@ -697,10 +743,18 @@ func TestSecurityAuditRemediations(t *testing.T) {
 		t.Fatalf("FP-SWAN-AUTH-SSE-01 regression! Expected 401 Unauthorized for unauthenticated SSE, got %d", wSSEUnauth.Code)
 	}
 
-	// Authenticated connection with ?token= query parameter -> MUST SUCCEED
+	// Query-string JWTs must be rejected even if the token is otherwise valid.
+	wSSEQuery := httptest.NewRecorder()
+	reqSSEQuery, _ := http.NewRequest("GET", "/api/realtime/stream?token="+aliceToken, nil)
+	router.ServeHTTP(wSSEQuery, reqSSEQuery)
+	if wSSEQuery.Code != http.StatusUnauthorized {
+		t.Fatalf("Query-string SSE token unexpectedly accepted: %d", wSSEQuery.Code)
+	}
+	// Authenticated streaming fetch sends the Bearer token in a header.
 	wSSEAuth := httptest.NewRecorder()
 	ctxSSE, cancelSSE := context.WithCancel(context.Background())
-	reqSSEAuth, _ := http.NewRequestWithContext(ctxSSE, "GET", "/api/realtime/stream?token="+aliceToken, nil)
+	reqSSEAuth, _ := http.NewRequestWithContext(ctxSSE, "GET", "/api/realtime/stream", nil)
+	reqSSEAuth.Header.Set("Authorization", "Bearer "+aliceToken)
 	go func() {
 		time.Sleep(30 * time.Millisecond)
 		cancelSSE()
@@ -817,7 +871,7 @@ func TestSecurityAuditRemediations(t *testing.T) {
 
 func TestCORSOriginValidation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	testDBPath := "test_cors.db"
+	testDBPath := filepath.Join(t.TempDir(), "test_cors.db")
 	cfg := &config.Config{
 		Port:           8080,
 		DBPath:         testDBPath,
@@ -903,11 +957,38 @@ func TestOIDCCallbackStateValidation(t *testing.T) {
 		t.Errorf("Expected 400 Bad Request on state mismatch, got: %d", wBadState.Code)
 	}
 
-	// 2. Matching state and expected_state -> 200 or 201 OK
+	// 2. Matching query parameters still cannot authorize a callback without a browser cookie and server-side state
 	wGoodState := httptest.NewRecorder()
 	reqGoodState, _ := http.NewRequest("GET", "/api/auth/oidc/callback?state=valid-state&expected_state=valid-state&email=user@oidc.com", nil)
 	router.ServeHTTP(wGoodState, reqGoodState)
-	if wGoodState.Code != http.StatusCreated && wGoodState.Code != http.StatusOK {
-		t.Errorf("Expected 200/201 on matching state, got: %d", wGoodState.Code)
+	if wGoodState.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 for forged callback even with matching query state, got %d", wGoodState.Code)
+	}
+}
+
+func TestGatewaySettingsRejectMissingCertificateIdentity(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+	token := getAdminToken(t, router)
+
+	// Regression: the old UI only sent server_endpoint and produced a generic
+	// 400. An identity must always be explicit; never silently overwrite it.
+	payload, err := json.Marshal(map[string]string{
+		"server_endpoint": "192.168.101.159",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest("PUT", "/api/settings/strongswan", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, req)
+
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "server_identity") {
+		t.Fatalf("missing gateway certificate identity must return a descriptive 400, got %d: %s", response.Code, response.Body.String())
 	}
 }

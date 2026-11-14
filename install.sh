@@ -77,18 +77,17 @@ case "${OS_ID}" in
         info "Installing strongSwan, VICI IPC plugins, and network utilities via apt..."
         export DEBIAN_FRONTEND=noninteractive
         apt-get update -q -y
+        # SwanPanel uses the modern VICI/swanctl backend, not ipsec.conf/starter.
+        # charon-systemd and strongswan-swanctl are separate packages here.
         apt-get install -q -y \
             curl \
             tar \
             iptables \
             nftables \
-            strongswan \
-            strongswan-charon-systemd \
+            charon-systemd \
+            strongswan-swanctl \
             libcharon-extra-plugins \
-            libstrongswan-extra-plugins || {
-                warn "strongswan-charon-systemd not available; falling back to strongswan-starter"
-                apt-get install -q -y strongswan libcharon-extra-plugins
-            }
+            libstrongswan-extra-plugins
         ;;
     rhel|centos|rocky|almalinux|fedora)
         info "Installing strongSwan, VICI IPC plugins, and network utilities via dnf/yum..."
@@ -98,9 +97,10 @@ case "${OS_ID}" in
             PKG_MGR="yum"
         fi
         ${PKG_MGR} install -y curl tar iptables nftables
-        if ! ${PKG_MGR} install -y strongswan strongswan-charon-systemd 2>/dev/null; then
+        # Fedora/EPEL ships charon-systemd, swanctl and VICI in strongswan.
+        if ! ${PKG_MGR} install -y strongswan; then
             info "Enabling EPEL repository for strongSwan packages..."
-            ${PKG_MGR} install -y epel-release || true
+            ${PKG_MGR} install -y epel-release || error "Cannot enable EPEL repository."
             ${PKG_MGR} install -y strongswan
         fi
         ;;
@@ -115,6 +115,8 @@ case "${OS_ID}" in
         fi
         ;;
 esac
+# A legacy starter-only installation is not enough for SwanPanel's VICI API.
+command -v swanctl >/dev/null 2>&1 || error "strongSwan swanctl is missing; cannot run the SwanPanel VPN backend."
 success "Dependencies installed successfully."
 
 # 4. Configure Kernel IP Packet Forwarding
@@ -132,37 +134,37 @@ EOF
 sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-swanpanel.conf >/dev/null 2>&1
 success "Kernel packet forwarding enabled."
 
-# 5. Fetch and Install SwanPanel Binary
+# 5. Download and verify a native, statically linked Linux release binary.
 VERSION="${SWANPANEL_VERSION:-latest}"
 info "Downloading ${PRODUCT_NAME} binary (${VERSION})..."
 
 if [[ "${VERSION}" == "latest" ]]; then
     RELEASE_URL="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
-    DOWNLOAD_URL="$(curl -fsSL "${RELEASE_URL}" | grep "browser_download_url.*swan-panel-${BIN_ARCH}" | cut -d '"' -f 4 | head -n 1 || true)"
-    if [[ -z "${DOWNLOAD_URL}" ]]; then
-        warn "Could not resolve latest release via GitHub API. Falling back to tag v0.0.2 download..."
-        DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/v0.0.2/swan-panel-${BIN_ARCH}"
-    fi
+    DOWNLOAD_URL="$(curl -fsSL "${RELEASE_URL}" | grep -E "browser_download_url.*swan-panel-${BIN_ARCH}\"" | cut -d '"' -f 4 | head -n 1 || true)"
+    [[ -n "${DOWNLOAD_URL}" ]] || error "Could not resolve a matching latest Linux release asset; refusing to install an older fallback binary."
 else
     DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/swan-panel-${BIN_ARCH}"
 fi
 
-TMP_BIN="/tmp/swan-panel-download"
+CHECKSUM_URL="${DOWNLOAD_URL%/*}/checksums.txt"
+TMP_BIN="$(mktemp /tmp/swan-panel-download.XXXXXX)"
+TMP_CHECKSUMS="$(mktemp /tmp/swan-panel-checksums.XXXXXX)"
+trap 'rm -f "${TMP_BIN}" "${TMP_CHECKSUMS}"' EXIT
+
 info "Downloading from: ${DOWNLOAD_URL}"
-if curl -fsSL -o "${TMP_BIN}" "${DOWNLOAD_URL}"; then
-    chmod +x "${TMP_BIN}"
-    mv "${TMP_BIN}" "${INSTALL_BIN_PATH}"
-    success "Binary installed to ${INSTALL_BIN_PATH}"
-else
-    warn "Failed to download precompiled binary from GitHub."
-    if [[ -f "./swan-panel" ]]; then
-        info "Detected local binary './swan-panel'. Installing local build..."
-        install -m 755 "./swan-panel" "${INSTALL_BIN_PATH}"
-        success "Installed local binary to ${INSTALL_BIN_PATH}"
-    else
-        error "Could not download binary and no local binary was found."
-    fi
-fi
+curl -fsSL -o "${TMP_BIN}" "${DOWNLOAD_URL}" || error "Binary download failed."
+curl -fsSL -o "${TMP_CHECKSUMS}" "${CHECKSUM_URL}" || error "Release checksum manifest download failed."
+
+EXPECTED_HASH="$(awk -v name="swan-panel-${BIN_ARCH}" '$2 == name {print $1}' "${TMP_CHECKSUMS}")"
+[[ "$(printf '%s\n' "${EXPECTED_HASH}" | wc -l | tr -d ' ')" == "1" ]] || error "Release manifest has missing or duplicate SHA256 entries."
+[[ "${EXPECTED_HASH}" =~ ^[[:xdigit:]]{64}$ ]] || error "Missing or invalid SHA256 for swan-panel-${BIN_ARCH}."
+ACTUAL_HASH="$(sha256sum "${TMP_BIN}" | awk '{print $1}')"
+[[ "${ACTUAL_HASH}" == "${EXPECTED_HASH}" ]] || error "Release SHA256 verification failed; refusing to install."
+
+chmod +x "${TMP_BIN}"
+"${TMP_BIN}" --version || error "Downloaded Linux binary cannot execute on this host."
+install -m 755 "${TMP_BIN}" "${INSTALL_BIN_PATH}"
+success "Verified Linux binary installed to ${INSTALL_BIN_PATH}"
 
 # 6. Create Configuration & Data Directories
 info "Configuring environment and data directories..."
@@ -171,8 +173,10 @@ mkdir -p "${DATA_DIR}"
 chmod 750 "${DATA_DIR}"
 
 if [[ ! -f "${CONFIG_DIR}/swan-panel.env" ]]; then
-    # Generate random 32-character secret for JWT signing
-    JWT_SECRET="$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)"
+    # Generate a 256-bit secret for JWT signing (64 hex characters)
+    # 32 random bytes encoded as hex. No head-pipeline SIGPIPE under pipefail.
+    JWT_SECRET="$(od -An -v -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    [[ "${#JWT_SECRET}" -eq 64 ]] || error "Failed to generate strong JWT secret."
     cat <<EOF > "${CONFIG_DIR}/swan-panel.env"
 # SwanPanel Production Configuration
 PORT=8080
@@ -212,18 +216,35 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-# 8. Start and Enable Services
+# 8. Prepare strongSwan's credential directories before daemon startup.
+mkdir -p /etc/swanctl/x509ca /etc/swanctl/x509 /etc/swanctl/rsa /etc/swanctl/x509crl
+chmod 700 /etc/swanctl/rsa
+
+# 9. Start and Enable Services
 info "Reloading systemd and enabling services..."
 systemctl daemon-reload
 
-# Start strongSwan if present
-if systemctl list-unit-files | grep -q "strongswan-starter"; then
-    systemctl enable strongswan-starter || true
-    systemctl restart strongswan-starter || true
-elif systemctl list-unit-files | grep -q "strongswan"; then
-    systemctl enable strongswan || true
-    systemctl restart strongswan || true
+# Prefer the VICI-enabled charon-systemd daemon. Do not start two different
+# strongSwan daemons: their shared IKE UDP ports would conflict.
+if systemctl list-unit-files --no-legend | grep -q '^strongswan.service'; then
+    systemctl disable --now strongswan-starter.service >/dev/null 2>&1 || true
+    systemctl enable strongswan.service
+    systemctl restart strongswan.service
+else
+    error "VICI-enabled strongswan.service (charon-systemd) is not installed."
 fi
+
+# Wait for the actual daemon API, not just a successful systemctl exit.
+# SwanPanel requires VICI to load certificates, CRLs and tunnel configuration.
+VICI_READY=0
+for attempt in $(seq 1 15); do
+    if swanctl --stats >/dev/null 2>&1; then
+        VICI_READY=1
+        break
+    fi
+    sleep 1
+done
+[[ "${VICI_READY}" -eq 1 ]] || error "strongSwan did not expose a working VICI socket."
 
 # Enable and start SwanPanel
 systemctl enable swan-panel
@@ -240,11 +261,11 @@ printf "       %s Installation Completed Successfully!       \n" "${PRODUCT_NAME
 printf "======================================================================\n"
 printf "\n"
 printf "  Web Dashboard:      http://%s:8080\n" "${SERVER_IP}"
-printf "  Default Admin:      admin@swanpanel.internal\n"
-printf "  Default Password:   admin123456\n"
+printf "  Initial Setup:      Required (no default admin/password)\n"
+printf "  Setup Token File:   %s/swanpanel.db.setup-token\n" "${DATA_DIR}"
 printf "\n"
-printf "  Important: Change the default administrator password immediately\n"
-printf "  after logging in for the first time.\n"
+printf "  Read the one-time token locally on this server, then create\n"
+printf "  your first administrator through the web setup form.\n"
 printf "\n"
 printf "  Service Status:     sudo systemctl status swan-panel\n"
 printf "  Stream Live Logs:   sudo journalctl -u swan-panel -f\n"

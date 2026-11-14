@@ -190,11 +190,14 @@ go build -o swan-panel ./cmd/server
 ```
 Truy cập bảng điều khiển web tại `http://localhost:8080`.
 
-### Tài khoản Quản trị Mặc định
-* **Email:** `admin@swanpanel.internal`
-* **Mật khẩu:** `admin123456`
+### Thiết lập quản trị viên lần đầu
+SwanPanel **không tạo tài khoản hoặc mật khẩu mặc định**. Lần khởi động đầu tiên hệ thống sinh token ngẫu nhiên dùng một lần, lưu hash trong SQLite và ghi token gốc vào tệp có quyền `0600`.
 
-*(Lưu ý: Hãy đổi mật khẩu ngay sau lần đăng nhập đầu tiên để đảm bảo an toàn).*
+```bash
+sudo cat /var/lib/swan-panel/swanpanel.db.setup-token
+```
+
+Mở giao diện web, nhập token cùng tên, email và mật khẩu quản trị (12–72 byte). Token bị tiêu thụ sau khi tạo admin thành công. Hồ sơ Apple `.mobileconfig` được **ký CMS/PKCS#7 (S/MIME)** bằng chứng chỉ ký riêng do CA SwanPanel cấp; để hiển thị "Verified", thiết bị phải tin cậy CA ký.
 
 ---
 

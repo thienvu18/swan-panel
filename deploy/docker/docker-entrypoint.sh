@@ -26,8 +26,12 @@ sysctl -w net.ipv4.conf.all.accept_redirects=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv4.conf.all.send_redirects=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 || true
 
-# 2. Ensure data and config directories exist
-mkdir -p /var/lib/swan-panel /etc/swan-panel /var/run
+# 2. Prepare persistent state and the standard strongSwan certificate
+# directories before starting charon. Go also creates them defensively when
+# deploying credentials; both safeguards apply to clean production installs.
+mkdir -p /var/lib/swan-panel /etc/swan-panel /var/run \
+    /etc/swanctl/x509ca /etc/swanctl/x509 /etc/swanctl/rsa /etc/swanctl/x509crl
+chmod 700 /etc/swanctl/rsa
 
 # 3. Detect or initialize strongSwan daemon
 VICI_SOCKET="${VICI_SOCKET:-/var/run/charon.vici}"

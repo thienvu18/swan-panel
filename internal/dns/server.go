@@ -16,19 +16,13 @@ import (
 
 // Server encapsulates the embedded DNS engine
 type Server struct {
-	mu           sync.RWMutex
-	udpServer    *dns.Server
-	tcpServer    *dns.Server
-	listenAddr   string
-	database     *gorm.DB
-	dnsClient    *dns.Client
-	isRunning    bool
-	cache        map[string]*dnsCacheEntry
-}
-
-type dnsCacheEntry struct {
-	msg       *dns.Msg
-	expiresAt time.Time
+	mu         sync.RWMutex
+	udpServer  *dns.Server
+	tcpServer  *dns.Server
+	listenAddr string
+	database   *gorm.DB
+	dnsClient  *dns.Client
+	isRunning  bool
 }
 
 // NewServer creates a new instance of the embedded DNS server
@@ -43,7 +37,6 @@ func NewServer(listenAddr string, database *gorm.DB) *Server {
 			Net:     "udp",
 			Timeout: 2 * time.Second,
 		},
-		cache: make(map[string]*dnsCacheEntry),
 	}
 }
 
