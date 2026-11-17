@@ -150,11 +150,15 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 				// strongSwan Engine Settings
 				adminOnly.GET("/settings/strongswan", settingsH.GetStrongswanSettings)
 				adminOnly.PUT("/settings/strongswan", settingsH.UpdateStrongswanSettings)
+				adminOnly.GET("/settings/ca", settingsH.GetCAIdentity)
+				adminOnly.POST("/settings/ca/rotate", settingsH.RotateCAIdentity)
 
 				// Daemon, Sessions & System Logs
 				adminOnly.GET("/system/logs", sysH.GetLogs)
 				adminOnly.POST("/sessions/terminate", sessH.TerminateSession)
 				adminOnly.POST("/system/daemon", sysH.ControlDaemon)
+				adminOnly.GET("/system/apply-status", sysH.GetApplyStatus)
+				adminOnly.POST("/system/apply", sysH.RetryApply)
 			}
 		}
 	}

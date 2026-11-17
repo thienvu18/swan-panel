@@ -17,8 +17,7 @@ import (
 // Server encapsulates the embedded DNS engine
 type Server struct {
 	mu         sync.RWMutex
-	udpServer  *dns.Server
-	tcpServer  *dns.Server
+	listeners  map[string]*socketPair
 	listenAddr string
 	database   *gorm.DB
 	dnsClient  *dns.Client
@@ -32,6 +31,7 @@ func NewServer(listenAddr string, database *gorm.DB) *Server {
 	}
 	return &Server{
 		listenAddr: listenAddr,
+		listeners:  make(map[string]*socketPair),
 		database:   database,
 		dnsClient: &dns.Client{
 			Net:     "udp",
@@ -40,63 +40,25 @@ func NewServer(listenAddr string, database *gorm.DB) *Server {
 	}
 }
 
-// Start begins listening on UDP and TCP
+// Start begins listening on UDP and TCP. Binding errors are returned synchronously.
 func (s *Server) Start() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.isRunning {
-		slog.Warn("DNS Server is already running")
-		return nil
-	}
-
-	mux := dns.NewServeMux()
-	mux.HandleFunc(".", s.handleDNSQuery)
-
-	s.udpServer = &dns.Server{
-		Addr:    s.listenAddr,
-		Net:     "udp",
-		Handler: mux,
-	}
-
-	s.tcpServer = &dns.Server{
-		Addr:    s.listenAddr,
-		Net:     "tcp",
-		Handler: mux,
-	}
-
-	s.isRunning = true
-	slog.Info("Starting embedded SwanPanel Split-DNS server", "addr", s.listenAddr)
-
-	go func() {
-		if err := s.udpServer.ListenAndServe(); err != nil && s.isRunning {
-			slog.Warn("DNS UDP server stopped or port unavailable (continuing)", "error", err)
-		}
-	}()
-
-	go func() {
-		if err := s.tcpServer.ListenAndServe(); err != nil && s.isRunning {
-			slog.Warn("DNS TCP server stopped or port unavailable (continuing)", "error", err)
-		}
-	}()
-
-	return nil
+	return s.SyncListeners([]string{s.listenAddr})
 }
 
-// Stop terminates the DNS server
+// Stop terminates all embedded DNS listeners.
 func (s *Server) Stop() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if !s.isRunning {
+		s.mu.Unlock()
 		return
 	}
 	s.isRunning = false
-	if s.udpServer != nil {
-		_ = s.udpServer.Shutdown()
-	}
-	if s.tcpServer != nil {
-		_ = s.tcpServer.Shutdown()
+	retired := s.listeners
+	s.listeners = make(map[string]*socketPair)
+	s.mu.Unlock()
+
+	for _, pair := range retired {
+		pair.stop()
 	}
 	slog.Info("Embedded DNS server shutdown completed")
 }
@@ -132,51 +94,103 @@ func (s *Server) handleDNSQuery(w dns.ResponseWriter, r *dns.Msg) {
 	magicSuffix := strings.ToLower(strings.TrimPrefix(settings.MagicDNSSuffix, "."))
 
 	// 2. Check MagicDNS (*.strongnet or configured suffix)
-	if settings.IsMagicDNSEnabled && qType == dns.TypeA && strings.HasSuffix(qName, "."+magicSuffix) {
+	if settings.IsMagicDNSEnabled && strings.HasSuffix(qName, "."+magicSuffix) {
 		hostname := strings.TrimSuffix(qName, "."+magicSuffix)
 
 		var dev db.Device
 		if err := s.database.Where("hostname = ? AND is_revoked = ?", hostname, false).First(&dev).Error; err == nil {
-			ip := net.ParseIP(dev.VirtualIP)
-			if ip != nil && ip.To4() != nil {
-				rr := &dns.A{
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypeA,
-						Class:  dns.ClassINET,
-						Ttl:    5,
-					},
-					A: ip.To4(),
+			if qType == dns.TypeA {
+				ip := net.ParseIP(dev.VirtualIP)
+				if ip != nil && ip.To4() != nil {
+					rr := &dns.A{
+						Hdr: dns.RR_Header{
+							Name:   q.Name,
+							Rrtype: dns.TypeA,
+							Class:  dns.ClassINET,
+							Ttl:    5,
+						},
+						A: ip.To4(),
+					}
+					msg.Answer = append(msg.Answer, rr)
+					slog.Debug("MagicDNS resolved hostname directly to virtual IP", "hostname", hostname, "ip", dev.VirtualIP)
+					_ = w.WriteMsg(msg)
+					return
 				}
-				msg.Answer = append(msg.Answer, rr)
-				slog.Debug("MagicDNS resolved hostname directly to virtual IP", "hostname", hostname, "ip", dev.VirtualIP)
-				_ = w.WriteMsg(msg)
-				return
 			}
+			// The name exists, but it has no record of the requested type.
+			// Return authoritative NOERROR/NODATA without leaking to upstream.
+			_ = w.WriteMsg(msg)
+			return
 		}
 	}
 
-	// 3. Check Custom DNS Overrides
-	if qType == dns.TypeA {
-		var override db.DNSOverride
-		if err := s.database.Where("hostname = ?", qName).First(&override).Error; err == nil {
-			ip := net.ParseIP(override.TargetAddress)
-			if ip != nil && ip.To4() != nil {
-				rr := &dns.A{
-					Hdr: dns.RR_Header{
-						Name:   q.Name,
-						Rrtype: dns.TypeA,
-						Class:  dns.ClassINET,
-						Ttl:    60,
-					},
-					A: ip.To4(),
-				}
-				msg.Answer = append(msg.Answer, rr)
-				slog.Debug("DNS Override matched", "hostname", qName, "target", override.TargetAddress)
-				_ = w.WriteMsg(msg)
-				return
+	// 3. Check Custom DNS Overrides (exact FQDN match or standard wildcard *.domain)
+	var override db.DNSOverride
+	found := false
+	if err := s.database.Where("hostname = ?", qName).First(&override).Error; err == nil {
+		found = true
+	} else {
+		// Standard wildcard matching: e.g. for "a.b.google.com", check "*.b.google.com", then "*.google.com"
+		curr := qName
+		for {
+			dotIdx := strings.Index(curr, ".")
+			if dotIdx <= 0 || dotIdx >= len(curr)-1 {
+				break
 			}
+			wildcardHost := "*" + curr[dotIdx:]
+			if err := s.database.Where("hostname = ?", wildcardHost).First(&override).Error; err == nil {
+				found = true
+				break
+			}
+			curr = curr[dotIdx+1:]
 		}
+	}
+	if found {
+		targetIP := net.ParseIP(override.TargetAddress)
+		if qType == dns.TypeA && targetIP != nil && targetIP.To4() != nil {
+			rr := &dns.A{
+				Hdr: dns.RR_Header{
+					Name:   q.Name,
+					Rrtype: dns.TypeA,
+					Class:  dns.ClassINET,
+					Ttl:    60,
+				},
+				A: targetIP.To4(),
+			}
+			msg.Answer = append(msg.Answer, rr)
+			slog.Debug("DNS Override matched A", "hostname", qName, "target", override.TargetAddress)
+			_ = w.WriteMsg(msg)
+			return
+		}
+		if qType == dns.TypeAAAA && targetIP != nil && targetIP.To16() != nil && targetIP.To4() == nil {
+			rr := &dns.AAAA{
+				Hdr: dns.RR_Header{
+					Name:   q.Name,
+					Rrtype: dns.TypeAAAA,
+					Class:  dns.ClassINET,
+					Ttl:    60,
+				},
+				AAAA: targetIP.To16(),
+			}
+			msg.Answer = append(msg.Answer, rr)
+			slog.Debug("DNS Override matched AAAA", "hostname", qName, "target", override.TargetAddress)
+			_ = w.WriteMsg(msg)
+			return
+		}
+		// If an override is configured for this hostname but for a different record type (e.g. A exists, AAAA queried),
+		// do NOT forward to upstream to prevent leaking real upstream addresses.
+		// The name exists, so the correct response is NOERROR with no answers (NODATA).
+		slog.Debug("DNS Override exists for hostname; returning NODATA for unconfigured type", "hostname", qName, "type", dns.TypeToString[qType])
+		_ = w.WriteMsg(msg)
+		return
+	}
+
+	// Managed MagicDNS names never escape to public resolvers, even when
+	// the device is unknown or revoked. Other local overrides took priority.
+	if settings.IsMagicDNSEnabled && strings.HasSuffix(qName, "."+magicSuffix) {
+		msg.Rcode = dns.RcodeNameError
+		_ = w.WriteMsg(msg)
+		return
 	}
 
 	// 4. Forward to Upstream Resolvers
@@ -187,8 +201,9 @@ func (s *Server) handleDNSQuery(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	// Fallback to NXDOMAIN if cannot be resolved
-	msg.Rcode = dns.RcodeNameError
+	// Resolver outage is not proof a public name does not exist.
+	msg.Authoritative = false
+	msg.Rcode = dns.RcodeServerFailure
 	_ = w.WriteMsg(msg)
 }
 
@@ -235,7 +250,7 @@ func (s *Server) ResolveLocalQuery(ctx context.Context, hostname string) (string
 	cleanHost := strings.ToLower(strings.TrimSpace(hostname))
 	magicSuffix := strings.ToLower(strings.TrimPrefix(settings.MagicDNSSuffix, "."))
 
-	if strings.HasSuffix(cleanHost, "."+magicSuffix) {
+	if settings.IsMagicDNSEnabled && strings.HasSuffix(cleanHost, "."+magicSuffix) {
 		devName := strings.TrimSuffix(cleanHost, "."+magicSuffix)
 		var dev db.Device
 		if err := s.database.WithContext(ctx).Where("hostname = ? AND is_revoked = ?", devName, false).First(&dev).Error; err == nil {
@@ -246,6 +261,19 @@ func (s *Server) ResolveLocalQuery(ctx context.Context, hostname string) (string
 	var override db.DNSOverride
 	if err := s.database.WithContext(ctx).Where("hostname = ?", cleanHost).First(&override).Error; err == nil {
 		return override.TargetAddress, nil
+	}
+	// Check wildcard match
+	curr := cleanHost
+	for {
+		dotIdx := strings.Index(curr, ".")
+		if dotIdx <= 0 || dotIdx >= len(curr)-1 {
+			break
+		}
+		wildcardHost := "*" + curr[dotIdx:]
+		if err := s.database.WithContext(ctx).Where("hostname = ?", wildcardHost).First(&override).Error; err == nil {
+			return override.TargetAddress, nil
+		}
+		curr = curr[dotIdx+1:]
 	}
 
 	return "", fmt.Errorf("hostname %s not found in local DNS records", hostname)

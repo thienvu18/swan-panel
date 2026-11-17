@@ -217,6 +217,19 @@ func (m *PKIManager) CRL(revoked []RevokedCertificate) ([]byte, error) {
 	}, &issuer, crypto.Signer(m.caKey))
 }
 
+// swanctlCRLDirectory resolves the installed CRL location without touching
+// system directories. Both explicit overrides and the native default are tested.
+func swanctlCRLDirectory() string {
+	if directory := os.Getenv("SWANPANEL_SWANCTL_CRL_DIR"); directory != "" {
+		return directory
+	}
+	root := os.Getenv("SWANPANEL_SWANCTL_DIR")
+	if root == "" {
+		root = "/etc/swanctl"
+	}
+	return filepath.Join(root, "x509crl")
+}
+
 func (m *PKIManager) PublishCRL(ctx context.Context, revoked []RevokedCertificate) error {
 	data, err := m.CRL(revoked)
 	if err != nil {
@@ -230,11 +243,17 @@ func (m *PKIManager) PublishCRL(ctx context.Context, revoked []RevokedCertificat
 	if os.Getenv("APP_ENV") == "test" {
 		return nil
 	}
-	path := filepath.Join("/etc/swanctl/x509crl", "swanpanel.crl")
+	path := filepath.Join(swanctlCRLDirectory(), "swanpanel.crl")
 	if err := atomicPrivateFile(path, data); err != nil {
 		return fmt.Errorf("cannot install revocation list: %w", err)
 	}
-	command := exec.CommandContext(ctx, "swanctl", "--load-creds", "--noprompt")
+	args := []string{"--load-creds", "--noprompt"}
+	// In host-daemon Docker mode the VICI socket is exposed through a mounted
+	// directory, not at the local default UNIX path.
+	if socket := os.Getenv("VICI_SOCKET"); socket != "" {
+		args = append(args, "--uri", "unix://"+socket)
+	}
+	command := exec.CommandContext(ctx, "swanctl", args...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("strongSwan CRL reload failed: %w: %s", err, string(output))

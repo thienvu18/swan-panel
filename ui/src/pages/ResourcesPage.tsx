@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Download, Trash2, ShieldAlert, Laptop, Server, Network, Plus, Search, Filter, X } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { AndroidNativeSetupDialog } from '../components/AndroidNativeSetupDialog';
+import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
 import { downloadDeviceProfile } from '../lib/profileDownload';
@@ -45,8 +47,10 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
   const queryClient = useQueryClient();
   const [activeSubView, setActiveSubView] = useState<'devices' | 'groups'>('devices');
   const [isAddDeviceOpen, setIsAddDeviceOpen] = useState(false);
+  const [androidDevice, setAndroidDevice] = useState<{ id: string; hostname: string } | null>(null);
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const { requestConfirmation, confirmationDialog } = useConfirmAction();
   const [platformFilter, setPlatformFilter] = useState<'all' | 'macos' | 'windows' | 'linux' | 'ios' | 'android'>('all');
   const [ownershipFilter, setOwnershipFilter] = useState<'all' | 'company' | 'user'>('all');
 
@@ -210,21 +214,24 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
     }
   };
 
-  const handleRevoke = async (dev: DeviceItem) => {
-    if (!confirm(`Revoke security certificate for ${dev.hostname}? The tunnel will immediately terminate.`)) return;
-    try {
-      const response = await fetch(`/api/devices/${encodeURIComponent(dev.id)}/revoke`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
-      });
-      if (!response.ok) {
-        const failure = await response.json().catch(() => ({}));
-        throw new Error(failure.error || 'Certificate revocation could not be enforced');
-      }
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Revocation failed');
-    }
+  const handleRevoke = (dev: DeviceItem) => {
+    requestConfirmation({
+      title: t('confirm.revoke_title'),
+      description: t('confirm.revoke_description', { name: dev.hostname }),
+      confirmLabel: t('common.revoke'),
+      onConfirm: async () => {
+        const response = await fetch('/api/devices/' + encodeURIComponent(dev.id) + '/revoke', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
+        });
+        if (!response.ok) {
+          const failure = await response.json().catch(() => ({}));
+          throw new Error(failure.error || t('common.error_occurred'));
+        }
+        await queryClient.invalidateQueries({ queryKey: ['devices'] });
+        await queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
+      },
+    });
   };
 
   const deleteGroupMutation = useMutation({
@@ -243,6 +250,8 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
 
   return (
     <div className="space-y-4">
+      <AndroidNativeSetupDialog isOpen={androidDevice !== null} onClose={() => setAndroidDevice(null)}
+        deviceId={androidDevice?.id || ''} hostname={androidDevice?.hostname || ''} />
       {/* Subnav & Action */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex border subtle-border rounded-lg p-0.5 surface-header text-xs">
@@ -414,23 +423,31 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                         </td>
                         <td className="py-2.5 px-3.5 text-subtle uppercase font-mono text-[11px]">{dev.platform}</td>
                         <td className="py-2.5 px-3.5 text-right space-x-1">
-                          <button
-                            onClick={() => handleDownload(dev, dev.platform === 'linux' ? 'linux' : dev.platform === 'windows' ? 'windows' : dev.platform === 'android' ? 'android' : 'apple')}
-                            className="p-1.5 hover:bg-blue-500/10 rounded-md text-blue-500 transition-colors inline-block"
-                            title={getDownloadTooltip(dev.platform)}
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-                          {dev.platform === 'android' && (
-                            <button type="button" onClick={() => handleDownload(dev, 'android-native')}
-                              className="inline-block px-1.5 py-1 rounded-md text-blue-500 hover:bg-blue-500/10 text-[10px]"
-                              title="Android 11+ native IKEv2/IPsec RSA: certificates and manual setup instructions">
-                              Native
+                          {dev.platform === 'android' ? (
+                            <>
+                              <button
+                                onClick={() => setAndroidDevice({ id: dev.id, hostname: dev.hostname })}
+                                className="p-1.5 hover:bg-emerald-500/10 rounded-md text-emerald-500 transition-colors inline-block"
+                                title={t('resources.download_android_native')}
+                                aria-label={t('resources.download_android_native')}
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => handleDownload(dev, dev.platform === 'linux' ? 'linux' : dev.platform === 'windows' ? 'windows' : 'apple')}
+                              className="p-1.5 hover:bg-blue-500/10 rounded-md text-blue-500 transition-colors inline-block"
+                              title={getDownloadTooltip(dev.platform)}
+                            >
+                              <Download className="w-3.5 h-3.5" />
                             </button>
                           )}
                           <button
                             onClick={() => handleRevoke(dev)}
-                            className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors inline-block"
+                            disabled={dev.is_revoked}
+                            aria-label={t('common.revoke') + ' ' + dev.hostname}
+                            className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors inline-block disabled:opacity-40 disabled:cursor-not-allowed"
                             title={t('dashboard.self_revoke')}
                           >
                             <ShieldAlert className="w-3.5 h-3.5" />
@@ -511,11 +528,12 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                         <td className="py-2.5 px-3.5 text-emerald-500 font-sans">{rg.enrolled_node_count || 0} nodes</td>
                         <td className="py-2.5 px-3.5 text-right font-sans">
                           <button
-                            onClick={() => {
-                              if (confirm(`Delete subnet '${rg.name}'?`)) {
-                                deleteGroupMutation.mutate(rg.id);
-                              }
-                            }}
+                            onClick={() => requestConfirmation({
+                              title: t('confirm.delete_subnet_title'),
+                              description: t('confirm.delete_subnet_description', { name: rg.name, cidr: rg.cidr_block }),
+                              confirmLabel: t('common.delete'),
+                              onConfirm: () => deleteGroupMutation.mutateAsync(rg.id),
+                            })}
                             className="p-1.5 hover:bg-rose-500/10 rounded-md text-subtle hover:text-rose-500 transition-colors"
                             title="Delete Subnet"
                             aria-label="Delete Subnet"
@@ -672,7 +690,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
               <option value="macos">macOS / iOS (Apple Profile)</option>
               <option value="windows">Windows 10/11 (PowerShell)</option>
               <option value="linux">Linux (swanctl.conf)</option>
-              <option value="android">Android (strongSwan .sswan)</option>
+              <option value="android">{t('resources.platform_android_native')}</option>
             </select>
           </div>
         </div>
@@ -762,6 +780,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
           </button>
         </div>
       </Modal>
+      {confirmationDialog}
     </div>
   );
 };

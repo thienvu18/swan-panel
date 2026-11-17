@@ -108,6 +108,10 @@ func parseRSAPrivateKeyFromPEM(pemBytes []byte) (*rsa.PrivateKey, error) {
 
 // initCA generates or loads the Root CA from persistent storage
 func (m *PKIManager) initCA() error {
+	return m.initCAWithSubject(defaultCASubject())
+}
+
+func (m *PKIManager) initCAWithSubject(subject pkix.Name) error {
 	pkiDir := resolvePKIDataDir()
 	m.dataDir = pkiDir
 	caCertPath := filepath.Join(pkiDir, "ca.crt")
@@ -171,14 +175,8 @@ func (m *PKIManager) initCA() error {
 	}
 	ski := sha1.Sum(publicDER)
 	caTemplate := &x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"SwanPanel Root Authority"},
-			CommonName:   "SwanPanel Internal Root CA",
-			Country:      []string{"US"},
-			Province:     []string{"California"},
-			Locality:     []string{"San Francisco"},
-		},
+		SerialNumber:          serialNumber,
+		Subject:               subject,
 		NotBefore:             time.Now().Add(-10 * time.Minute),
 		NotAfter:              time.Now().AddDate(10, 0, 0), // 10 years validity
 		IsCA:                  true,
@@ -328,12 +326,17 @@ func (m *PKIManager) GenerateServerCertificate(serverFQDN string, serverIPs []st
 	}
 
 	var ipAddresses []net.IP
+	var dnsNames []string
 	if ip := net.ParseIP(serverFQDN); ip != nil {
 		ipAddresses = append(ipAddresses, ip)
+	} else {
+		dnsNames = append(dnsNames, serverFQDN)
 	}
-	for _, ipStr := range serverIPs {
-		if ip := net.ParseIP(ipStr); ip != nil {
+	for _, endpoint := range serverIPs {
+		if ip := net.ParseIP(endpoint); ip != nil {
 			ipAddresses = append(ipAddresses, ip)
+		} else if endpoint != "" {
+			dnsNames = append(dnsNames, endpoint)
 		}
 	}
 
@@ -348,12 +351,8 @@ func (m *PKIManager) GenerateServerCertificate(serverFQDN string, serverIPs []st
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageIPSECEndSystem},
 		BasicConstraintsValid: true,
-		DNSNames:              nil,
+		DNSNames:              dnsNames,
 		IPAddresses:           ipAddresses,
-	}
-
-	if net.ParseIP(serverFQDN) == nil {
-		template.DNSNames = []string{serverFQDN}
 	}
 	certBytes, err := x509.CreateCertificate(rand.Reader, template, m.caCert, &privKey.PublicKey, m.caKey)
 	if err != nil {
@@ -387,9 +386,13 @@ func (m *PKIManager) EnsureServerCertificates(serverIdentity string, serverIPs [
 	if serverIdentity == "" {
 		return fmt.Errorf("strongSwan server identity is required")
 	}
-	caDir := "/etc/swanctl/x509ca"
-	certDir := "/etc/swanctl/x509"
-	keyDir := "/etc/swanctl/rsa"
+	swanctlDir := os.Getenv("SWANPANEL_SWANCTL_DIR")
+	if swanctlDir == "" {
+		swanctlDir = "/etc/swanctl"
+	}
+	caDir := filepath.Join(swanctlDir, "x509ca")
+	certDir := filepath.Join(swanctlDir, "x509")
+	keyDir := filepath.Join(swanctlDir, "rsa")
 	dataDir := m.dataDir
 
 	// Persist and reuse the *same* server identity, unless its SAN/expiry requires rotation.
@@ -410,10 +413,20 @@ func (m *PKIManager) EnsureServerCertificates(serverIdentity string, serverIPs [
 		if err != nil {
 			return err
 		}
-		if cert.PublicKey.(*rsa.PublicKey).N.Cmp(key.N) != 0 {
+		pub, ok := cert.PublicKey.(*rsa.PublicKey)
+		if !ok || pub.N.Cmp(key.N) != 0 {
 			return fmt.Errorf("gateway certificate/private key mismatch")
 		}
-		if err := cert.VerifyHostname(serverIdentity); err == nil && time.Until(cert.NotAfter) > 30*24*time.Hour {
+		// Certificate reuse is safe only if every required endpoint is present
+		// in the SAN, not merely the IKE server identity.
+		matchesEndpoints := cert.VerifyHostname(serverIdentity) == nil
+		for _, endpoint := range serverIPs {
+			if endpoint != "" && cert.VerifyHostname(endpoint) != nil {
+				matchesEndpoints = false
+				break
+			}
+		}
+		if matchesEndpoints && cert.CheckSignatureFrom(m.caCert) == nil && time.Until(cert.NotAfter) > 30*24*time.Hour {
 			return m.syncServerMaterial(certBytes, keyBytes, caDir, certDir, keyDir)
 		}
 	} else if (certErr == nil) != (keyErr == nil) {

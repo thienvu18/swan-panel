@@ -24,5 +24,19 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // Vite 8 uses Rolldown. Keep frequently reused dependencies in stable,
+    // cacheable chunks instead of shipping them with the application entry.
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: 'react-vendor', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 30 },
+            { name: 'query-vendor', test: /node_modules[\\/]@tanstack[\\/]/, priority: 20 },
+            { name: 'i18n-vendor', test: /node_modules[\\/](i18next|react-i18next|i18next-browser-languagedetector)[\\/]/, priority: 20 },
+            { name: 'icons-vendor', test: /node_modules[\\/]lucide-react[\\/]/, priority: 20 },
+          ],
+        },
+      },
+    },
   },
 })

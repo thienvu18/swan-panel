@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Key, Zap, Plus, Trash2, ShieldCheck, Search, Eye, EyeOff, X, Pencil } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
 
@@ -24,6 +25,7 @@ export const OIDCPage: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const { requestConfirmation, confirmationDialog } = useConfirmAction();
   const [testResult, setTestResult] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSecret, setShowSecret] = useState(false);
@@ -267,7 +269,12 @@ export const OIDCPage: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => { if (window.confirm(`Delete provider "${p.name}"?`)) deleteProviderMutation.mutate(p.id); }}
+                        onClick={() => requestConfirmation({
+                          title: t('confirm.delete_provider_title'),
+                          description: t('confirm.delete_provider_description', { name: p.name }),
+                          confirmLabel: t('common.delete'),
+                          onConfirm: () => deleteProviderMutation.mutateAsync(p.id),
+                        })}
                         className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors inline-block"
                         title={t('common.delete')}
                       >
@@ -417,6 +424,7 @@ export const OIDCPage: React.FC = () => {
           </button>
         </div>
       </Modal>
+      {confirmationDialog}
     </div>
   );
 };

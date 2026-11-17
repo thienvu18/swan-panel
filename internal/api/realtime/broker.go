@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/swan-panel/swan-panel/internal/db"
 )
 
 // Event represents a real-time event dispatched to connected dashboards
@@ -79,6 +80,31 @@ func (b *Broker) Broadcast(eventType string, payload interface{}) {
 	}
 }
 
+// liveSessionRole prevents a long-lived SSE request from retaining revoked account
+// privileges after its initial HTTP authorization middleware has completed.
+func liveSessionRole(c *gin.Context) (bool, bool) {
+	var account db.User
+	if err := db.DB.WithContext(c.Request.Context()).Select("id", "status", "is_admin").
+		Where("id = ?", c.GetString("user_id")).First(&account).Error; err != nil {
+		return false, false
+	}
+	return account.IsAdmin, account.Status == "ACTIVE"
+}
+
+func sanitizeEvent(event Event, isAdmin bool) (Event, bool) {
+	if isAdmin {
+		return event, true
+	}
+	switch event.Type {
+	case "session_update", "session_terminated", "device_created", "device_revoked":
+		return Event{Type: "session_update", Timestamp: event.Timestamp}, true
+	case "gateway_status":
+		return Event{Type: "gateway_status", Timestamp: event.Timestamp}, true
+	default:
+		return Event{}, false
+	}
+}
+
 // SSEHandler serves the Server-Sent Events endpoint /api/realtime/stream
 func (b *Broker) SSEHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -109,6 +135,9 @@ func (b *Broker) SSEHandler() gin.HandlerFunc {
 				slog.Debug("SSE client stream connection terminated", "ip", c.ClientIP())
 				return
 			case <-ticker.C:
+				if _, active := liveSessionRole(c); !active {
+					return
+				}
 				_, err := c.Writer.Write([]byte(": keepalive\n\n"))
 				if err != nil {
 					slog.Debug("SSE keepalive write failed, disconnecting client", "ip", c.ClientIP())
@@ -119,6 +148,14 @@ func (b *Broker) SSEHandler() gin.HandlerFunc {
 				if !ok {
 					slog.Debug("SSE client channel closed", "ip", c.ClientIP())
 					return
+				}
+				admin, active := liveSessionRole(c)
+				if !active {
+					return
+				}
+				event, allowed := sanitizeEvent(event, admin)
+				if !allowed {
+					continue
 				}
 				data, err := json.Marshal(event)
 				if err != nil {

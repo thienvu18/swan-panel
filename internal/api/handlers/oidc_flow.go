@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -43,6 +44,11 @@ func validOIDCURL(v string) bool {
 		return false
 	}
 	if u.Scheme == "https" {
+		if os.Getenv("APP_ENV") == "production" || os.Getenv("ENVIRONMENT") == "production" {
+			if ip, err := netip.ParseAddr(u.Hostname()); err == nil && (ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast()) {
+				return false
+			}
+		}
 		return true
 	}
 	return u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1") && os.Getenv("APP_ENV") != "production" && os.Getenv("ENVIRONMENT") != "production"

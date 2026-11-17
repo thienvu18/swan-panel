@@ -26,6 +26,12 @@ import (
 	"github.com/swan-panel/swan-panel/internal/vici"
 )
 
+var (
+	errSubnetOverlap           = errors.New("subnet overlap")
+	errResourceGroupHasDevices = errors.New("resource group has attached devices")
+	errResourceGroupHasRules   = errors.New("resource group is referenced by access rules")
+)
+
 // ResourcesHandler manages Devices, Provisioning, Native Profiles, and Resource Groups
 type ResourcesHandler struct{}
 
@@ -156,7 +162,7 @@ func (h *ResourcesHandler) CreateDevice(c *gin.Context) {
 		if req.IPAllocationType == "static" {
 			ip, err := netip.ParseAddr(req.VirtualIP)
 			cidr, errCIDR := netip.ParsePrefix(group.CIDRBlock)
-			if err != nil || errCIDR != nil || !ip.Is4() || !cidr.Contains(ip) || ip == cidr.Masked().Addr() {
+			if err != nil || errCIDR != nil || !ip.Is4() || !cidr.Contains(ip) || isReservedVirtualIP(cidr, ip) {
 				return fmt.Errorf("static IPv4 address is not a usable address within resource group")
 			}
 			newDevice.VirtualIP = ip.String()
@@ -223,17 +229,19 @@ func (h *ResourcesHandler) DownloadDeviceConfig(c *gin.Context) {
 	c.Header("Pragma", "no-cache")
 	platform := strings.ToLower(c.Param("platform"))
 	if platform == "android-native" || platform == "android-p12" {
-		archive, err := pki.BuildAndroidNativeBundle(sw.ServerEndpoint, sw.ServerIdentity, dev.Hostname, bundle)
+		setup, err := pki.BuildAndroidNativeSetup(sw.ServerEndpoint, sw.ServerIdentity, dev.Hostname, bundle)
 		if err != nil {
+			slog.Error("Native Android credential export failed", "device_id", dev.ID, "error", err)
 			c.JSON(503, gin.H{"error": "Unable to export native Android credentials"})
 			return
 		}
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", dev.Hostname+"-android-native.zip"))
-		c.Data(http.StatusOK, "application/zip", archive)
+		// Keep the randomly encrypted PKCS#12 bytes and its password together.
+		// Neither the private key nor import password is persisted in API state.
+		c.JSON(http.StatusOK, setup)
 		return
 	}
 	if platform == "apple" || platform == "macos" || platform == "ios" {
-		profile, profileErr := pki.BuildAppleProfile(sw.ServerEndpoint, sw.ServerIdentity, dev.Hostname, bundle)
+		profile, profileErr := pki.BuildAppleProfileNamed(sw.ServerEndpoint, sw.ServerIdentity, dev.Hostname, sw.VPNName, bundle)
 		if profileErr != nil {
 			c.JSON(503, gin.H{"error": "Cannot generate Apple IKEv2 profile"})
 			return
@@ -253,7 +261,7 @@ func (h *ResourcesHandler) DownloadDeviceConfig(c *gin.Context) {
 	case "windows", "ps1":
 		filename = "setup-" + dev.Hostname + ".ps1"
 		contentType = "text/plain; charset=utf-8"
-		body, err = pki.BuildWindowsInstallerWithRoutes(sw.ServerEndpoint, dev.Hostname, bundle, result.AllowedSelectors)
+		body, err = pki.BuildWindowsInstallerWithRoutesNamed(sw.ServerEndpoint, dev.Hostname, sw.VPNName, bundle, result.AllowedSelectors)
 	case "linux", "swanctl", "sh":
 		if c.Query("format") == "conf" {
 			filename = "swanctl-" + dev.Hostname + ".conf"
@@ -267,7 +275,7 @@ func (h *ResourcesHandler) DownloadDeviceConfig(c *gin.Context) {
 	case "android", "sswan":
 		filename = dev.Hostname + ".sswan"
 		contentType = "application/vnd.strongswan.profile"
-		body, err = pki.BuildAndroidProfile(sw.ServerEndpoint, sw.ServerIdentity, dev.Hostname, bundle, result.AllowedSelectors)
+		body, err = pki.BuildAndroidProfileNamed(sw.ServerEndpoint, sw.ServerIdentity, dev.Hostname, sw.VPNName, bundle, result.AllowedSelectors)
 	default:
 		c.JSON(400, gin.H{"error": "Unsupported platform"})
 		return
@@ -324,6 +332,12 @@ func applyRevocation(ctx context.Context, dev *db.Device) error {
 						failures = append(failures, fmt.Errorf("terminate IKE SA %s: %w", sa.IKEName, err))
 					}
 				}
+			}
+			// Best-effort immediate cleanup after terminating a revoked device.
+			// Charon refuses pool removal while a lease is still held; the next
+			// reconciliation retries it without disconnecting unrelated sessions.
+			if err := client.UnloadPool(ctx, policy.PoolName(dev.ID)); err != nil {
+				slog.Warn("Deferred revoked device pool cleanup", "device_id", dev.ID, "error", err)
 			}
 		}
 	}
@@ -450,29 +464,34 @@ func (h *ResourcesHandler) CreateResourceGroup(c *gin.Context) {
 	}
 	newPrefix = newPrefix.Masked()
 	req.CIDRBlock = newPrefix.String()
-	var existingGroups []db.ResourceGroup
-	if err := db.DB.Find(&existingGroups).Error; err != nil {
-		c.JSON(500, gin.H{"error": "Unable to validate subnet overlaps"})
-		return
-	}
-	for _, g := range existingGroups {
-		oldPrefix, err := netip.ParsePrefix(g.CIDRBlock)
-		if err == nil && (newPrefix.Contains(oldPrefix.Addr()) || oldPrefix.Contains(newPrefix.Addr())) {
-			c.JSON(409, gin.H{"error": "This VPN subnet overlaps an existing resource group"})
-			return
-		}
-	}
-
 	rg := db.ResourceGroup{
 		ID:          "rg_" + uuid.New().String()[:8],
 		Name:        req.Name,
 		CIDRBlock:   req.CIDRBlock,
 		Description: req.Description,
 	}
-
-	if err := db.DB.Create(&rg).Error; err != nil {
+	// Serialize the overlap check with INSERT on the same SQLite writer.
+	// A competing request must not pass a stale check and create a collision.
+	err = db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var existing []db.ResourceGroup
+		if err := tx.Find(&existing).Error; err != nil {
+			return err
+		}
+		for _, group := range existing {
+			old, err := netip.ParsePrefix(group.CIDRBlock)
+			if err == nil && (newPrefix.Contains(old.Addr()) || old.Contains(newPrefix.Addr())) {
+				return errSubnetOverlap
+			}
+		}
+		return tx.Create(&rg).Error
+	})
+	if errors.Is(err, errSubnetOverlap) {
+		c.JSON(http.StatusConflict, gin.H{"error": "This VPN subnet overlaps an existing resource group"})
+		return
+	}
+	if err != nil {
 		slog.Error("Failed to create resource group", "name", req.Name, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create resource group"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Failed to create resource group"})
 		return
 	}
 
@@ -480,34 +499,48 @@ func (h *ResourcesHandler) CreateResourceGroup(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"resource_group": rg})
 }
 
-// DeleteResourceGroup deletes a subnet if no devices are attached
+// DeleteResourceGroup checks references and removes the group within one
+// SQLite write transaction. Device enrollment and access-rule creation also
+// use transactions; the shared SQLite writer serializes conflicting writes.
 func (h *ResourcesHandler) DeleteResourceGroup(c *gin.Context) {
 	id := c.Param("id")
-
-	var devCount int64
-	db.DB.Model(&db.Device{}).Where("resource_group_id = ?", id).Count(&devCount)
-	if devCount > 0 {
+	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var group db.ResourceGroup
+		if err := tx.Where("id = ?", id).First(&group).Error; err != nil {
+			return err
+		}
+		var deviceCount int64
+		if err := tx.Model(&db.Device{}).Where("resource_group_id = ?", id).Count(&deviceCount).Error; err != nil {
+			return fmt.Errorf("count attached devices: %w", err)
+		}
+		if deviceCount > 0 {
+			return errResourceGroupHasDevices
+		}
+		var ruleCount int64
+		if err := tx.Model(&db.AccessRule{}).
+			Where("target_type = ? AND target_value = ?", "resource_group", id).
+			Count(&ruleCount).Error; err != nil {
+			return fmt.Errorf("count referencing access rules: %w", err)
+		}
+		if ruleCount > 0 {
+			return errResourceGroupHasRules
+		}
+		return tx.Delete(&group).Error
+	})
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "Resource group not found"})
+	case errors.Is(err, errResourceGroupHasDevices):
 		c.JSON(http.StatusConflict, gin.H{"error": "Cannot delete resource group while devices are attached to it"})
-		return
+	case errors.Is(err, errResourceGroupHasRules):
+		c.JSON(http.StatusConflict, gin.H{"error": "Remove referencing access rules before deleting this subnet"})
+	case err != nil:
+		slog.Error("Resource group deletion failed; transaction rolled back", "id", id, "error", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Resource group deletion failed; no changes committed"})
+	default:
+		slog.Info("Resource group deleted", "id", id)
+		c.JSON(http.StatusOK, gin.H{"message": "Resource group deleted successfully"})
 	}
-	var referenced int64
-	if err := db.DB.Model(&db.AccessRule{}).Where("target_type = ? AND target_value = ?", "resource_group", id).Count(&referenced).Error; err != nil {
-		c.JSON(500, gin.H{"error": "Could not validate policy references"})
-		return
-	}
-	if referenced > 0 {
-		c.JSON(409, gin.H{"error": "Remove referencing access rules before deleting this subnet"})
-		return
-	}
-
-	if err := db.DB.Where("id = ?", id).Delete(&db.ResourceGroup{}).Error; err != nil {
-		slog.Error("Failed to delete resource group", "id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete resource group"})
-		return
-	}
-
-	slog.Info("Resource group deleted", "id", id)
-	c.JSON(http.StatusOK, gin.H{"message": "Resource group deleted successfully"})
 }
 
 func calculateCIDRCapacity(cidr string) int {
@@ -521,11 +554,24 @@ func calculateCIDRCapacity(cidr string) int {
 		return 1
 	}
 	// Total usable hosts: 2^hostBits - 2
-	capacity := int(math.Pow(2, float64(hostBits))) - 2
+	capacity := int(math.Pow(2, float64(hostBits))) - 3
 	if capacity < 0 {
 		return 0
 	}
 	return capacity
+}
+
+// Never issue the subnet network, gateway, or broadcast address.
+func isReservedVirtualIP(prefix netip.Prefix, addr netip.Addr) bool {
+	if !addr.Is4() || !prefix.Contains(addr) {
+		return true
+	}
+	start := prefix.Masked().Addr().As4()
+	host := addr.As4()
+	first := binary.BigEndian.Uint32(start[:])
+	value := binary.BigEndian.Uint32(host[:])
+	end := first | (^uint32(0) >> uint(prefix.Bits()))
+	return value == first || value == first+1 || value == end
 }
 
 func allocateDynamicIP(tx *gorm.DB, cidr string) (string, error) {
@@ -536,7 +582,9 @@ func allocateDynamicIP(tx *gorm.DB, cidr string) (string, error) {
 
 	// Fetch existing IPs in this subnet
 	var existingIPs []string
-	tx.Model(&db.Device{}).Unscoped().Pluck("virtual_ip", &existingIPs)
+	if err := tx.Model(&db.Device{}).Pluck("virtual_ip", &existingIPs).Error; err != nil {
+		return "", fmt.Errorf("load allocated IPs: %w", err)
+	}
 	usedSet := make(map[string]bool)
 	for _, ip := range existingIPs {
 		usedSet[ip] = true
@@ -556,7 +604,7 @@ func allocateDynamicIP(tx *gorm.DB, cidr string) (string, error) {
 		curBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(curBytes, cur)
 		candidate := net.IP(curBytes).String()
-		if !usedSet[candidate] {
+		if !usedSet[candidate] && !isReservedVirtualIP(netip.MustParsePrefix(cidr), netip.MustParseAddr(candidate)) {
 			return candidate, nil
 		}
 	}

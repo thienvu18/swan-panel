@@ -94,6 +94,32 @@ jobs:
           SWANPANEL_REQUIRE_BUILT_UI: "1"
         run: go test -count=1 -race ./...
 
+      - name: Enforce 80 percent Go integration coverage
+        env:
+          APP_ENV: test
+          SWANPANEL_REQUIRE_BUILT_UI: "1"
+        run: |
+          go test -count=1 -coverpkg=./... -coverprofile=coverage.out ./...
+          coverage="$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/, "", $3); print $3}')"
+          awk -v value="$coverage" 'BEGIN {
+            printf "Backend Go cross-package coverage: %.1f%%\n", value
+            if ((value + 0) < 80) {
+              print "Coverage below the required 80% threshold"
+              exit 1
+            }
+          }'
+
+      - name: Enforce 100 percent statement coverage for critical P1 flows
+        env:
+          APP_ENV: test
+          SWANPANEL_REQUIRE_BUILT_UI: "1"
+        run: |
+          # First-initialization failure of the sync.Once PKI singleton must
+          # run in its own process, with coverage captured and merged.
+          SWANPANEL_TEST_ROOT_CA_UNAVAILABLE=1 go test -count=1 -coverpkg=./... -coverprofile=coverage-ca-unavailable.out -run '^TestUnavailableRootCAFailsClosedAcrossControlPlaneOperations$' ./internal/api
+          awk 'NR==FNR {print;next} FNR>1 {print}' coverage.out coverage-ca-unavailable.out > coverage-critical.out
+          sh scripts/check-p1-critical-coverage.sh coverage-critical.out
+
       - name: Build native static Linux AMD64 binary
         env:
           VERSION: ci

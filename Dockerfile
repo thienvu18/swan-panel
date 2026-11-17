@@ -25,7 +25,7 @@ RUN npm run build
 # ------------------------------------------------------------------------------
 # Stage 2: Go Backend Builder (CGO SQLite, statically linked with musl)
 # ------------------------------------------------------------------------------
-FROM golang:1.27-alpine3.23 AS backend-builder
+FROM golang:1.27.4-alpine3.23 AS backend-builder
 
 WORKDIR /build
 
@@ -88,7 +88,7 @@ RUN apk add --no-cache \
 
 # Setup application, state, and runtime socket directories
 RUN mkdir -p /var/lib/swan-panel /etc/swan-panel /var/run /etc/ipsec.d \
-    /etc/swanctl/x509ca /etc/swanctl/x509 /etc/swanctl/rsa /etc/swanctl/x509crl && \
+    /etc/swanctl/x509ca /etc/swanctl/x509 /etc/swanctl/rsa /etc/swanctl/x509crl /etc/swanctl/conf.d && \
     chmod 750 /var/lib/swan-panel && chmod 700 /etc/swanctl/rsa
 
 # Copy statically compiled binary and entrypoint

@@ -67,7 +67,13 @@
     "reset_filters": "Đặt lại bộ lọc",
     "clear_filters": "Xóa bộ lọc",
     "clear_search": "Xóa tìm kiếm",
-    "error_occurred": "Đã xảy ra lỗi"
+    "error_occurred": "Đã xảy ra lỗi",
+    "confirm": "Xác nhận",
+    "grant_admin": "Cấp quyền admin",
+    "remove_admin": "Thu hồi quyền admin",
+    "revoke": "Thu hồi",
+    "reject": "Từ chối",
+    "approve": "Phê duyệt"
   },
   "dashboard": {
     "active_sessions": "Phiên VPN đang kết nối",
@@ -136,7 +142,26 @@
     "download_apple": "Tải profile Apple .mobileconfig",
     "download_windows": "Tải script Windows PowerShell",
     "download_linux": "Tải cấu hình Linux swanctl.conf",
-    "download_android": "Tải cấu hình Android strongSwan (.sswan)"
+    "download_android": "Cài đặt VPN Android",
+    "download_android_native": "Cài đặt VPN Android",
+    "download_android_sswan": "Tải cấu hình strongSwan (.sswan)",
+    "platform_android_native": "Android (VPN IKEv2 tích hợp)",
+    "android_setup_title": "Cấu hình VPN Android",
+    "android_setup_loading": "Đang chuẩn bị chứng chỉ của thiết bị...",
+    "android_setup_error": "Không thể chuẩn bị chứng chỉ Android.",
+    "android_setup_intro": "Sử dụng VPN có sẵn trong Android. Không cần cài ứng dụng, kết nối máy tính hay cáp USB.",
+    "android_step_certificate": "1. Tải chứng chỉ rồi nhập trong Cài đặt Android > Bảo mật > Cài đặt chứng chỉ > Chứng chỉ VPN và ứng dụng.",
+    "android_download_p12": "Tải chứng chỉ thiết bị (.p12)",
+    "android_import_password": "Mật khẩu nhập chứng chỉ",
+    "android_step_connection": "2. Mở Cài đặt > Mạng và Internet > VPN > Thêm VPN. Chọn IKEv2/IPsec RSA rồi điền:",
+    "android_server_address": "Địa chỉ máy chủ",
+    "android_server_identity": "Danh tính máy chủ",
+    "android_client_identity": "Định danh IPsec / thiết bị",
+    "android_step_ca": "3. Nếu Android yêu cầu CA tin cậy, hãy tải và nhập chứng chỉ dưới đây.",
+    "android_download_ca": "Tải chứng chỉ gốc (.cer)",
+    "android_ca_note": "Chứng chỉ thiết bị đã kèm chuỗi CA. Một số phiên bản Android vẫn cần nhập CA riêng.",
+    "android_security_note": "Tệp .p12 chứa khóa riêng và mật khẩu nhập được hiển thị tại đây. Chỉ tải qua HTTPS hoặc mạng riêng thực sự tin cậy; HTTP có thể làm lộ cả hai khi truyền tải. Xóa tệp .p12 sau khi nhập và không chia sẻ.",
+    "android_oem_note": "Tên các mục có thể khác giữa các hãng. Nếu Android không hỗ trợ IKEv2/IPsec RSA trong VPN tích hợp, thiết bị không thể dùng cách cấu hình không cần ứng dụng này."
   },
   "access": {
     "title": "Luật phân quyền",
@@ -149,7 +174,18 @@
     "add_rule": "Thêm Luật",
     "user_exclusion": "Ngoại lệ CẤM",
     "direct_grant": "Cấp quyền riêng",
-    "group_policy": "Kế thừa theo nhóm"
+    "group_policy": "Kế thừa theo nhóm",
+    "subject_type": "Loại đối tượng áp dụng",
+    "subject_group": "Nhóm người dùng",
+    "subject_device": "Thiết bị cụ thể",
+    "destination_type": "Loại đích đến",
+    "subject_user": "Người dùng cụ thể",
+    "select_subject": "Chọn nhóm hoặc người dùng",
+    "select_subject_placeholder": "Chọn nhóm hoặc người dùng đã tồn tại",
+    "select_target_placeholder": "Chọn subnet đích",
+    "destination_group": "Nhóm tài nguyên / Subnet",
+    "destination_cidr": "Địa chỉ IPv4 hoặc CIDR",
+    "load_choices_error": "Không tải được danh sách. Hãy thử lại trước khi lưu."
   },
   "users": {
     "title": "Người dùng",
@@ -174,7 +210,8 @@
     "add_group": "Thêm Nhóm",
     "create_user_title": "Khởi tạo Người dùng Thủ công",
     "create_user_desc": "Tạo trực tiếp tài khoản email/mật khẩu nội bộ mà không cần qua OIDC.",
-    "active_members": "Thành viên hoạt động"
+    "active_members": "Thành viên hoạt động",
+    "no_groups_available": "Chưa có nhóm nào"
   },
   "dns": {
     "title": "Máy chủ DNS",
@@ -191,7 +228,8 @@
     "hostname": "Tên miền Hostname",
     "record_type": "Loại bản ghi",
     "points_to": "Trỏ tới (Target IP)",
-    "add_override": "Thêm Bản ghi Override"
+    "add_override": "Thêm Bản ghi Override",
+    "override_exact_note": "Bản ghi ghi đè áp dụng chính xác theo FQDN. Tên miền con (như www.) không tự động bao gồm trừ khi khai báo rõ ràng hoặc dùng wildcard (ví dụ *.corp.internal)."
   },
   "oidc": {
     "title": "Nhà cung cấp OIDC",
@@ -208,6 +246,7 @@
   },
   "server": {
     "title": "Cấu hình Server strongSwan",
+    "managed_config_applied": "Đã lưu cấu hình trên đĩa và đồng bộ với VPN daemon đang chạy.",
     "lifetimes_title": "Thời hạn phiên & Tái xác thực",
     "lifetimes_desc": "Thiết lập thời gian kết nối tối đa và chu kỳ tự động đổi khóa bảo mật.",
     "max_session": "Thời gian kết nối tối đa (Ép xác thực lại)",
@@ -263,10 +302,49 @@
   "logs": {
     "title": "Nhật ký hệ thống",
     "service_status": "Dịch vụ VPN Gateway",
+    "host_control_unavailable": "Chế độ strongSwan trên host: cần khởi động, dừng hoặc khởi động lại dịch vụ trực tiếp trên host. Vẫn có thể quản lý chính sách VPN và phiên kết nối tại đây.",
     "filter_scope": "Phạm vi lọc",
     "level": "Cấp độ",
     "all_logs": "Toàn bộ hệ thống (Tất cả log)",
     "search_placeholder": "Tìm kiếm từ khóa trong log...",
     "live_events": "Sự kiện thời gian thực"
+  },
+  "confirm": {
+    "delete_rule_title": "Xóa luật truy cập?",
+    "delete_rule_description": "Xóa luật {action} từ {subject} đến {target}? Chính sách VPN sẽ thay đổi ngay.",
+    "delete_dns_title": "Xóa bản ghi DNS?",
+    "delete_dns_description": "Xóa {name} → {target}? DNS nội bộ sẽ ngừng sử dụng bản ghi này.",
+    "delete_group_title": "Xóa nhóm người dùng?",
+    "delete_group_description": "Xóa {name}? Quan hệ thành viên sẽ bị gỡ. Nhóm đang được luật truy cập sử dụng sẽ không thể xóa.",
+    "delete_subnet_title": "Xóa subnet?",
+    "delete_subnet_description": "Xóa {name} ({cidr})? Chỉ được thực hiện khi không còn thiết bị hoặc luật tham chiếu.",
+    "delete_provider_title": "Xóa nhà cung cấp danh tính?",
+    "delete_provider_description": "Xóa {name}? Người dùng liên kết có thể cần phương thức đăng nhập khác. Server sẽ chặn xóa nếu còn liên kết.",
+    "revoke_title": "Thu hồi chứng chỉ thiết bị?",
+    "revoke_description": "Thu hồi {name}? Chứng chỉ sẽ bị vô hiệu hóa vĩnh viễn và đường hầm VPN bị ngắt.",
+    "disconnect_title": "Ngắt phiên VPN?",
+    "disconnect_description": "Ngắt phiên IKEv2 {name}? Thiết bị có thể tự kết nối lại.",
+    "grant_admin_title": "Cấp quyền quản trị viên?",
+    "grant_admin_description": "Cấp toàn quyền quản trị SwanPanel cho {name} ({email}), bao gồm người dùng, chứng chỉ và chính sách VPN?",
+    "remove_admin_title": "Thu hồi quyền quản trị viên?",
+    "remove_admin_description": "Thu hồi quyền quản trị của {name} ({email})? Phiên đăng nhập hiện tại sẽ mất quyền quản trị ngay.",
+    "create_admin_title": "Tạo tài khoản quản trị viên?",
+    "create_admin_description": "Tạo {name} ({email}) với toàn quyền quản trị hệ thống? Tài khoản này có thể quản lý người dùng, chứng chỉ và chính sách VPN.",
+    "reject_user_title": "Từ chối người dùng?",
+    "reject_user_description": "Từ chối {name} ({email})? Yêu cầu đăng ký chờ duyệt sẽ bị xóa.",
+    "approve_user_title": "Duyệt người dùng?",
+    "approve_user_description": "Duyệt {name} ({email}) và kích hoạt quyền truy cập SwanPanel?",
+    "delete_user_title": "Xóa tài khoản người dùng?",
+    "delete_user_description": "Xóa {name} ({email})? Thiết bị của họ sẽ bị thu hồi trước khi xóa; không thể hoàn tác.",
+    "restart_gateway_title": "Khởi động lại VPN gateway?",
+    "restart_gateway_description": "Khởi động lại strongSwan? Các phiên VPN hiện tại có thể bị ngắt tạm thời.",
+    "stop_gateway_title": "Dừng VPN gateway?",
+    "stop_gateway_description": "Dừng strongSwan? Mọi phiên VPN sẽ ngắt và không thể kết nối mới cho đến khi chạy lại.",
+    "rotate_ca_title": "Cấp Root CA mới?",
+    "rotate_ca_description": "Thay Root CA hiện tại bằng {name}? Những thiết bị đã tin cậy CA cũ sẽ không còn xác thực được. Chỉ thực hiện khi chưa cấp thiết bị.",
+    "create_rule_title": "Tạo luật truy cập?",
+    "create_rule_description": "Áp dụng {action} từ {subject} đến {target}? Việc này thay đổi quyền mạng ngay và có thể cho phép hoặc ngắt kết nối VPN.",
+    "apply_advanced_title": "Áp dụng cấu hình VPN nâng cao?",
+    "apply_advanced_description": "Cấu hình strongSwan nâng cao có thể làm gián đoạn các phiên VPN hoặc khiến chính sách gateway chờ áp dụng nếu có lỗi. Hãy kiểm tra JSON trước khi tiếp tục."
   }
 }

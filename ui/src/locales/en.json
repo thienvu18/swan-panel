@@ -67,7 +67,13 @@
     "reset_filters": "Reset filters",
     "clear_filters": "Clear Filters",
     "clear_search": "Clear Search",
-    "error_occurred": "An error occurred"
+    "error_occurred": "An error occurred",
+    "confirm": "Confirm",
+    "grant_admin": "Grant admin",
+    "remove_admin": "Remove admin",
+    "revoke": "Revoke",
+    "reject": "Reject",
+    "approve": "Approve"
   },
   "dashboard": {
     "active_sessions": "Active VPN Sessions",
@@ -136,7 +142,26 @@
     "download_apple": "Download Apple .mobileconfig Profile",
     "download_windows": "Download Windows PowerShell Script",
     "download_linux": "Download Linux swanctl.conf Config",
-    "download_android": "Download Android strongSwan Profile (.sswan)"
+    "download_android": "Set up Android VPN",
+    "download_android_native": "Set up Android VPN",
+    "download_android_sswan": "Download strongSwan Profile (.sswan)",
+    "platform_android_native": "Android (built-in IKEv2 VPN)",
+    "android_setup_title": "Android VPN setup",
+    "android_setup_loading": "Preparing your device credentials...",
+    "android_setup_error": "Could not prepare Android credentials.",
+    "android_setup_intro": "Use the VPN client built into Android. No extra app, computer, or USB cable is needed.",
+    "android_step_certificate": "1. Download the certificate, then import it under Android Settings > Security > Install certificate > VPN & app user certificate.",
+    "android_download_p12": "Download client certificate (.p12)",
+    "android_import_password": "Certificate import password",
+    "android_step_connection": "2. Open Android Settings > Network & Internet > VPN > Add VPN. Select IKEv2/IPsec RSA, then enter:",
+    "android_server_address": "Server address",
+    "android_server_identity": "Server identity",
+    "android_client_identity": "IPsec identifier / device identity",
+    "android_step_ca": "3. If Android asks for a trusted CA, download and import the certificate below.",
+    "android_download_ca": "Download root CA (.cer)",
+    "android_ca_note": "The client certificate already includes the CA chain. Some Android versions require a separate CA import.",
+    "android_security_note": "The .p12 contains your private key and its import password is shown here. Download only over HTTPS or a fully trusted private network; HTTP can expose both in transit. Delete the .p12 after importing; never share it.",
+    "android_oem_note": "Android menus vary by manufacturer. If IKEv2/IPsec RSA is absent from the built-in VPN list, native certificate VPN is unavailable on that device."
   },
   "access": {
     "title": "Access Rules",
@@ -149,7 +174,18 @@
     "add_rule": "Add Rule",
     "user_exclusion": "User Exclusion",
     "direct_grant": "Direct Grant",
-    "group_policy": "Group Policy"
+    "group_policy": "Group Policy",
+    "subject_type": "Subject Type",
+    "subject_group": "User Group",
+    "subject_device": "Specific Device",
+    "destination_type": "Destination Target Type",
+    "subject_user": "Specific User",
+    "select_subject": "Select User Group or User",
+    "select_subject_placeholder": "Choose an existing user or group",
+    "select_target_placeholder": "Choose a resource group",
+    "destination_group": "Resource Group / Subnet",
+    "destination_cidr": "Specific IPv4 or CIDR",
+    "load_choices_error": "Cannot load choices. Retry before saving."
   },
   "users": {
     "title": "Users",
@@ -174,7 +210,8 @@
     "add_group": "Add Group",
     "create_user_title": "Create User Account",
     "create_user_desc": "Create a local account with email and password without OIDC.",
-    "active_members": "Active Members"
+    "active_members": "Active Members",
+    "no_groups_available": "No groups yet"
   },
   "dns": {
     "title": "DNS Engine",
@@ -191,7 +228,8 @@
     "hostname": "Hostname",
     "record_type": "Record Type",
     "points_to": "Points To (Target IP)",
-    "add_override": "Add DNS Override"
+    "add_override": "Add DNS Override",
+    "override_exact_note": "Overrides match exact FQDNs. Subdomains (such as www.) are not included automatically unless explicitly specified or using wildcards (e.g. *.corp.internal)."
   },
   "oidc": {
     "title": "OIDC Providers",
@@ -208,6 +246,7 @@
   },
   "server": {
     "title": "Server Settings",
+    "managed_config_applied": "Saved to disk and synchronized with the live VPN daemon.",
     "lifetimes_title": "Session Lifetimes & Re-Authentication",
     "lifetimes_desc": "Set maximum session duration and automated key renewal intervals.",
     "max_session": "Maximum Session Duration (Force Re-auth)",
@@ -263,10 +302,49 @@
   "logs": {
     "title": "System Logs",
     "service_status": "VPN Gateway Service",
+    "host_control_unavailable": "Host strongSwan mode: start, stop and restart must be performed on the host. VPN policy and sessions remain manageable here.",
     "filter_scope": "Filter Scope",
     "level": "Level",
     "all_logs": "Entire System (All Logs)",
     "search_placeholder": "Search log keywords...",
     "live_events": "Live System Events"
+  },
+  "confirm": {
+    "delete_rule_title": "Delete access rule?",
+    "delete_rule_description": "Delete the {action} rule for {subject} → {target}? Gateway policy will change immediately.",
+    "delete_dns_title": "Delete DNS override?",
+    "delete_dns_description": "Remove {name} → {target}? Internal DNS queries will no longer use this record.",
+    "delete_group_title": "Delete user group?",
+    "delete_group_description": "Delete {name}? Memberships will be removed. Groups referenced by access rules cannot be deleted.",
+    "delete_subnet_title": "Delete subnet?",
+    "delete_subnet_description": "Delete {name} ({cidr})? This is only possible when no devices or policies reference it.",
+    "delete_provider_title": "Delete identity provider?",
+    "delete_provider_description": "Delete {name}? Users bound to this provider may need another sign-in method; linked providers are protected by the server.",
+    "revoke_title": "Revoke device certificate?",
+    "revoke_description": "Revoke {name}? The certificate will be permanently invalidated and its VPN tunnel disconnected.",
+    "disconnect_title": "Disconnect VPN session?",
+    "disconnect_description": "Terminate the current IKEv2 session {name}? The client may reconnect automatically.",
+    "grant_admin_title": "Grant administrator access?",
+    "grant_admin_description": "Give {name} ({email}) full SwanPanel administrator privileges, including user management, credentials and VPN policies?",
+    "remove_admin_title": "Remove administrator access?",
+    "remove_admin_description": "Remove administrator privileges from {name} ({email})? Their existing session will immediately lose admin access.",
+    "create_admin_title": "Create administrator account?",
+    "create_admin_description": "Create {name} ({email}) with full system administrator permissions? This account can manage users, certificates and VPN policies.",
+    "reject_user_title": "Reject pending user?",
+    "reject_user_description": "Reject {name} ({email})? Their pending registration will be deleted.",
+    "approve_user_title": "Approve new user?",
+    "approve_user_description": "Approve {name} ({email}) and activate access to SwanPanel?",
+    "delete_user_title": "Delete user account?",
+    "delete_user_description": "Delete {name} ({email})? Their devices will be revoked before removal, and this action cannot be undone.",
+    "restart_gateway_title": "Restart VPN gateway?",
+    "restart_gateway_description": "Restart strongSwan? Active VPN tunnels may disconnect and reconnect during the operation.",
+    "stop_gateway_title": "Stop VPN gateway?",
+    "stop_gateway_description": "Stop strongSwan? All current VPN sessions will disconnect and new connections will fail until it is started again.",
+    "rotate_ca_title": "Issue a new Root CA?",
+    "rotate_ca_description": "Replace the current Root CA with {name}? Previously installed trust chains will no longer be valid. Confirm only if this is an empty installation.",
+    "create_rule_title": "Create an access rule?",
+    "create_rule_description": "Apply {action} from {subject} to {target}? This changes network access immediately and may permit or interrupt VPN traffic.",
+    "apply_advanced_title": "Apply advanced VPN settings?",
+    "apply_advanced_description": "Advanced strongSwan settings may interrupt active tunnels or leave gateway policy pending if validation fails. Review the JSON before continuing."
   }
 }

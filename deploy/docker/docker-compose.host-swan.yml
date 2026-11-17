@@ -3,7 +3,9 @@
 # https://github.com/thienvu18/swan-panel
 #
 # Use this compose override when strongSwan runs directly on the host (e.g. systemd).
-# This bind-mounts the host VICI UNIX socket into the SwanPanel container.
+# Bind-mount the host socket directory so daemon restarts (which replace the
+# socket inode) remain visible to the container. A single socket-file mount
+# would remain bound to the stale inode after strongSwan restarts.
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f deploy/docker/docker-compose.host-swan.yml up -d
@@ -14,6 +16,20 @@
 
 services:
   swan-panel:
+    # Host charon, XFRM processing, DNS VIPs, nftables, and NAT must all
+    # share the same network namespace. Requires Docker Compose >= 2.24.4.
+    network_mode: host
+    ports: !override []
     volumes:
-      # Bind-mount host strongSwan VICI IPC socket
-      - /var/run/charon.vici:/var/run/charon.vici
+      # Mount a live directory, not an individual UNIX socket inode.
+      - /run:/host-run:ro
+      # The daemon and control plane must share the actual persistent config
+      # and certificate directories, not two different Docker volumes.
+      - /etc/swanctl:/etc/swanctl
+    environment:
+      VICI_SOCKET: /host-run/charon.vici
+      SWANPANEL_EXTERNAL_STRONGSWAN: "1"
+      # Optional: pin NAT egress if multiple host default routes exist.
+      # SWANPANEL_HOST_EGRESS_INTERFACE: wlan0
+      # IPv6 host forwarding is opt-in (can change Router Advertisement/default routes).
+      # SWANPANEL_HOST_ENABLE_IPV6_FORWARDING: "1"

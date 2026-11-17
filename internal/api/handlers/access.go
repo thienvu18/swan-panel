@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -10,6 +12,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/policy"
+	"gorm.io/gorm"
+)
+
+var (
+	errMissingRuleSubject = errors.New("access rule subject does not exist")
+	errMissingRuleTarget  = errors.New("target resource group does not exist")
 )
 
 // AccessHandler manages Zero-Trust access control policies (ALLOW/DENY)
@@ -112,25 +120,10 @@ func (h *AccessHandler) CreateAccessRule(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "Invalid subject type"})
 		return
 	}
-	var subjectCount int64
-	model := any(&db.User{})
-	switch req.SubjectType {
-	case "user_group":
-		model = &db.UserGroup{}
-	case "device":
-		model = &db.Device{}
-	}
-	if err := db.DB.Model(model).Where("id = ?", req.SubjectID).Count(&subjectCount).Error; err != nil || subjectCount == 0 {
-		c.JSON(400, gin.H{"error": "Subject does not exist"})
-		return
-	}
 	switch req.TargetType {
 	case "resource_group":
-		var count int64
-		if err := db.DB.Model(&db.ResourceGroup{}).Where("id = ?", req.TargetValue).Count(&count).Error; err != nil || count == 0 {
-			c.JSON(400, gin.H{"error": "Target resource group does not exist"})
-			return
-		}
+		// Existence is checked inside the write transaction below so subnet
+		// deletion cannot race between the target check and INSERT.
 	case "cidr_ip":
 		target := strings.TrimSpace(req.TargetValue)
 		if addr, err := netip.ParseAddr(target); err == nil {
@@ -172,9 +165,42 @@ func (h *AccessHandler) CreateAccessRule(c *gin.Context) {
 		RuleNature:  ruleNature,
 	}
 
-	if err := db.DB.Create(&rule).Error; err != nil {
+	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		subject := any(&db.User{})
+		switch req.SubjectType {
+		case "user_group":
+			subject = &db.UserGroup{}
+		case "device":
+			subject = &db.Device{}
+		}
+		var subjectCount int64
+		if err := tx.Model(subject).Where("id = ?", req.SubjectID).Count(&subjectCount).Error; err != nil {
+			return fmt.Errorf("validate rule subject: %w", err)
+		}
+		if subjectCount == 0 {
+			return errMissingRuleSubject
+		}
+		if req.TargetType == "resource_group" {
+			var targetCount int64
+			if err := tx.Model(&db.ResourceGroup{}).Where("id = ?", req.TargetValue).Count(&targetCount).Error; err != nil {
+				return fmt.Errorf("validate rule target: %w", err)
+			}
+			if targetCount == 0 {
+				return errMissingRuleTarget
+			}
+		}
+		return tx.Create(&rule).Error
+	})
+	switch {
+	case errors.Is(err, errMissingRuleSubject):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Subject does not exist"})
+		return
+	case errors.Is(err, errMissingRuleTarget):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Target resource group does not exist"})
+		return
+	case err != nil:
 		slog.Error("Failed to create access rule", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create access rule"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Failed to create access rule"})
 		return
 	}
 
@@ -190,12 +216,17 @@ func (h *AccessHandler) CreateAccessRule(c *gin.Context) {
 // DeleteAccessRule deletes an access rule
 func (h *AccessHandler) DeleteAccessRule(c *gin.Context) {
 	id := c.Param("id")
-	if err := db.DB.Where("id = ?", id).Delete(&db.AccessRule{}).Error; err != nil {
+	result := db.DB.Where("id = ?", id).Delete(&db.AccessRule{})
+	if err := result.Error; err != nil {
 		slog.Error("Failed to delete access rule", "id", id, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete access rule"})
 		return
 	}
 
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Access rule not found"})
+		return
+	}
 	slog.Info("Access rule deleted", "id", id)
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		slog.Error("Policy deletion pending reconciliation", "rule", id, "error", err)

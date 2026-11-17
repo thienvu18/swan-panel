@@ -41,10 +41,12 @@ SwanPanel compiles into a single, self-contained binary containing:
    cd swan-panel
    ```
 
-2. Generate a secure random JWT secret:
+2. On a new installation, generate and persist a secure JWT signing secret:
    ```bash
-   export JWT_SECRET="$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)"
+   umask 077
+   printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > .env
    ```
+   Keep `.env` across restarts and upgrades; do not overwrite an existing signing secret.
 
 3. Start the container in background:
    ```bash
@@ -79,9 +81,9 @@ docker run -d \
   -p 53:53/tcp \
   -p 500:500/udp \
   -p 4500:4500/udp \
-  -v /var/run/charon.vici:/var/run/charon.vici \
   -v swanpanel_data:/var/lib/swan-panel \
   -v swanpanel_config:/etc/swan-panel \
+  -v swanpanel_swanctl:/etc/swanctl \
   -e ENVIRONMENT=production \
   -e LOG_LEVEL=INFO \
   -e JWT_SECRET="your-secure-random-secret-here" \
@@ -89,7 +91,57 @@ docker run -d \
 ```
 
 > [!NOTE]
-> When `/var/run/charon.vici` is not mounted from the host, the container automatically starts its internal strongSwan charon daemon in standalone mode.
+> Standalone Docker Run uses the container's own strongSwan daemon and dedicated persistent swanctl volume. Do not bind a host VICI socket into a bridge-network container: XFRM, DNS VIP, nftables, and NAT would operate in different network namespaces.
+
+---
+
+## 2.1 Optional Docker Control Plane with Host strongSwan (advanced)
+
+The recommended **one-command single-container Docker bridge deployment remains unchanged**.
+For an intentionally pre-provisioned host `charon-systemd`, the opt-in override
+`deploy/docker/docker-compose.host-swan.yml` shares the host network namespace
+so IKEv2, XFRM, gateway DNS aliases, nftables, and NAT apply to the same kernel.
+It requires Docker Compose 2.24.4+, exclusive host IKE UDP 500/4500,
+available DNS TCP/UDP 53 **on SwanPanel gateway VIPs** and management TCP 8080,
+and persistent `/etc/swanctl` credentials matched to the existing database.
+Host DNS binds only `lo:swanpanel` gateway VIPs, preserving host
+`systemd-resolved` on `127.0.0.53/54:53`. Host networking
+has no Docker port publishing: the application binds its configured ports
+directly on the host. `HOST_DNS_PORT`, `IKE_PORT`, and `IPSEC_PORT` only
+control bridge-mode publishing, not host-mode listeners. A running default
+container must be stopped before starting
+the host daemon. Do **not** copy the default Docker PKI volume over the host
+`/etc/swanctl` without backup, collision review, and an approved maintenance window.
+
+```bash
+sh scripts/test-host-swan-compose.sh
+docker compose -f docker-compose.yml -f deploy/docker/docker-compose.host-swan.yml config --quiet
+# After approved PKI migration, stopped default container and healthy host VICI:
+docker compose -f docker-compose.yml -f deploy/docker/docker-compose.host-swan.yml up -d
+```
+
+Host mode adds no helper service. SwanPanel still manages tunnels/policies over
+VICI, but intentionally disables daemon Start/Stop/Restart from the container UI
+until a separately authorized host control mechanism exists. The host nftables
+forward/input deny rules and MSS clamping match only SwanPanel-assigned IPv4
+VIPs (including revoked devices); host NAT matches active VIPs and the selected
+WAN interface. Do not overlap SwanPanel VIPs with another VPN. Host mode requires IPv4 forwarding and may enable it or disable IPv4 redirects on the host;
+IPv6 forwarding is left unchanged unless `SWANPANEL_HOST_ENABLE_IPV6_FORWARDING=1`
+is explicitly set (which can alter Router Advertisement/default routes).
+If Docker uses its iptables backend with `FORWARD DROP`, Host mode automatically
+maintains an owned `SWANPANEL-FWD` chain and one `DOCKER-USER` jump. Only enrolled
+SwanPanel device VIPs (`/32`) with a Zero-Trust nftables authorization mark
+can pass, with established return traffic; no manual subnet-wide `ACCEPT` is
+required. Device/pool changes and Docker chain resets are reconciled automatically.
+An existing Docker nftables backend or a custom `FORWARD DROP` without
+`DOCKER-USER` is not supported by this integration and fails closed. Remove any
+legacy broad manual VPN `DOCKER-USER ACCEPT` rules after reviewing their ownership;
+SwanPanel never deletes rules it did not create.
+SwanPanel may update its managed `/etc/swanctl` configuration; review existing routing,
+DNS, firewall, and certificate configuration before opting in. The Host-mode preflight and acceptance checklist is in
+[VPN Gateway Acceptance Test Plan](../docs/VPN_GATEWAY_ACCEPTANCE_TEST_PLAN.md);
+the completed Orange Pi findings, including rollback, are recorded in the
+[E2E Acceptance Report](../docs/E2E_ACCEPTANCE_TEST_REPORT_2026-11-16.md).
 
 ---
 
@@ -101,7 +153,7 @@ For sysadmins deploying natively on Linux hosts (Ubuntu, Debian, RHEL, Rocky, Al
 * **Ubuntu / Debian:**
   ```bash
   sudo apt update
-  sudo apt install -y strongswan strongswan-charon-systemd libcharon-extra-plugins iptables nftables curl
+  sudo apt install -y charon-systemd strongswan-swanctl strongswan-libcharon libcharon-extra-plugins libstrongswan-extra-plugins libstrongswan-standard-plugins iptables nftables curl
   ```
 * **RHEL / Rocky / AlmaLinux / Fedora:**
   ```bash
@@ -116,8 +168,7 @@ cat <<'EOF' | sudo tee /etc/sysctl.d/99-swanpanel.conf
 net.ipv4.ip_forward = 1
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
-net.ipv6.conf.all.forwarding = 1
-net.ipv6.conf.all.accept_redirects = 0
+# Enable IPv6 forwarding separately only if required by your network.
 EOF
 
 sudo sysctl -p /etc/sysctl.d/99-swanpanel.conf
@@ -141,6 +192,8 @@ sudo install -m 755 swan-panel /usr/local/bin/swan-panel
    sudo cp deploy/swan-panel.env.example /etc/swan-panel/swan-panel.env
    sudo chmod 600 /etc/swan-panel/swan-panel.env
    ```
+   For native `charon-systemd`, keep `SWANPANEL_EXTERNAL_STRONGSWAN=1` in this file
+   so host nftables/NAT and Docker forwarding are managed in the host namespace.
 
 3. Install the systemd unit file:
    ```bash
@@ -150,7 +203,8 @@ sudo install -m 755 swan-panel /usr/local/bin/swan-panel
 
 4. Enable and start services:
    ```bash
-   sudo systemctl enable --now strongswan-starter || sudo systemctl enable --now strongswan
+   sudo systemctl disable --now strongswan-starter 2>/dev/null || true
+   sudo systemctl enable --now strongswan
    sudo systemctl enable --now swan-panel
    ```
 

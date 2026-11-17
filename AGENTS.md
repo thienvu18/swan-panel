@@ -10,6 +10,8 @@ SwanPanel is a modern, enterprise-grade, zero-trust web control plane for **stro
 * **Official Product Branding:** Always refer to the product as **SwanPanel** (PascalCase) in all user-facing documentation, UI headings, branding, titles, and logs. Technical identifiers (e.g. binary name `swan-panel`, repository path, Go module) remain kebab-cased or module-pathed.
 * **100% Native Client Support:** We deliver native configuration profiles (Apple `.mobileconfig`, Windows PowerShell `Add-VpnConnection`, Linux NetworkManager, Android IKEv2) without requiring third-party client applications.
 * **Single-Binary Delivery:** The entire application (Go backend + SQLite database + embedded React SPA + internal PKI + DNS server) compiles into one self-contained executable.
+* **Default Deployment Invariant:** Recommend one Docker Compose service with bundled strongSwan and bridge networking. `docker compose up -d` must remain the standard start command after a persistent `JWT_SECRET` is configured; host strongSwan must never become a default dependency.
+* **Optional Host strongSwan:** Only the explicitly selected `deploy/docker/docker-compose.host-swan.yml` override may use `network_mode: host`, host VICI and `/etc/swanctl`. It must not add a helper container, silently alter the default stack, or manage unrelated host VPN traffic. Host IPsec enforcement and MSS clamping must be scoped to assigned SwanPanel VIPs (per-device `/32` VICI pools); NAT must be scoped to enrolled VIPs and the validated egress interface. Embedded DNS must bind only SwanPanel-owned gateway VIPs in Host mode and must not replace the host's existing resolver. If Docker's iptables `FORWARD` policy blocks host VPN traffic, use only the owned `SWANPANEL-FWD` chain with per-VIP and nftables-authorized connmark matches, never unconditional subnet-wide `ACCEPT` rules. Reconcile on policy edits and Docker chain resets; do not alter foreign firewall chains.
 * **Zero-SSH Operations:** The Admin manages daemon configuration, reloads connection parameters dynamically in RAM, and streams filtered logs via the UNIX socket `/var/run/charon.vici` without ever opening an SSH terminal.
 
 ---
@@ -121,7 +123,10 @@ All frontend work must strictly follow the Google Labs `design.md` specification
 * **Run Tests:**
   ```bash
   go test -v ./...
+  go vet ./...
+  sh scripts/test-host-swan-compose.sh
   ```
+  Host mode changes also require verification that the default Compose model is unchanged, unrelated host VPN sources are not matched by SwanPanel nftables rules, and real packet-level tests are handed off before claiming production readiness.
 * **Build Frontend:**
   ```bash
   cd ui && npm run build

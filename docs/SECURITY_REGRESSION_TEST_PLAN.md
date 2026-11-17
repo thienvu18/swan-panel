@@ -63,8 +63,8 @@ Go tests use native CGO SQLite on isolated SQLite files and test-mode offline da
 | PROF-06 | Windows imports CA and actual PFX private key | `client_profile_test.go:TestPersistedIdentityAndNativeProfiles` |
 | PROF-06a | Stored identity cannot be overwritten/tampered; bad JSON rejected | `TestTamperedStoredIdentityFailsClosed` |
 | PROF-06b | PKCS#12 rejects wrong password and preserves certificate serial | `TestPKCS12WrongPasswordRejected` |
-| PROF-07 | Android strongSwan .sswan includes importable PKCS#12 and split-tunnel entries | Same |
-| PROF-08 | Android native ZIP contains certificate, P12 and manual instructions | Same |
+| PROF-07 | Legacy Android strongSwan `.sswan` remains a compatibility-only API export, not the primary UI path | `client_profile_test.go` |
+| PROF-08 | Android native API returns a paired PKCS#12/password with CA and IKE identities; no ZIP, ADB or helper app | `internal/api/android_native_endpoint_test.go`, `internal/pki/client_profile_test.go`, `ui/tests/androidNative.test.mjs` |
 | PROFILE-09 | Gateway identifiers and VICI proposals reject unsafe characters | `internal/api/handlers/gateway_validation_test.go` |
 | UI-01 | SSE frames including multiline/CRLF; corrupted JSON/comment ignored | `ui/tests/transportSecurity.test.mjs` |
 | UI-02 | OIDC provider IDs encoded in URL; JWT not placed in URL | Same |
@@ -82,10 +82,10 @@ Unit/static tests do **not** validate the actual OS/network data plane. An isola
 6. **OS-01**: Import signed `.mobileconfig` on macOS and iOS; confirm the downloaded file is CMS DER, private identity installed and IKEv2 connects. Verify signature with `openssl cms -verify -inform DER -in device.mobileconfig -CAfile ca.crt -out profile.plist`. Signer trust on the device must be configured out-of-band, not inferred from embedded CA.
 7. **OS-02**: Windows (PowerShell admin) imports Root CA/PFX and connects with machine certificate; only granted routes traverse VPN.
 8. **OS-03**: Linux `swanctl` script imports the issued key/cert and successfully connects; route policy remains restricted.
-9. **OS-04**: strongSwan Android `.sswan` imports and connects. Native Android ZIP works on models exposing built-in IKEv2/IPsec RSA; record unsupported OEMs separately.
+9. **OS-04**: On Android with built-in IKEv2/IPsec RSA, download `.p12` from SwanPanel's native setup dialog, import to OS KeyChain with the paired password, and create a VPN using server/identity fields; no third-party app, ADB or ZIP. Record unsupported OEMs separately. See A01 in `VPN_GATEWAY_ACCEPTANCE_TEST_PLAN.md`.
 
 ## CI and scope
 
 GitHub Actions runs `npm test`, frontend build, `go vet ./...`, `go test -race ./...`, Go build and Docker build. Developer-machine Go tests, even if they all pass, are **not** a substitute for NET-01 through NET-05.
 
-SwanPanel has never been deployed: a clean database/CA is the only supported initial state. No seed-admin migration or compatibility path should be added without a new user story.
+Historical clean-install assumptions must not replace real hardware verification. SwanPanel now has an Orange Pi ARM64 lab deployment; follow the revision-specific A01–A06 acceptance cases in `docs/VPN_GATEWAY_ACCEPTANCE_TEST_PLAN.md` before signing off changes. No seed-admin migration or compatibility path should be added without a new user story.

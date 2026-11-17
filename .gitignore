@@ -24,6 +24,9 @@ swan-panel
 *.p12
 *.pfx
 *.mobileconfig
+# Generated client bundles can embed private keys and passwords.
+*-android-native.zip
+*.sswan
 
 # Frontend dependencies and build outputs
 ui/node_modules/

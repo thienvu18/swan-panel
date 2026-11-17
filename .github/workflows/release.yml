@@ -104,9 +104,14 @@ jobs:
           SWANPANEL_REQUIRE_BUILT_UI: "1"
         run: go test -count=1 -race ./...
 
+  vpn-integration:
+    name: Verify real IKEv2, nftables and revocation
+    needs: verify
+    uses: ./.github/workflows/docker-integration.yml
+
   build:
     name: Linux ${{ matrix.arch }} (native musl, static CGO)
-    needs: verify
+    needs: [verify, vpn-integration]
     strategy:
       fail-fast: false
       matrix:

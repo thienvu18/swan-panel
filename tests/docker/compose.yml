@@ -1,0 +1,42 @@
+name: swanpanel-integration
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      PORT: "8080"
+      APP_ENV: production
+      ENVIRONMENT: production
+      DB_PATH: /var/lib/swan-panel/swanpanel.db
+      PKI_DATA_DIR: /var/lib/swan-panel/pki
+      ENABLE_DNS: "false"
+      DNS_PORT: "5353"
+      VICI_SOCKET: /var/run/charon.vici
+      JWT_SECRET: "isolated-swanpanel-integration-jwt-secret-2026"
+    ports:
+      - "127.0.0.1:18080:8080/tcp"
+    volumes:
+      - gateway_state:/var/lib/swan-panel
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+      start_period: 10s
+  client:
+    build:
+      context: ../..
+      dockerfile: tests/docker/client.Dockerfile
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    depends_on:
+      gateway:
+        condition: service_healthy
+    command: ["/bin/sh", "-c", "ipsec start && exec sleep infinity"]
+volumes:
+  gateway_state:

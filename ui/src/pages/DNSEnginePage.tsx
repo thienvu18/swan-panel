@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Globe, Plus, Trash2, CheckCircle, Search, Filter, X } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
 
@@ -24,6 +25,7 @@ export const DNSEnginePage: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isAddOverrideOpen, setIsAddOverrideOpen] = useState(false);
+  const { requestConfirmation, confirmationDialog } = useConfirmAction();
   const [toastMessage, setToastMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -344,7 +346,12 @@ export const DNSEnginePage: React.FC = () => {
                       <td className="py-2.5 px-3.5 text-right font-sans">
                         <button
                           type="button"
-                          onClick={() => deleteOverrideMutation.mutate(rec.id)}
+                          onClick={() => requestConfirmation({
+                            title: t('confirm.delete_dns_title'),
+                            description: t('confirm.delete_dns_description', { name: rec.hostname, target: rec.target_address }),
+                            confirmLabel: t('common.delete'),
+                            onConfirm: () => deleteOverrideMutation.mutateAsync(rec.id),
+                          })}
                           className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors"
                           title={t('common.delete')}
                         >
@@ -377,9 +384,12 @@ export const DNSEnginePage: React.FC = () => {
               type="text"
               value={overrideHost}
               onChange={(e) => setOverrideHost(e.target.value)}
-              placeholder="e.g. gitlab.internal"
+              placeholder="e.g. gitlab.internal or *.corp.internal"
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
             />
+            <p className="mt-1 text-[11px] text-dim">
+              {t('dns.override_exact_note')}
+            </p>
           </div>
 
           <div>
@@ -425,6 +435,7 @@ export const DNSEnginePage: React.FC = () => {
           </button>
         </div>
       </Modal>
+      {confirmationDialog}
     </div>
   );
 };

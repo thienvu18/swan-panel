@@ -104,7 +104,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password" binding:"required"`
-	NewPassword     string `json:"new_password" binding:"required,min=8"`
+	NewPassword     string `json:"new_password" binding:"required"`
 }
 
 // ChangePassword allows the authenticated user to safely update their account password
@@ -118,7 +118,12 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	var req ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		slog.Warn("Password change rejected: invalid input", "error", err, "ip", c.ClientIP())
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: new password must be at least 8 characters", "details": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid password change request", "details": err.Error()})
+		return
+	}
+
+	if len(req.NewPassword) < 12 || len(req.NewPassword) > 72 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "New password must be 12 to 72 bytes"})
 		return
 	}
 

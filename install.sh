@@ -86,8 +86,10 @@ case "${OS_ID}" in
             nftables \
             charon-systemd \
             strongswan-swanctl \
+            strongswan-libcharon \
             libcharon-extra-plugins \
-            libstrongswan-extra-plugins
+            libstrongswan-extra-plugins \
+            libstrongswan-standard-plugins
         ;;
     rhel|centos|rocky|almalinux|fedora)
         info "Installing strongSwan, VICI IPC plugins, and network utilities via dnf/yum..."
@@ -127,8 +129,7 @@ cat <<'EOF' > /etc/sysctl.d/99-swanpanel.conf
 net.ipv4.ip_forward = 1
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
-net.ipv6.conf.all.forwarding = 1
-net.ipv6.conf.all.accept_redirects = 0
+# IPv6 forwarding is not enabled implicitly on a shared host.
 EOF
 
 sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-swanpanel.conf >/dev/null 2>&1
@@ -186,11 +187,17 @@ ENVIRONMENT=production
 JWT_SECRET=${JWT_SECRET}
 ENABLE_DNS=true
 DNS_PORT=53
+SWANPANEL_EXTERNAL_STRONGSWAN=1
 EOF
     chmod 600 "${CONFIG_DIR}/swan-panel.env"
     success "Generated new configuration file at ${CONFIG_DIR}/swan-panel.env"
 else
     info "Existing configuration found at ${CONFIG_DIR}/swan-panel.env (preserving settings)."
+    if grep -q '^SWANPANEL_EXTERNAL_STRONGSWAN=' "${CONFIG_DIR}/swan-panel.env"; then
+        sed -i 's/^SWANPANEL_EXTERNAL_STRONGSWAN=.*/SWANPANEL_EXTERNAL_STRONGSWAN=1/' "${CONFIG_DIR}/swan-panel.env"
+    else
+        printf '\nSWANPANEL_EXTERNAL_STRONGSWAN=1\n' >> "${CONFIG_DIR}/swan-panel.env"
+    fi
 fi
 
 # 7. Configure systemd Service
@@ -199,16 +206,30 @@ cat <<EOF > "${SYSTEMD_SERVICE}"
 [Unit]
 Description=SwanPanel Control Plane for strongSwan VPN
 Documentation=https://github.com/${GITHUB_REPO}
-After=network.target strongswan.service strongswan-starter.service
-Wants=network.target
+After=network-online.target strongswan.service strongswan-starter.service
+Wants=network-online.target
+RequiresMountsFor=${DATA_DIR} ${CONFIG_DIR}
 
 [Service]
 Type=simple
+User=root
+Group=root
 EnvironmentFile=-${CONFIG_DIR}/swan-panel.env
 ExecStart=${INSTALL_BIN_PATH}
 Restart=always
 RestartSec=3s
 LimitNOFILE=65535
+LimitNPROC=4096
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/etc/swanctl
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=false
+ProtectControlGroups=true
+RestrictRealtime=true
 StandardOutput=journal
 StandardError=journal
 
@@ -216,9 +237,22 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-# 8. Prepare strongSwan's credential directories before daemon startup.
-mkdir -p /etc/swanctl/x509ca /etc/swanctl/x509 /etc/swanctl/rsa /etc/swanctl/x509crl
+# 8. Prepare persistent certificates and managed swanctl configuration.
+mkdir -p /etc/swanctl/x509ca /etc/swanctl/x509 /etc/swanctl/rsa /etc/swanctl/x509crl /etc/swanctl/conf.d
 chmod 700 /etc/swanctl/rsa
+# Preserve third-party connections; include SwanPanel's separate managed fragment.
+if [[ ! -f /etc/swanctl/swanctl.conf ]]; then
+    printf 'include conf.d/*.conf\n' > /etc/swanctl/swanctl.conf
+elif ! grep -Eq '^[[:space:]]*include[[:space:]]+conf.d/\*\.conf[[:space:]]*$' /etc/swanctl/swanctl.conf; then
+    printf '\ninclude conf.d/*.conf\n' >> /etc/swanctl/swanctl.conf
+fi
+# Reload persisted connections on strongSwan restarts independent of SwanPanel.
+SWANCTL_BIN="$(command -v swanctl)"
+mkdir -p /etc/systemd/system/strongswan.service.d
+cat <<EOF > /etc/systemd/system/strongswan.service.d/20-swanpanel-load.conf
+[Service]
+ExecStartPost=-${SWANCTL_BIN} --load-all --noprompt
+EOF
 
 # 9. Start and Enable Services
 info "Reloading systemd and enabling services..."

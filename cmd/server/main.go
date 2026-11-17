@@ -108,6 +108,28 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	// Failed or interrupted applies are retried promptly and survive restarts.
+	stopRetry := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopRetry:
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+				needed, err := policy.NeedsReconciliation(ctx, db.DB)
+				if err == nil && needed {
+					if err := policy.ReconcileGateway(ctx, db.DB); err != nil {
+						slog.Error("Retry of pending gateway state failed", "error", err)
+					}
+				}
+				cancel()
+			}
+		}
+	}()
+
 	// Refresh the short-lived CRL and reapply the desired runtime policy after daemon restarts.
 	stopReconciliation := make(chan struct{})
 	go func() {
@@ -119,10 +141,9 @@ func main() {
 				return
 			case <-ticker.C:
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				if err := syncRevocations(ctx); err != nil {
-					slog.Error("CRL refresh failed", "error", err)
-				}
-				if err := policy.Reconcile(ctx, db.DB); err != nil {
+				// Refresh credentials/CRL and restore VICI from the persistent
+				// desired configuration in one convergent operation.
+				if err := policy.ReconcileGateway(ctx, db.DB); err != nil {
 					slog.Error("Periodic policy reconciliation failed", "error", err)
 				}
 				cancel()
@@ -132,11 +153,55 @@ func main() {
 
 	// 6. Start Embedded DNS Server if enabled
 	var dnsServer *dns.Server
+	stopDNSRefresh := make(chan struct{})
+	var dnsRefreshDone chan struct{}
 	if cfg.EnableDNS {
 		dnsAddr := fmt.Sprintf(":%d", cfg.DNSPort)
 		dnsServer = dns.NewServer(dnsAddr, db.DB)
-		if err := dnsServer.Start(); err != nil {
-			slog.Warn("Failed to initialize embedded DNS server", "addr", dnsAddr, "error", err)
+		if os.Getenv("SWANPANEL_EXTERNAL_STRONGSWAN") == "1" {
+			// Host mode shares a namespace with systemd-resolved: never bind :53.
+			// Reconcile already created labeled gateway VIPs on the host loopback.
+			syncHostDNS := func(ctx context.Context) error {
+				ips, err := policy.ManagedGatewayDNSVIPs(ctx)
+				if err != nil {
+					return err
+				}
+				addrs := make([]string, 0, len(ips))
+				for _, ip := range ips {
+					addrs = append(addrs, fmt.Sprintf("%s:%d", ip, cfg.DNSPort))
+				}
+				return dnsServer.SyncListeners(addrs)
+			}
+			if err := syncHostDNS(context.Background()); err != nil {
+				slog.Error("Host gateway DNS bind failed", "error", err)
+				if cfg.Environment == "production" {
+					os.Exit(1)
+				}
+			}
+			dnsRefreshDone = make(chan struct{})
+			go func() {
+				defer close(dnsRefreshDone)
+				ticker := time.NewTicker(3 * time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-stopDNSRefresh:
+						return
+					case <-ticker.C:
+						ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+						if err := syncHostDNS(ctx); err != nil {
+							slog.Error("Host gateway DNS listener reconciliation failed", "error", err)
+						}
+						cancel()
+					}
+				}
+			}()
+			slog.Info("Host gateway DNS follows managed loopback VIPs", "port", cfg.DNSPort)
+		} else if err := dnsServer.Start(); err != nil {
+			slog.Error("Failed to bind embedded DNS server", "addr", dnsAddr, "error", err)
+			if cfg.Environment == "production" {
+				os.Exit(1)
+			}
 		} else {
 			slog.Info("Embedded DNS server started", "port", cfg.DNSPort)
 		}
@@ -168,7 +233,12 @@ func main() {
 
 	slog.Info("Termination signal received; commencing graceful shutdown", "signal", sig.String())
 
+	close(stopRetry)
 	close(stopReconciliation)
+	close(stopDNSRefresh)
+	if dnsRefreshDone != nil {
+		<-dnsRefreshDone
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

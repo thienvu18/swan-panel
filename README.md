@@ -152,29 +152,35 @@ flowchart TD
 
 ## Quick Start
 
-### Option 1: 1-Line Automated Production Install (Recommended)
-Run the automated installation script on any clean Ubuntu, Debian, Rocky Linux, AlmaLinux, or Fedora server:
-```bash
-curl -fsSL https://raw.githubusercontent.com/thienvu18/swan-panel/main/install.sh | sudo bash
-```
-The installer automatically detects your operating system, configures kernel packet forwarding, prepares strongSwan, installs the SwanPanel single binary, and enables the systemd service.
-
-### Option 2: Docker Compose Deployment (Homelab & Containers)
+### Option 1: Docker Compose Deployment (Recommended: All-in-One)
 1. Clone the repository:
    ```bash
    git clone https://github.com/thienvu18/swan-panel.git
    cd swan-panel
    ```
-2. Start the service with Docker Compose:
+2. On a new installation, save a persistent signing secret (requires OpenSSL):
+   ```bash
+   umask 077
+   printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > .env
+   ```
+   Keep this `.env` file across upgrades; replacing the secret invalidates existing sessions.
+3. Start the complete gateway with one Compose command:
    ```bash
    docker compose up -d
    ```
-3. Inspect container logs:
+4. Inspect container logs:
    ```bash
    docker compose logs -f
    ```
 
-*(The container bundles strongSwan, iptables, and Split-DNS, running with `cap_add: [NET_ADMIN, NET_RAW]` and mounting `/var/run/charon.vici`)*.
+*The single container bundles strongSwan, Split-DNS and the control plane. It uses Docker bridge networking and persistent volumes; no host strongSwan service is required.*
+
+### Option 2: Native Linux Systemd Installer (Advanced)
+Run the automated installation script on a clean Ubuntu, Debian, Rocky Linux, AlmaLinux, or Fedora server:
+```bash
+curl -fsSL https://raw.githubusercontent.com/thienvu18/swan-panel/main/install.sh | sudo bash
+```
+The installer detects the operating system, configures kernel forwarding, prepares host strongSwan, installs the SwanPanel binary and enables the systemd service. Host networking changes firewall rules on the server; the all-in-one Docker Compose deployment above remains recommended. For the optional Docker control plane with host strongSwan, see [the deployment guide](deploy/README.md#21-optional-docker-control-plane-with-host-strongswan-advanced).
 
 ### Option 3: Build from Source
 ```bash
@@ -231,7 +237,7 @@ Configure SwanPanel via environment variables or an `/etc/swan-panel/swan-panel.
 | :--- | :--- | :--- |
 | `PORT` | `8080` | HTTP port for the web control plane and REST API |
 | `DB_PATH` | `swanpanel.db` | SQLite database file location |
-| `JWT_SECRET` | *(Auto-generated)* | Cryptographic key for signing JWT session tokens (**change in production**) |
+| `JWT_SECRET` | *(Required by Docker Compose)* | Persistent signing key; generate once into `.env` and keep it across restarts |
 | `LOG_LEVEL` | `info` | Logging verbosity: `debug`, `info`, `warn`, `error` |
 | `VICI_SOCKET` | `/var/run/charon.vici` | Path to strongSwan charon UNIX domain socket |
 | `ENABLE_DNS` | `true` | Enable built-in Split-DNS engine |

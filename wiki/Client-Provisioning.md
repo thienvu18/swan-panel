@@ -50,6 +50,17 @@ SwanPanel delivers native operating system configuration profiles without requir
 ---
 
 ## 4. Android
-- Supports native Android IKEv2 RSA certificate configurations.
-- Download the `.p12` file to device storage, import into **Settings -> Security & Privacy -> More Security Settings -> Encryption & Credentials -> Install a Certificate -> VPN & App User Certificate**.
-- Create native VPN connection with Type `IKEv2/IPSec RSA`.
+- Android setup is performed entirely in **system Settings / KeyChain**, without
+  third-party applications, ADB, helper APKs, or a downloaded ZIP.
+- In the SwanPanel Resources or Dashboard page, choose **Set up Android VPN**.
+  Download the direct `.p12` file and copy its matching import password.
+- Import the certificate via Android **Settings > Security > Install certificate >
+  VPN & app user certificate**. Create a built-in **IKEv2/IPsec RSA** VPN;
+  use the server address, server identity and device/IPsec identifier displayed
+  in the same setup dialog.
+- The .p12 contains the CA chain. If the OEM requests a separate trusted root,
+  download and import `swanpanel-ca.cer` from the dialog.
+- Delete the .p12 from Downloads after OS import. Not all Android/OEM versions
+  expose this VPN type; mark unsupported cases clearly and do not require an app.
+- SwanPanel retains `send_cert = always` in VICI and persistent gateway config
+  to support native Apple clients that omit `CERTREQ`.

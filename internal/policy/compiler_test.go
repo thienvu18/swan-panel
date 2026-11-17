@@ -30,10 +30,14 @@ func setupPolicyTestDB(t *testing.T) *gorm.DB {
 		&db.ResourceGroup{},
 		&db.Device{},
 		&db.AccessRule{},
+		&db.StrongswanSettings{},
 	); err != nil {
 		t.Fatalf("Auto-migration failed: %v", err)
 	}
 
+	if err := testDB.Create(&db.StrongswanSettings{ID: 1, MSSClamping: 1360}).Error; err != nil {
+		t.Fatal(err)
+	}
 	// 1. Create Resource Groups
 	rgProd := db.ResourceGroup{ID: "rg_prod", Name: "Production VPC", CIDRBlock: "10.100.0.0/16"}
 	rgEng := db.ResourceGroup{ID: "rg_eng", Name: "Engineering Subnet", CIDRBlock: "10.0.1.0/24"}

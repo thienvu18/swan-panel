@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useConfirmAction } from '../components/ConfirmDialog';
 import { RotateCcw, Power, Play, Pause, Trash2, Download, Search, Terminal, ArrowDown } from 'lucide-react';
 
 interface LogEntry {
@@ -14,12 +15,14 @@ interface LogEntry {
 
 export const SystemLogsPage: React.FC = () => {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { requestConfirmation, confirmationDialog } = useConfirmAction();
   const [selectedScope, setSelectedScope] = useState('all');
   const [selectedLevel, setSelectedLevel] = useState('all');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [isPaused, setIsPaused] = useState(false);
   const [cleared, setCleared] = useState(false);
-  const [daemonStatus, setDaemonStatus] = useState<'active' | 'inactive'>('active');
+  const [daemonStatus, setDaemonStatus] = useState<'active' | 'inactive' | 'unknown'>('unknown');
   const [isAutoScroll, setIsAutoScroll] = useState(true);
   const terminalRef = useRef<HTMLDivElement>(null);
 
@@ -68,13 +71,13 @@ export const SystemLogsPage: React.FC = () => {
   const registeredUsers = usersData?.users || [];
 
   // Query strongSwan daemon status
-  const { data: daemonData } = useQuery<{ service: string; status: string; pid: number; memory: string; uptime: string }>({
+  const { data: daemonData } = useQuery<{ service: string; status: string; pid: number; memory: string; uptime: string; control_supported?: boolean }>({
     queryKey: ['daemon_status'],
     queryFn: async () => {
       const res = await fetch('/api/system/daemon/status', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
       });
-      if (!res.ok) return { service: 'strongswan', status: 'inactive', pid: 0, memory: 'N/A', uptime: 'N/A' };
+      if (!res.ok) return res.json().catch(() => ({ service: 'strongswan', status: 'unknown', pid: 0, memory: 'N/A', uptime: 'N/A' }));
       return res.json();
     },
   });
@@ -98,19 +101,30 @@ export const SystemLogsPage: React.FC = () => {
     }
   };
 
-  const handleDaemonControl = async (action: 'restart' | 'stop') => {
-    if (confirm(`Are you sure you want to ${action.toUpperCase()} the VPN Gateway? Active tunnels will be affected.`)) {
-      await fetch('/api/system/daemon', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
-        },
-        body: JSON.stringify({ action }),
-      });
-      setDaemonStatus(action === 'stop' ? 'inactive' : 'active');
-      alert(`Service action ${action.toUpperCase()} executed successfully.`);
-    }
+  const handleDaemonControl = (action: 'restart' | 'stop') => {
+    requestConfirmation({
+      title: t(action === 'stop' ? 'confirm.stop_gateway_title' : 'confirm.restart_gateway_title'),
+      description: t(action === 'stop' ? 'confirm.stop_gateway_description' : 'confirm.restart_gateway_description'),
+      confirmLabel: t(action === 'stop' ? 'common.stop' : 'common.restart'),
+      tone: action === 'stop' ? 'danger' : 'warning',
+      onConfirm: async () => {
+        const response = await fetch('/api/system/daemon', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + (localStorage.getItem('token') || ''),
+          },
+          body: JSON.stringify({ action }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error || t('common.error_occurred'));
+        }
+        setDaemonStatus(action === 'stop' ? 'inactive' : 'active');
+        await queryClient.invalidateQueries({ queryKey: ['daemon_status'] });
+        await queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
+      },
+    });
   };
 
   const handleExport = () => {
@@ -128,6 +142,7 @@ export const SystemLogsPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      {confirmationDialog}
       {/* DAEMON CONTROL CARD */}
       <div className="border subtle-border rounded-xl p-4 surface-card flex flex-wrap items-center justify-between gap-3 shadow-xs">
         <div className="flex items-center gap-3">
@@ -143,7 +158,7 @@ export const SystemLogsPage: React.FC = () => {
                 </span>
               ) : (
                 <span className="bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium">
-                  Stopped
+                  {(daemonData?.status || daemonStatus) === 'unknown' ? 'Unknown' : 'Stopped'}
                 </span>
               )}
             </div>
@@ -153,6 +168,11 @@ export const SystemLogsPage: React.FC = () => {
           </div>
         </div>
 
+        {daemonData?.control_supported === false ? (
+          <div role="note" className="max-w-sm text-xs text-amber-600 dark:text-amber-400">
+            {t('logs.host_control_unavailable')}
+          </div>
+        ) : (
         <div className="flex items-center gap-2">
           <button
             onClick={() => handleDaemonControl('restart')}
@@ -169,6 +189,7 @@ export const SystemLogsPage: React.FC = () => {
             {t('common.stop')}
           </button>
         </div>
+        )}
       </div>
 
       {/* CONTEXTUAL LOG FILTER BAR */}

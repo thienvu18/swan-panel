@@ -1,0 +1,27 @@
+name: Docker IKEv2 Integration
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-ikev2:
+    name: Real strongSwan and nftables integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout SwanPanel
+        uses: actions/checkout@v7
+      - name: Check Docker prerequisites
+        run: |
+          docker info
+          docker compose version
+          test -e /proc/net/xfrm_stat || {
+            echo "This Linux kernel does not expose the required IPsec/XFRM subsystem."
+            exit 1
+          }
+      - name: Run isolated VPN integration
+        run: bash scripts/test_docker_integration.sh

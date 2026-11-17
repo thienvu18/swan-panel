@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Laptop, Power, ShieldAlert, Download, Activity } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
+import { AndroidNativeSetupDialog } from '../components/AndroidNativeSetupDialog';
 import { EmptyState } from '../components/EmptyState';
+import { useConfirmAction } from '../components/ConfirmDialog';
 import { downloadDeviceProfile } from '../lib/profileDownload';
 
 interface SessionInfo {
@@ -25,13 +27,16 @@ interface DashboardStats {
   uptime_seconds?: number;
 }
 
-export const DashboardPage: React.FC = () => {
+export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [role, setRole] = useState<'admin' | 'user'>('admin');
+  const { requestConfirmation, confirmationDialog } = useConfirmAction();
+  const [role, setRole] = useState<'admin' | 'user'>(isAdmin ? 'admin' : 'user');
+  const [androidDevice, setAndroidDevice] = useState<{ id: string; hostname: string } | null>(null);
+  useEffect(() => { if (!isAdmin) setRole('user'); }, [isAdmin]);
 
   // 1. Fetch dashboard statistics
-  const { data: statsData, isLoading: isStatsLoading } = useQuery<{ stats: DashboardStats }>({
+  const { data: statsData, isLoading: isStatsLoading, isError: isStatsError } = useQuery<{ stats: DashboardStats }>({
     queryKey: ['dashboard_stats'],
     queryFn: async () => {
       const res = await fetch('/api/dashboard/stats', {
@@ -47,11 +52,11 @@ export const DashboardPage: React.FC = () => {
     total_devices: 0,
     total_users: 0,
     pending_users: 0,
-    gateway_status: 'online',
+    gateway_status: 'unknown',
   };
 
   // 2. Fetch live active VPN sessions
-  const { data: sessionsData, isLoading: isSessionsLoading } = useQuery<{ sessions: SessionInfo[] }>({
+  const { data: sessionsData, isLoading: isSessionsLoading, isError: isSessionsError } = useQuery<{ sessions: SessionInfo[] }>({
     queryKey: ['sessions'],
     queryFn: async () => {
       const res = await fetch('/api/sessions', {
@@ -115,11 +120,12 @@ export const DashboardPage: React.FC = () => {
     },
   });
 
-  const handleDisconnect = (ikeName: string) => {
-    if (confirm(`Disconnect live tunnel '${ikeName}'?`)) {
-      disconnectMutation.mutate(ikeName);
-    }
-  };
+  const handleDisconnect = (ikeName: string) => requestConfirmation({
+    title: t('confirm.disconnect_title'),
+    description: t('confirm.disconnect_description', { name: ikeName }),
+    confirmLabel: t('dashboard.disconnect'),
+    onConfirm: () => disconnectMutation.mutateAsync(ikeName),
+  });
 
   const handleDownloadProfile = async (deviceId: string, platform: string, hostname: string) => {
     try {
@@ -131,8 +137,14 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      {confirmationDialog}
+      <AndroidNativeSetupDialog isOpen={androidDevice !== null} onClose={() => setAndroidDevice(null)}
+        deviceId={androidDevice?.id || ''} hostname={androidDevice?.hostname || ''} />
+      {isStatsError && <div role="alert" className="border border-rose-500/40 rounded-lg p-3 text-xs text-rose-500">
+        Dashboard metrics are unavailable. Values are not being reported as live.
+      </div>}
       {/* Role Toggle Switcher */}
-      <div className="flex items-center justify-between">
+      {isAdmin && <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 border subtle-border rounded-lg px-2.5 py-1 surface-header text-xs">
           <span className="text-dim">{t('dashboard.view_mode')}:</span>
           <button
@@ -153,7 +165,7 @@ export const DashboardPage: React.FC = () => {
             {t('dashboard.user_view')}
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* STAT CARDS (Admin View) */}
       {role === 'admin' && (
@@ -232,6 +244,10 @@ export const DashboardPage: React.FC = () => {
                         {t('common.loading')}
                       </td>
                     </tr>
+                  ) : isSessionsError ? (
+                    <tr><td colSpan={6} role="alert" className="py-8 px-4 text-center text-red-500 font-sans">
+                      Cannot reach strongSwan session data. Connection status is unknown.
+                    </td></tr>
                   ) : liveSessions.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-8">
@@ -336,20 +352,34 @@ export const DashboardPage: React.FC = () => {
                         <td className="py-2.5 px-3.5 text-right font-sans flex items-center justify-end gap-1.5">
                           {!dev.is_revoked && (
                             <>
+                              {dev.platform === 'android' ? (
+                                <>
+                                  <button
+                                    onClick={() => setAndroidDevice({ id: dev.id, hostname: dev.hostname })}
+                                    className="p-1.5 hover:bg-emerald-500/10 rounded-md text-emerald-400 transition-colors"
+                                    title={t('resources.download_android_native')}
+                                    aria-label={t('resources.download_android_native')}
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => handleDownloadProfile(dev.id, dev.platform || 'macos', dev.hostname)}
+                                  className="p-1.5 hover:bg-blue-500/10 rounded-md text-blue-400 transition-colors"
+                                  title={t('dashboard.download_profile')}
+                                  aria-label={t('dashboard.download_profile')}
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button
-                                onClick={() => handleDownloadProfile(dev.id, dev.platform || 'macos', dev.hostname)}
-                                className="p-1.5 hover:bg-blue-500/10 rounded-md text-blue-400 transition-colors"
-                                title={t('dashboard.download_profile')}
-                                aria-label={t('dashboard.download_profile')}
-                              >
-                                <Download className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  if (confirm(`Revoke device '${dev.hostname}'? This will permanently invalidate its certificate.`)) {
-                                    revokeDeviceMutation.mutate(dev.id);
-                                  }
-                                }}
+                                onClick={() => requestConfirmation({
+                                  title: t('confirm.revoke_title'),
+                                  description: t('confirm.revoke_description', { name: dev.hostname }),
+                                  confirmLabel: t('common.revoke'),
+                                  onConfirm: () => revokeDeviceMutation.mutateAsync(dev.id),
+                                })}
                                 className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-400 transition-colors"
                                 title={t('dashboard.self_revoke')}
                                 aria-label={t('dashboard.self_revoke')}

@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -10,7 +13,10 @@ import (
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/policy"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
+
+var errLastAdministrator = errors.New("last active administrator")
 
 // UsersHandler manages Users, Approval Queue, Roles, and User Groups
 type UsersHandler struct{}
@@ -56,6 +62,12 @@ func (h *UsersHandler) CreateLocalUser(c *gin.Context) {
 		return
 	}
 
+	// Match bootstrap password policy. bcrypt silently truncates beyond 72 bytes.
+	if len(req.Password) < 12 || len(req.Password) > 72 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password must be 12 to 72 bytes"})
+		return
+	}
+
 	// Check if email already exists
 	var existing db.User
 	if err := db.DB.Where("email = ?", req.Email).First(&existing).Error; err == nil {
@@ -74,7 +86,14 @@ func (h *UsersHandler) CreateLocalUser(c *gin.Context) {
 
 	var groups []db.UserGroup
 	if len(req.UserGroupIDs) > 0 {
-		db.DB.Where("id IN ?", req.UserGroupIDs).Find(&groups)
+		if err := db.DB.Where("id IN ?", req.UserGroupIDs).Find(&groups).Error; err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Cannot validate user groups"})
+			return
+		}
+		if len(groups) != len(uniqueStringValues(req.UserGroupIDs)) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Unknown user group ID"})
+			return
+		}
 	}
 
 	newUser := db.User{
@@ -98,61 +117,97 @@ func (h *UsersHandler) CreateLocalUser(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"user": newUser})
 }
 
-// ToggleAdminRole promotes or demotes a user's administrator privileges (US-03)
+// ToggleAdminRole serializes the last-admin check and the role update in one
+// SQLite write transaction, preventing concurrent demotions from bypassing it.
 func (h *UsersHandler) ToggleAdminRole(c *gin.Context) {
 	id := c.Param("id")
 	var user db.User
-	if err := db.DB.Where("id = ?", id).First(&user).Error; err != nil {
+	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
+			return err
+		}
+		if user.IsAdmin && user.Status == "ACTIVE" {
+			var count int64
+			if err := tx.Model(&db.User{}).Where("is_admin = ? AND status = ?", true, "ACTIVE").Count(&count).Error; err != nil {
+				return err
+			}
+			if count <= 1 {
+				return errLastAdministrator
+			}
+		}
+		user.IsAdmin = !user.IsAdmin
+		return tx.Save(&user).Error
+	})
+	if errors.Is(err, errLastAdministrator) {
+		c.JSON(http.StatusConflict, gin.H{"error": "Cannot demote the last administrator"})
+		return
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
-
-	user.IsAdmin = !user.IsAdmin
-	if err := db.DB.Save(&user).Error; err != nil {
+	if err != nil {
 		slog.Error("Failed to toggle admin role", "id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update role"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Failed to update role"})
 		return
 	}
-
 	slog.Info("User admin privilege updated", "id", id, "email", user.Email, "is_admin", user.IsAdmin)
 	c.JSON(http.StatusOK, gin.H{"user": user, "is_admin": user.IsAdmin})
 }
 
 // ApproveUser approves a candidate in the approval queue and assigns User Groups (US-02)
+func uniqueStringValues(values []string) []string {
+	seen := map[string]bool{}
+	unique := make([]string, 0, len(values))
+	for _, v := range values {
+		if v != "" && !seen[v] {
+			seen[v] = true
+			unique = append(unique, v)
+		}
+	}
+	return unique
+}
+
+// ApproveUser writes membership and account status in a single transaction.
 func (h *UsersHandler) ApproveUser(c *gin.Context) {
 	id := c.Param("id")
 	var req struct {
 		UserGroupIDs []string `json:"user_group_ids"`
 	}
-	_ = c.ShouldBindJSON(&req)
-
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user group payload"})
+			return
+		}
+	}
 	var user db.User
-	if err := db.DB.Where("id = ?", id).First(&user).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Candidate not found"})
-		return
-	}
-
-	user.Status = "ACTIVE"
-
-	if len(req.UserGroupIDs) > 0 {
-		var groups []db.UserGroup
-		db.DB.Where("id IN ?", req.UserGroupIDs).Find(&groups)
-		_ = db.DB.Model(&user).Association("UserGroups").Replace(groups)
-	}
-
-	if err := db.DB.Save(&user).Error; err != nil {
-		slog.Error("Failed to approve user", "id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to approve user"})
-		return
-	}
-
-	slog.Info("Candidate approved from queue, network access granted", "id", id, "email", user.Email)
-	realtime.DefaultBroker.Broadcast("user_approved", map[string]interface{}{
-		"user_id": user.ID,
-		"email":   user.Email,
-		"status":  user.Status,
+	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
+			return err
+		}
+		if req.UserGroupIDs != nil {
+			ids := uniqueStringValues(req.UserGroupIDs)
+			var groups []db.UserGroup
+			if len(ids) > 0 {
+				if err := tx.Where("id IN ?", ids).Find(&groups).Error; err != nil {
+					return err
+				}
+				if len(groups) != len(ids) {
+					return fmt.Errorf("unknown user group ID")
+				}
+			}
+			if err := tx.Model(&user).Association("UserGroups").Replace(groups); err != nil {
+				return err
+			}
+		}
+		user.Status = "ACTIVE"
+		return tx.Save(&user).Error
 	})
-
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Could not approve user: " + err.Error()})
+		return
+	}
+	realtime.DefaultBroker.Broadcast("user_approved", map[string]any{"user_id": user.ID, "status": user.Status})
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		slog.Error("Approved user policy update pending", "user_id", user.ID, "error", err)
 		c.JSON(http.StatusAccepted, gin.H{"user": user, "runtime_status": "pending", "message": "User approved, gateway update pending"})
@@ -175,47 +230,81 @@ func (h *UsersHandler) RejectUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Candidate rejected"})
 }
 
-// DeleteUser deletes a user and removes group associations
+// DeleteUser atomically removes membership/account while recording durable
+// revocations for every issued VPN identity. External enforcement is retried
+// after the transaction, without ever leaving an active deleted user's cert.
 func (h *UsersHandler) DeleteUser(c *gin.Context) {
 	id := c.Param("id")
 	var user db.User
-	if err := db.DB.Where("id = ?", id).First(&user).Error; err != nil {
+	var devices []db.Device
+	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
+			return err
+		}
+		if user.IsAdmin && user.Status == "ACTIVE" {
+			var count int64
+			if err := tx.Model(&db.User{}).Where("is_admin = ? AND status = ?", true, "ACTIVE").Count(&count).Error; err != nil {
+				return err
+			}
+			if count <= 1 {
+				return errLastAdministrator
+			}
+		}
+		if err := tx.Where("user_id = ?", id).Find(&devices).Error; err != nil {
+			return err
+		}
+		for _, device := range devices {
+			if device.CertSerial == "" && !device.IsRevoked {
+				return fmt.Errorf("device %s has no revocable certificate serial", device.ID)
+			}
+			if err := tx.Model(&device).Update("is_revoked", true).Error; err != nil {
+				return err
+			}
+			if device.CertSerial != "" {
+				record := db.CertificateRevocation{Serial: device.CertSerial, DeviceID: device.ID}
+				record.RevokedAt = time.Now().UTC()
+				if err := tx.Where("serial = ?", record.Serial).FirstOrCreate(&record).Error; err != nil {
+					return err
+				}
+			}
+		}
+		if err := tx.Model(&user).Association("UserGroups").Clear(); err != nil {
+			return err
+		}
+		// Device rows and their revoked identities must remain for audit, but
+		// the user foreign key must be detached before removing the account.
+		if err := tx.Model(&db.Device{}).Where("user_id = ?", id).Update("user_id", nil).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&user).Error
+	})
+	switch {
+	case errors.Is(err, errLastAdministrator):
+		c.JSON(http.StatusConflict, gin.H{"error": "Cannot delete the last active administrator"})
+		return
+	case errors.Is(err, gorm.ErrRecordNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
-	}
-
-	if user.IsAdmin && user.Status == "ACTIVE" {
-		var activeAdmins int64
-		if err := db.DB.Model(&db.User{}).Where("is_admin = ? AND status = ?", true, "ACTIVE").Count(&activeAdmins).Error; err != nil {
-			c.JSON(500, gin.H{"error": "Cannot validate administrator count"})
-			return
-		}
-		if activeAdmins <= 1 {
-			c.JSON(409, gin.H{"error": "Cannot delete the last active administrator"})
-			return
-		}
-	}
-	var devices []db.Device
-	if err := db.DB.Where("user_id = ?", id).Find(&devices).Error; err != nil {
-		c.JSON(500, gin.H{"error": "Cannot inspect user's VPN devices"})
+	case err != nil:
+		slog.Error("Atomic user deletion failed", "id", id, "error", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "User deletion failed; no changes committed"})
 		return
 	}
-	for _, dev := range devices {
-		if err := applyRevocation(c.Request.Context(), &dev); err != nil {
-			c.JSON(503, gin.H{"error": "User deletion blocked until all VPN identities are revoked and enforced"})
-			return
+	var enforcementErrors []error
+	for _, device := range devices {
+		if device.CertSerial == "" {
+			continue
 		}
-	}
-	if err := db.DB.Model(&user).Association("UserGroups").Clear(); err != nil {
-		c.JSON(500, gin.H{"error": "Failed to clear group membership"})
-		return
-	}
-	if err := db.DB.Delete(&user).Error; err != nil {
-		c.JSON(500, gin.H{"error": "Failed to delete user"})
-		return
+		if err := applyRevocation(c.Request.Context(), &device); err != nil {
+			enforcementErrors = append(enforcementErrors, err)
+		}
 	}
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
-		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "message": "User deleted; policy synchronization pending"})
+		enforcementErrors = append(enforcementErrors, err)
+	}
+	if len(enforcementErrors) != 0 {
+		slog.Error("Deleted user revocations pending enforcement", "id", id, "error", errors.Join(enforcementErrors...))
+		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "message": "User deleted and revocations recorded; gateway enforcement pending"})
 		return
 	}
 	slog.Info("User deleted", "id", id, "email", user.Email)
@@ -283,13 +372,27 @@ func (h *UsersHandler) CreateUserGroup(c *gin.Context) {
 // DeleteUserGroup deletes a user group
 func (h *UsersHandler) DeleteUserGroup(c *gin.Context) {
 	id := c.Param("id")
-	if err := db.DB.Where("id = ?", id).Delete(&db.UserGroup{}).Error; err != nil {
-		slog.Error("Failed to delete user group", "id", id, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete group"})
+	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var grp db.UserGroup
+		if err := tx.First(&grp, "id = ?", id).Error; err != nil {
+			return err
+		}
+		var referenced int64
+		if err := tx.Model(&db.AccessRule{}).Where("subject_type = ? AND subject_id = ?", "user_group", id).Count(&referenced).Error; err != nil {
+			return err
+		}
+		if referenced > 0 {
+			return fmt.Errorf("group is referenced by access rules; remove them first")
+		}
+		if err := tx.Model(&grp).Association("Users").Clear(); err != nil {
+			return err
+		}
+		return tx.Delete(&grp).Error
+	})
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-
-	slog.Info("User group deleted", "id", id)
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "error": "Group deleted but gateway policy is pending"})
 		return

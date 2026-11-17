@@ -33,6 +33,7 @@ services:
     volumes:
       - swanpanel_data:/var/lib/swan-panel
       - swanpanel_config:/etc/swan-panel
+      - swanpanel_swanctl:/etc/swanctl
 
     environment:
       - PORT=8080
@@ -62,4 +63,6 @@ volumes:
   swanpanel_data:
     driver: local
   swanpanel_config:
+    driver: local
+  swanpanel_swanctl:
     driver: local

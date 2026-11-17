@@ -24,7 +24,7 @@ interface SidebarProps {
   onClose: () => void;
   isDark: boolean;
   onToggleTheme: () => void;
-  currentUser?: { name?: string; email?: string } | null;
+  currentUser?: { name?: string; email?: string; is_admin?: boolean } | null;
   onLogout?: () => void;
 }
 
@@ -80,7 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'oidc', label: t('nav.oidc_providers'), icon: KeyRound },
     { id: 'server', label: t('nav.server_settings'), icon: Settings },
     { id: 'logs', label: t('nav.system_logs'), icon: Terminal, dot: true },
-  ];
+  ].filter(item => currentUser?.is_admin || item.id === "dashboard" || item.id === "resources");
 
   return (
     <>
@@ -106,8 +106,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <div>
               <span className="font-bold text-sm tracking-tight">SwanPanel</span>
-              <div className="text-[10px] text-emerald-500 font-medium flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> {t('nav.gateway_online')}
+              <div className="text-[10px] font-medium flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span> {stats?.gateway_status === 'online' ? t('nav.gateway_online') : (stats?.gateway_status === 'offline' ? 'Gateway offline' : 'Gateway unknown')}
               </div>
             </div>
           </div>

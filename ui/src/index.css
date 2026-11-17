@@ -68,3 +68,34 @@ html:not(.dark) .text-heading { color: #0f172a; }
   pointer-events: none;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
 }
+
+/* Consistent native select controls (keyboard and screen-reader semantics stay intact). */
+select.surface-input {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2.125rem;
+  min-height: 2.125rem;
+  padding: 0.375rem 2.25rem 0.375rem 0.75rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 0.875rem 0.875rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364758b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  cursor: pointer;
+  line-height: 1.4;
+}
+select.surface-input:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+select.surface-input:disabled { cursor: not-allowed; opacity: 0.6; }
+html.dark select.surface-input {
+  color-scheme: dark;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+html:not(.dark) select.surface-input { color-scheme: light; }
+html.dark select.surface-input option,
+html.dark select.surface-input optgroup { background: #111827; color: #f8fafc; }
+html:not(.dark) select.surface-input option,
+html:not(.dark) select.surface-input optgroup { background: #fff; color: #0f172a; }

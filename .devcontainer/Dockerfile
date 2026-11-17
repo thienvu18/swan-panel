@@ -1,6 +1,6 @@
 # Development-only: Go, Node, Air, strongSwan and nftables in one network namespace.
 # Never copy the Air development tool into the production image.
-FROM golang:1.27-alpine3.23 AS go-tools
+FROM golang:1.27.4-alpine3.23 AS go-tools
 RUN CGO_ENABLED=0 go install github.com/air-verse/air@v1.67.4
 
 FROM node:26-alpine3.23

@@ -77,10 +77,18 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 		&DNSSettings{},
 		&DNSOverride{},
 		&StrongswanSettings{},
+		&RuntimeApplyState{},
 	)
 	if err != nil {
 		slog.Error("Auto-migration failed", "error", err)
 		return nil, fmt.Errorf("failed to auto-migrate schema: %w", err)
+	}
+	// Remove the legacy global unique index only after the active-device partial
+	// unique index has been created. Retired identities keep their CRL ledger.
+	if db.Migrator().HasIndex(&Device{}, "idx_devices_virtual_ip") {
+		if err := db.Migrator().DropIndex(&Device{}, "idx_devices_virtual_ip"); err != nil {
+			return nil, fmt.Errorf("migrate active-only VIP uniqueness: %w", err)
+		}
 	}
 	slog.Info("Schema auto-migration completed successfully")
 
@@ -127,6 +135,7 @@ func seedDefaults(db *gorm.DB) {
 		slog.Info("Seeding initial strongSwan daemon settings")
 		defaultSW := StrongswanSettings{
 			ID:                1,
+			VPNName:           "SwanPanel VPN",
 			ServerEndpoint:    "vpn.company.com",
 			ServerIdentity:    "vpn.company.com",
 			ReauthTime:        "12h",

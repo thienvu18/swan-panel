@@ -13,6 +13,7 @@
    * No third-party client apps required. Native Apple `.mobileconfig` (macOS/iOS with embedded PKCS#12 cert), Windows PowerShell (`Add-VpnConnection`), Android IKEv2, Linux NetworkManager.
 2. **Single-Binary Zero-Dependency Deployment:**
    * Single compiled executable containing Go backend, SQLite DB (WAL mode), embedded DNS server, internal X.509 PKI, and embedded React SPA (`//go:embed`).
+   * Recommended gateway deployment: one Docker Compose service with bundled strongSwan in bridge networking. The opt-in host-charon override shares the host network namespace; it scopes nftables IPsec denial and MSS changes to SwanPanel-assigned per-device `/32` VIPs, and NAT to active VIPs and validated WAN egress.
 3. **No Wheel Reinvention:**
    * Battle-tested libraries: Gin (~78k stars), GORM (~37k stars), govici (official strongSwan), miekg/dns (~8.3k stars), react-i18next (~8.5k stars), TanStack Query (~45k stars), Lucide React.
 4. **Zero-SSH Operations:**

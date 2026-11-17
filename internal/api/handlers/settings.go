@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"encoding/json"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -71,12 +73,33 @@ func validateGatewaySettings(req *db.StrongswanSettings) bool {
 // UpdateStrongswanSettings updates strongSwan data plane parameters
 func (h *SettingsHandler) UpdateStrongswanSettings(c *gin.Context) {
 	var req db.StrongswanSettings
-	if err := c.ShouldBindJSON(&req); err != nil {
+	// The advanced editor must not silently ignore unsupported top-level keys.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 128*1024)
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
 		slog.Warn("Update strongSwan settings rejected: invalid request payload", "error", err, "ip", c.ClientIP())
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid configuration payload", "details": err.Error()})
 		return
 	}
 
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Multiple JSON values or trailing data are not allowed"})
+		return
+	}
+	// IKEv2 uses dpd_delay; strongSwan does not support a configurable
+	// dpd_timeout in swanctl.conf. Retain legacy DB state, but reject edits.
+	var saved db.StrongswanSettings
+	if err := db.DB.First(&saved, 1).Error; err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Cannot load current gateway settings"})
+		return
+	}
+	if req.DPDTimeout != "" && req.DPDTimeout != saved.DPDTimeout {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dpd_timeout is not supported for IKEv2; configure dpd_delay instead"})
+		return
+	}
+	req.DPDTimeout = saved.DPDTimeout
 	if !validGatewayIdentifier(req.ServerEndpoint) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid server_endpoint: provide an IP address or DNS hostname"})
 		return
@@ -85,11 +108,18 @@ func (h *SettingsHandler) UpdateStrongswanSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid server_identity: provide an IP address or DNS hostname"})
 		return
 	}
+	if err := validateAdvancedSettings(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if !validateGatewaySettings(&req) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid strongSwan settings"})
 		return
 	}
 	req.ID = 1
+	if strings.TrimSpace(req.VPNName) == "" {
+		req.VPNName = "SwanPanel VPN"
+	}
 	// Parameterized Update: GORM updates by primary key
 	if err := db.DB.Save(&req).Error; err != nil {
 		slog.Error("Failed to persist strongSwan configuration", "error", err)
@@ -111,7 +141,7 @@ func (h *SettingsHandler) UpdateStrongswanSettings(c *gin.Context) {
 		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "error": "CA unavailable; configuration stored"})
 		return
 	}
-	if err := manager.EnsureServerCertificates(req.ServerIdentity, nil); err != nil {
+	if err := manager.EnsureServerCertificates(req.ServerIdentity, []string{req.ServerEndpoint}); err != nil {
 		slog.Error("Gateway certificate setup failed", "error", err)
 		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "error": "Gateway certificate configuration failed"})
 		return

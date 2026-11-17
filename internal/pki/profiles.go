@@ -3,6 +3,7 @@ package pki
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -45,9 +46,21 @@ func caDER(b *CertificateBundle) ([]byte, error) {
 // identity, not a public PEM certificate lacking the private key.
 // The .mobileconfig is sensitive even when PKCS#12 carries a password.
 func BuildAppleProfile(endpoint, serverIdentity, hostname string, b *CertificateBundle) (string, error) {
+	return BuildAppleProfileNamed(endpoint, serverIdentity, hostname, "SwanPanel VPN", b)
+}
+
+func BuildAppleProfileNamed(endpoint, serverIdentity, hostname, vpnName string, b *CertificateBundle) (string, error) {
 	ca, err := caDER(b)
 	if err != nil {
 		return "", err
+	}
+	caCert, err := x509.ParseCertificate(ca)
+	if err != nil {
+		return "", err
+	}
+	caName := caCert.Subject.CommonName
+	if strings.TrimSpace(vpnName) == "" {
+		vpnName = "SwanPanel VPN"
 	}
 	password, err := randomProfilePassword()
 	if err != nil {
@@ -67,14 +80,14 @@ func BuildAppleProfile(endpoint, serverIdentity, hostname string, b *Certificate
 <dict>
 <key>PayloadType</key><string>Configuration</string>
 <key>PayloadVersion</key><integer>1</integer>
-<key>PayloadDisplayName</key><string>SwanPanel VPN (%s)</string>
+<key>PayloadDisplayName</key><string>%s (%s)</string>
 <key>PayloadIdentifier</key><string>com.swanpanel.profile.%s</string>
 <key>PayloadUUID</key><string>%s</string>
 <key>PayloadContent</key><array>
     <dict>
         <key>PayloadType</key><string>com.apple.security.root</string>
         <key>PayloadVersion</key><integer>1</integer>
-        <key>PayloadDisplayName</key><string>SwanPanel Root CA</string>
+        <key>PayloadDisplayName</key><string>%s</string>
         <key>PayloadIdentifier</key><string>com.swanpanel.ca.%s</string>
         <key>PayloadUUID</key><string>%s</string>
         <key>PayloadContent</key><data>%s</data>
@@ -91,10 +104,10 @@ func BuildAppleProfile(endpoint, serverIdentity, hostname string, b *Certificate
     <dict>
         <key>PayloadType</key><string>com.apple.vpn.managed</string>
         <key>PayloadVersion</key><integer>1</integer>
-        <key>PayloadDisplayName</key><string>SwanPanel IKEv2</string>
+        <key>PayloadDisplayName</key><string>%s</string>
         <key>PayloadIdentifier</key><string>com.swanpanel.vpn.%s</string>
         <key>PayloadUUID</key><string>%s</string>
-        <key>UserDefinedName</key><string>SwanPanel VPN</string>
+        <key>UserDefinedName</key><string>%s</string>
         <key>VPNType</key><string>IKEv2</string>
         <key>IKEv2</key><dict>
             <key>RemoteAddress</key><string>%s</string>
@@ -105,13 +118,19 @@ func BuildAppleProfile(endpoint, serverIdentity, hostname string, b *Certificate
             <key>ExtendedAuthEnabled</key><integer>0</integer>
             <key>DeadPeerDetectionRate</key><string>Medium</string>
             <key>DisableMOBIKE</key><integer>0</integer>
+            <key>IPv4</key><dict>
+                <key>OverridePrimary</key><integer>1</integer>
+            </dict>
+            <key>IPv6</key><dict>
+                <key>OverridePrimary</key><integer>1</integer>
+            </dict>
         </dict>
     </dict>
 </array>
 </dict></plist>`,
-		safeXML(hostname), profileUUID, profileUUID, caUUID, caUUID, base64.StdEncoding.EncodeToString(ca),
+		safeXML(vpnName), safeXML(hostname), profileUUID, profileUUID, safeXML(caName), caUUID, caUUID, base64.StdEncoding.EncodeToString(ca),
 		keyUUID, keyUUID, base64.StdEncoding.EncodeToString(p12), password,
-		vpnUUID, vpnUUID, safeXML(endpoint), safeXML(serverIdentity), safeXML(hostname), keyUUID)
+		safeXML(vpnName), safeXML(hostname), vpnUUID, safeXML(vpnName), safeXML(endpoint), safeXML(serverIdentity), safeXML(hostname), keyUUID)
 	return xmlProfile, nil
 }
 
@@ -121,6 +140,10 @@ func BuildWindowsInstaller(endpoint, hostname string, b *CertificateBundle) (str
 	return BuildWindowsInstallerWithRoutes(endpoint, hostname, b, nil)
 }
 func BuildWindowsInstallerWithRoutes(endpoint, hostname string, b *CertificateBundle, routes []string) (string, error) {
+	return BuildWindowsInstallerWithRoutesNamed(endpoint, hostname, "SwanPanel VPN", b, routes)
+}
+
+func BuildWindowsInstallerWithRoutesNamed(endpoint, hostname, vpnName string, b *CertificateBundle, routes []string) (string, error) {
 	ca, err := caDER(b)
 	if err != nil {
 		return "", err
@@ -135,10 +158,11 @@ func BuildWindowsInstallerWithRoutes(endpoint, hostname string, b *CertificateBu
 	}
 	endpoint = strings.ReplaceAll(endpoint, "'", "''")
 	hostname = strings.ReplaceAll(hostname, "'", "''")
+	vpnName = strings.ReplaceAll(vpnName, "'", "''")
 	return fmt.Sprintf(`# SwanPanel Windows native IKEv2 machine-certificate setup
 # Run as Administrator. The script contains a sensitive device identity.
 $ErrorActionPreference = 'Stop'
-$vpnName = 'SwanPanel VPN (%s)'
+$vpnName = '%s (%s)'
 $ca = [Convert]::FromBase64String('%s')
 $caPath = Join-Path $env:TEMP ('swanpanel-ca-' + [guid]::NewGuid().ToString() + '.cer')
 try {
@@ -163,7 +187,7 @@ if ($old) {
     Add-VpnConnection -Name $vpnName -AllUserConnection -ServerAddress '%s' -TunnelType Ikev2 -AuthenticationMethod MachineCertificate -SplitTunneling $true -Force
 }
 Set-VpnConnectionIPsecConfiguration -ConnectionName $vpnName -AllUserConnection -AuthenticationTransformConstants GCMAES256 -CipherTransformConstants GCMAES256 -EncryptionMethod GCMAES256 -IntegrityCheckMethod SHA384 -DHGroup ECP384 -PfsGroup ECP384 -Force
-Write-Host 'SwanPanel IKEv2 VPN configured.'`, hostname, base64.StdEncoding.EncodeToString(ca), base64.StdEncoding.EncodeToString(pfx), password, endpoint, endpoint) + windowsRouteCommands(routes), nil
+Write-Host 'SwanPanel IKEv2 VPN configured.'`, vpnName, hostname, base64.StdEncoding.EncodeToString(ca), base64.StdEncoding.EncodeToString(pfx), password, endpoint, endpoint) + windowsRouteCommands(routes), nil
 }
 
 // BuildAndroidProfile targets the strongSwan VPN Client app. Android does not
@@ -184,6 +208,10 @@ func windowsRouteCommands(routes []string) string {
 }
 
 func BuildAndroidProfile(endpoint, serverIdentity, hostname string, b *CertificateBundle, routes []string) (string, error) {
+	return BuildAndroidProfileNamed(endpoint, serverIdentity, hostname, "SwanPanel VPN", b, routes)
+}
+
+func BuildAndroidProfileNamed(endpoint, serverIdentity, hostname, vpnName string, b *CertificateBundle, routes []string) (string, error) {
 	ca, err := caDER(b)
 	if err != nil {
 		return "", err
@@ -197,7 +225,7 @@ func BuildAndroidProfile(endpoint, serverIdentity, hostname string, b *Certifica
 	remote := map[string]any{"addr": endpoint, "id": serverIdentity, "cert": base64.StdEncoding.EncodeToString(ca)}
 	profile := map[string]any{
 		"uuid":   uuid.NewSHA1(uuid.NameSpaceURL, []byte("swanpanel:android:"+hostname)).String(),
-		"name":   "SwanPanel (" + hostname + ")",
+		"name":   vpnName + " (" + hostname + ")",
 		"type":   "ikev2-cert",
 		"remote": remote,
 		"local":  local,

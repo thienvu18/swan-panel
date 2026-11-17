@@ -152,29 +152,35 @@ flowchart TD
 
 ## Khởi động Nhanh (Quick Start)
 
-### Lựa chọn 1: Cài đặt Tự động 1 Dòng lệnh (Khuyên dùng)
-Chạy script cài đặt tự động trên các máy chủ Ubuntu, Debian, Rocky Linux, AlmaLinux hoặc Fedora:
-```bash
-curl -fsSL https://raw.githubusercontent.com/thienvu18/swan-panel/main/install.sh | sudo bash
-```
-Script sẽ tự động nhận diện hệ điều hành, tối ưu hóa kernel forwarding, cài đặt strongSwan, nạp file thực thi SwanPanel và kích hoạt service systemd.
-
-### Lựa chọn 2: Triển khai với Docker Compose (Cho Homelab & Container)
+### Lựa chọn 1: Docker Compose (Khuyên dùng: All-in-One)
 1. Clone mã nguồn về máy:
    ```bash
    git clone https://github.com/thienvu18/swan-panel.git
    cd swan-panel
    ```
-2. Khởi chạy bằng Docker Compose:
+2. Với lần cài đặt mới, tạo khóa ký phiên đăng nhập và lưu cố định (cần OpenSSL):
+   ```bash
+   umask 077
+   printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > .env
+   ```
+   Giữ nguyên tệp `.env` khi nâng cấp; thay khóa này sẽ làm các phiên đăng nhập hiện tại hết hiệu lực.
+3. Khởi chạy toàn bộ gateway bằng một lệnh Compose:
    ```bash
    docker compose up -d
    ```
-3. Xem nhật ký hoạt động của container:
+4. Xem nhật ký hoạt động của container:
    ```bash
    docker compose logs -f
    ```
 
-*(Container đóng gói sẵn strongSwan, iptables và Split-DNS, chạy với quyền `cap_add: [NET_ADMIN, NET_RAW]` và gắn kết `/var/run/charon.vici`)*.
+*Container duy nhất đã đóng gói strongSwan, Split-DNS và dashboard, chạy bằng Docker bridge và lưu dữ liệu trên volume. Không cần cài strongSwan trên host.*
+
+### Lựa chọn 2: Cài đặt Native Linux Systemd (Nâng cao)
+Chạy script cài đặt tự động trên máy chủ Ubuntu, Debian, Rocky Linux, AlmaLinux hoặc Fedora:
+```bash
+curl -fsSL https://raw.githubusercontent.com/thienvu18/swan-panel/main/install.sh | sudo bash
+```
+Script tự nhận diện hệ điều hành, cấu hình kernel forwarding, cài strongSwan trên host, nạp file thực thi SwanPanel và kích hoạt service systemd. Chế độ này thay đổi firewall trên máy chủ; khuyến nghị sử dụng Docker Compose all-in-one ở trên. Nếu cần Docker dashboard điều khiển strongSwan host, xem [hướng dẫn triển khai](deploy/README.md#21-optional-docker-control-plane-with-host-strongswan-advanced).
 
 ### Lựa chọn 3: Tự Biên dịch từ Mã nguồn (Build from Source)
 ```bash
@@ -225,7 +231,7 @@ Cấu hình SwanPanel qua biến môi trường hoặc tệp `/etc/swan-panel/sw
 | :--- | :--- | :--- |
 | `PORT` | `8080` | Cổng HTTP của giao diện Web và REST API |
 | `DB_PATH` | `swanpanel.db` | Đường dẫn file cơ sở dữ liệu SQLite |
-| `JWT_SECRET` | *(Ngẫu nhiên)* | Khóa ký số JWT phiên đăng nhập (**phải đổi khi lên production**) |
+| `JWT_SECRET` | *(Bắt buộc với Docker Compose)* | Khóa ký phiên đăng nhập; tạo một lần trong `.env` và giữ nguyên khi khởi động lại |
 | `LOG_LEVEL` | `info` | Mức độ chi tiết của log: `debug`, `info`, `warn`, `error` |
 | `VICI_SOCKET` | `/var/run/charon.vici` | Đường dẫn UNIX socket của strongSwan charon daemon |
 | `ENABLE_DNS` | `true` | Kích hoạt máy chủ Split-DNS nội bộ |

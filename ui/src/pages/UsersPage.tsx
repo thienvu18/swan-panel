@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, X, Shield, Trash2, Plus, Users as UsersIcon, Search } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
 
@@ -31,6 +32,8 @@ export const UsersPage: React.FC = () => {
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [pendingMemberships, setPendingMemberships] = useState<Record<string, string[]>>({});
+  const { requestConfirmation, confirmationDialog } = useConfirmAction();
 
   // Form states for Add User
   const [userName, setUserName] = useState('');
@@ -91,10 +94,14 @@ export const UsersPage: React.FC = () => {
 
   // Approve Mutation
   const approveMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id, groupIDs }: { id: string; groupIDs: string[] }) => {
       const res = await fetch(`/api/users/${id}/approve`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+        },
+        body: JSON.stringify({ user_group_ids: groupIDs }),
       });
       if (!res.ok) throw new Error('Failed to approve');
       return res.json();
@@ -164,6 +171,7 @@ export const UsersPage: React.FC = () => {
       setUserName('');
       setUserEmail('');
       setUserPassword('');
+      setUserIsAdmin(false);
     },
   });
 
@@ -205,6 +213,25 @@ export const UsersPage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user_groups'] });
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch('/api/users/' + encodeURIComponent(id), {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || t('common.error_occurred'));
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
     },
   });
 
@@ -287,25 +314,51 @@ export const UsersPage: React.FC = () => {
                         </td>
                         <td className="py-2.5 px-3.5 text-subtle">{u.idp_provider?.name || 'OIDC Provider'}</td>
                         <td className="py-2.5 px-3.5">
-                          <div className="flex items-center gap-3 text-xs">
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input type="checkbox" defaultChecked className="rounded border-slate-600" /> Backend
-                            </label>
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input type="checkbox" className="rounded border-slate-600" /> DevOps
-                            </label>
+                          <div className="flex flex-wrap items-center gap-3 text-xs">
+                            {userGroups.length === 0 ? (
+                              <span className="text-dim">{t('users.no_groups_available')}</span>
+                            ) : userGroups.map(group => (
+                              <label key={group.id} className="flex items-center gap-1.5 cursor-pointer">
+                                <input type="checkbox" className="rounded border-slate-600"
+                                  checked={(pendingMemberships[u.id] ?? u.user_groups?.map(g => g.id) ?? []).includes(group.id)}
+                                  onChange={event => setPendingMemberships(previous => {
+                                    const current = previous[u.id] ?? u.user_groups?.map(g => g.id) ?? [];
+                                    return {
+                                      ...previous,
+                                      [u.id]: event.target.checked
+                                        ? [...current.filter(id => id !== group.id), group.id]
+                                        : current.filter(id => id !== group.id),
+                                    };
+                                  })} />
+                                {group.name}
+                              </label>
+                            ))}
                           </div>
                         </td>
                         <td className="py-2.5 px-3.5 text-right space-x-1">
                           <button
-                            onClick={() => rejectMutation.mutate(u.id)}
+                            onClick={() => requestConfirmation({
+                              title: t('confirm.reject_user_title'),
+                              description: t('confirm.reject_user_description', { name: u.name, email: u.email }),
+                              confirmLabel: t('common.reject'),
+                              onConfirm: () => rejectMutation.mutateAsync(u.id),
+                            })}
                             className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors inline-block"
                             title={t('users.reject')}
                           >
                             <X className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => approveMutation.mutate(u.id)}
+                            onClick={() => requestConfirmation({
+                              title: t('confirm.approve_user_title'),
+                              description: t('confirm.approve_user_description', { name: u.name, email: u.email }),
+                              confirmLabel: t('common.approve'),
+                              tone: 'warning',
+                              onConfirm: () => approveMutation.mutateAsync({
+                                id: u.id,
+                                groupIDs: pendingMemberships[u.id] ?? u.user_groups?.map(group => group.id) ?? [],
+                              }),
+                            })}
                             className="p-1.5 hover:bg-emerald-500/10 rounded-md text-emerald-500 transition-colors inline-block"
                             title={t('users.approve')}
                           >
@@ -390,13 +443,33 @@ export const UsersPage: React.FC = () => {
                         <td className="py-2.5 px-3.5 text-right space-x-1">
                           <button
                             type="button"
-                            onClick={() => toggleRoleMutation.mutate(u.id)}
+                            onClick={() => requestConfirmation({
+                              title: t(u.is_admin ? 'confirm.remove_admin_title' : 'confirm.grant_admin_title'),
+                              description: t(u.is_admin ? 'confirm.remove_admin_description' : 'confirm.grant_admin_description', { name: u.name, email: u.email }),
+                              confirmLabel: t(u.is_admin ? 'common.remove_admin' : 'common.grant_admin'),
+                              tone: u.is_admin ? 'warning' : 'danger',
+                              onConfirm: () => toggleRoleMutation.mutateAsync(u.id),
+                            })}
                             className={`p-1.5 rounded-md transition-colors inline-block ${
                               u.is_admin ? 'text-blue-500 hover:bg-blue-500/10' : 'text-subtle hover:text-blue-500 hover:bg-slate-500/10'
                             }`}
-                            title={t('users.grant_admin')}
+                            title={t(u.is_admin ? 'common.remove_admin' : 'common.grant_admin')}
+                            aria-label={t(u.is_admin ? 'common.remove_admin' : 'common.grant_admin') + ' ' + u.name}
                           >
                             <Shield className="w-3.5 h-3.5" />
+                          </button>
+                          <button type="button"
+                            onClick={() => requestConfirmation({
+                              title: t('confirm.delete_user_title'),
+                              description: t('confirm.delete_user_description', { name: u.name, email: u.email }),
+                              confirmLabel: t('common.delete'),
+                              onConfirm: () => deleteUserMutation.mutateAsync(u.id),
+                            })}
+                            className="p-1.5 rounded-md text-rose-500 hover:bg-rose-500/10"
+                            title={t('common.delete')}
+                            aria-label={t('common.delete') + ' ' + u.name}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </td>
                       </tr>
@@ -442,11 +515,12 @@ export const UsersPage: React.FC = () => {
                     <td className="py-2.5 px-3.5 text-dim font-mono">{g.member_count || 0} members</td>
                     <td className="py-2.5 px-3.5 text-right">
                       <button
-                        onClick={() => {
-                          if (confirm(`Delete user group '${g.name}'?`)) {
-                            deleteGroupMutation.mutate(g.id);
-                          }
-                        }}
+                        onClick={() => requestConfirmation({
+                          title: t('confirm.delete_group_title'),
+                          description: t('confirm.delete_group_description', { name: g.name }),
+                          confirmLabel: t('common.delete'),
+                          onConfirm: () => deleteGroupMutation.mutateAsync(g.id),
+                        })}
                         className="p-1.5 hover:bg-rose-500/10 rounded-md text-subtle hover:text-rose-500 transition-colors"
                         title="Delete Group"
                         aria-label="Delete Group"
@@ -467,6 +541,7 @@ export const UsersPage: React.FC = () => {
         isOpen={isAddUserOpen}
         onClose={() => {
           setIsAddUserOpen(false);
+          setUserIsAdmin(false);
           createUserMutation.reset();
         }}
         title={t('users.create_user_title')}
@@ -522,7 +597,18 @@ export const UsersPage: React.FC = () => {
 
         <div className="flex gap-2 pt-2 border-t subtle-border">
           <button
-            onClick={() => createUserMutation.mutate()}
+            onClick={() => {
+              if (!userIsAdmin) {
+                createUserMutation.mutate();
+                return;
+              }
+              requestConfirmation({
+                title: t('confirm.create_admin_title'),
+                description: t('confirm.create_admin_description', { name: userName, email: userEmail }),
+                confirmLabel: t('common.grant_admin'),
+                onConfirm: () => createUserMutation.mutateAsync(),
+              });
+            }}
             disabled={!userName || !userEmail || !userPassword || createUserMutation.isPending}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
@@ -531,6 +617,7 @@ export const UsersPage: React.FC = () => {
           <button
             onClick={() => {
               setIsAddUserOpen(false);
+              setUserIsAdmin(false);
               createUserMutation.reset();
             }}
             className="px-3 py-1.5 border subtle-border rounded-lg hover:bg-slate-500/10 text-xs"
@@ -593,6 +680,7 @@ export const UsersPage: React.FC = () => {
           </button>
         </div>
       </Modal>
+      {confirmationDialog}
     </div>
   );
 };

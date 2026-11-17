@@ -1,8 +1,6 @@
 package pki_test
 
 import (
-	"archive/zip"
-	"bytes"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -96,22 +94,24 @@ func TestPersistedIdentityAndNativeProfiles(t *testing.T) {
 		t.Fatal("Android split-tunnel routes missing")
 	}
 
-	archive, err := pki.BuildAndroidNativeBundle("vpn.example.net", "vpn.example.net", "test-vpn-device", stored)
+	setup, err := pki.BuildAndroidNativeSetup("vpn.example.net", "vpn.example.net", "test-vpn-device", stored)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if setup.ImportPassword == "" || setup.ServerAddress != "vpn.example.net" ||
+		setup.ServerIdentity != "vpn.example.net" || setup.ClientIdentity != "test-vpn-device" {
+		t.Fatal("Native Android setup omitted required OS settings or import password")
+	}
+	_, nativeCert, caChain, err := pkcs12.DecodeChain(setup.ClientP12, setup.ImportPassword)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Native Android PKCS#12 cannot be imported: %v", err)
 	}
-	names := map[string]bool{}
-	for _, entry := range reader.File {
-		names[entry.Name] = true
+	if nativeCert.SerialNumber.Text(16) != bundle.SerialNumber || len(caChain) == 0 ||
+		len(setup.RootCA) == 0 {
+		t.Fatal("Native Android setup has wrong certificate or no CA chain")
 	}
-	for _, want := range []string{"swanpanel-client.p12", "swanpanel-ca.cer", "README-ANDROID-NATIVE.txt"} {
-		if !names[want] {
-			t.Fatalf("Android native bundle missing %s", want)
-		}
+	if _, err := x509.ParseCertificate(setup.RootCA); err != nil {
+		t.Fatalf("Native Android root CA is invalid: %v", err)
 	}
 }
 

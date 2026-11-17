@@ -20,6 +20,7 @@ const VALID_TABS = ['dashboard', 'resources', 'access', 'users', 'dns', 'oidc', 
 export const App: React.FC = () => {
   const { t } = useTranslation();
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+  const [userVerified, setUserVerified] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(() => {
     try {
       const stored = localStorage.getItem('user');
@@ -51,14 +52,14 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace(/^#\/?/, '').trim();
-      if (VALID_TABS.includes(hash as any)) {
+      if (VALID_TABS.includes(hash as any) && (currentUser?.is_admin || hash === "dashboard" || hash === "resources")) {
         setCurrentTab(hash);
       }
     };
 
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [currentUser?.is_admin]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -74,6 +75,7 @@ export const App: React.FC = () => {
   const handleLoginSuccess = (newToken: string, newUser: CurrentUser) => {
     setToken(newToken);
     setCurrentUser(newUser);
+    setUserVerified(true);
   };
 
   const handleLogout = () => {
@@ -81,11 +83,38 @@ export const App: React.FC = () => {
     localStorage.removeItem('user');
     setToken(null);
     setCurrentUser(null);
+    setUserVerified(false);
     setContextualBtn(null);
     window.location.hash = '';
   };
 
+  // Local storage is not an authority for current admin privileges.
+  useEffect(() => {
+    if (!token) return;
+    let canceled = false;
+    fetch("/api/auth/me", { headers: { Authorization: "Bearer " + token }, cache: "no-store" })
+      .then(async response => {
+        if (canceled) return;
+        if (!response.ok) {
+          if (response.status === 401 || response.status === 403) { handleLogout(); }
+          return;
+        }
+        const data = await response.json();
+        if (!canceled && data.user) {
+          setCurrentUser(data.user);
+          localStorage.setItem("user", JSON.stringify(data.user));
+          setUserVerified(true);
+          if (!data.user.is_admin && !["dashboard", "resources"].includes(currentTab)) {
+            setCurrentTab("dashboard"); window.location.hash = "#/dashboard";
+          }
+        }
+      }).catch(() => { if (!canceled) setUserVerified(false); });
+    return () => { canceled = true; };
+  // Revalidate whenever the token changes; the backend still authorizes every request.
+  }, [token]);
+
   const handleSelectTab = (tab: string) => {
+    if (!currentUser?.is_admin && !["dashboard", "resources"].includes(tab)) return;
     setCurrentTab(tab);
     window.location.hash = `#/${tab}`;
     if (tab !== 'server') {
@@ -96,6 +125,10 @@ export const App: React.FC = () => {
   // If user is not authenticated, show direct enterprise login page
   if (!token) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  if (!userVerified) {
+    return <div role="status" className="p-6 text-xs text-subtle">Verifying current account permissions…</div>;
   }
 
   const titles: Record<string, string> = {
@@ -112,7 +145,7 @@ export const App: React.FC = () => {
   const renderContent = () => {
     switch (currentTab) {
       case 'dashboard':
-        return <DashboardPage />;
+        return <DashboardPage isAdmin={Boolean(currentUser?.is_admin)} />;
       case 'resources':
         return <ResourcesPage isAdmin={Boolean(currentUser?.is_admin)} />;
       case 'access':
@@ -128,7 +161,7 @@ export const App: React.FC = () => {
       case 'logs':
         return <SystemLogsPage />;
       default:
-        return <DashboardPage />;
+        return <DashboardPage isAdmin={Boolean(currentUser?.is_admin)} />;
     }
   };
 

@@ -103,7 +103,7 @@ type Device struct {
 	ResourceGroupID  string         `gorm:"size:64;not null" json:"resource_group_id"`
 	ResourceGroup    ResourceGroup  `gorm:"foreignKey:ResourceGroupID" json:"resource_group"`
 	IPAllocationType string         `gorm:"size:16;not null" json:"ip_allocation_type"` // 'dynamic' or 'static'
-	VirtualIP        string         `gorm:"size:64;uniqueIndex;not null" json:"virtual_ip"`
+	VirtualIP        string         `gorm:"size:64;uniqueIndex:ux_active_device_vip,where:deleted_at IS NULL;not null" json:"virtual_ip"`
 	Platform         string         `gorm:"size:32;not null" json:"platform"` // 'macos', 'ios', 'windows', 'linux', 'android'
 	CertFingerprint  string         `gorm:"size:128" json:"cert_fingerprint,omitempty"`
 	CertSerial       string         `gorm:"size:128;index" json:"cert_serial,omitempty"`
@@ -146,24 +146,42 @@ type DNSOverride struct {
 	UpdatedAt     time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
+// RuntimeApplyState is durable even when an HTTP request or process fails.
+type RuntimeApplyState struct {
+	ID                uint
+	DesiredGeneration uint64
+	DesiredDigest     string `gorm:"size:64" json:"desired_digest"`
+	AppliedDigest     string `gorm:"size:64" json:"applied_digest"`
+	SwanctlDigest     string `gorm:"size:64" json:"swanctl_digest"`
+	DaemonBootID      string `gorm:"size:128" json:"daemon_boot_id"`
+	AppliedGeneration uint64
+	Status            string
+	LastError         string
+	LastAppliedAt     *time.Time
+	UpdatedAt         time.Time
+}
+
 // StrongswanSettings controls the strongSwan data plane parameters
 type StrongswanSettings struct {
-	ID                uint      `gorm:"primaryKey;default:1" json:"id"`
-	ServerEndpoint    string    `gorm:"size:256;default:'vpn.company.com'" json:"server_endpoint"`
-	ServerIdentity    string    `gorm:"size:256;default:'vpn.company.com'" json:"server_identity"`
-	ReauthTime        string    `gorm:"size:32;default:'12h'" json:"reauth_time"`
-	RekeyTimeIKE      string    `gorm:"size:32;default:'4h'" json:"rekey_time_ike"`
-	RekeyTimeChild    string    `gorm:"size:32;default:'1h'" json:"rekey_time_child"`
-	InactivityTimeout string    `gorm:"size:32;default:'30m'" json:"inactivity_timeout"`
-	MobikeEnabled     bool      `gorm:"default:true" json:"mobike_enabled"`
-	ForceEncapNATT    bool      `gorm:"default:false" json:"force_encap_natt"`
-	Fragmentation     string    `gorm:"size:16;default:'yes'" json:"fragmentation"`
-	DPDDelay          string    `gorm:"size:32;default:'30s'" json:"dpd_delay"`
-	DPDTimeout        string    `gorm:"size:32;default:'120s'" json:"dpd_timeout"`
-	DPDAction         string    `gorm:"size:32;default:'clear'" json:"dpd_action"`
-	CipherPreset      string    `gorm:"size:32;default:'balanced'" json:"cipher_preset"`
-	IKEProposals      string    `gorm:"size:512;default:'aes256gcm16-prfsha384-ecp384,aes256-sha256-modp2048'" json:"ike_proposals"`
-	ESPProposals      string    `gorm:"size:512;default:'aes256gcm16,aes128gcm16,chacha20poly1305'" json:"esp_proposals"`
-	MSSClamping       int       `gorm:"default:1360" json:"mss_clamping"`
-	UpdatedAt         time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	VPNName            string         `gorm:"size:128;default:SwanPanel VPN" json:"vpn_name"`
+	AdvancedConnection map[string]any `gorm:"serializer:json" json:"advanced_connection"`
+	AdvancedChild      map[string]any `gorm:"serializer:json" json:"advanced_child"`
+	ID                 uint           `gorm:"primaryKey;default:1" json:"id"`
+	ServerEndpoint     string         `gorm:"size:256;default:'vpn.company.com'" json:"server_endpoint"`
+	ServerIdentity     string         `gorm:"size:256;default:'vpn.company.com'" json:"server_identity"`
+	ReauthTime         string         `gorm:"size:32;default:'12h'" json:"reauth_time"`
+	RekeyTimeIKE       string         `gorm:"size:32;default:'4h'" json:"rekey_time_ike"`
+	RekeyTimeChild     string         `gorm:"size:32;default:'1h'" json:"rekey_time_child"`
+	InactivityTimeout  string         `gorm:"size:32;default:'30m'" json:"inactivity_timeout"`
+	MobikeEnabled      bool           `gorm:"default:true" json:"mobike_enabled"`
+	ForceEncapNATT     bool           `gorm:"default:false" json:"force_encap_natt"`
+	Fragmentation      string         `gorm:"size:16;default:'yes'" json:"fragmentation"`
+	DPDDelay           string         `gorm:"size:32;default:'30s'" json:"dpd_delay"`
+	DPDTimeout         string         `gorm:"size:32;default:'120s'" json:"dpd_timeout"`
+	DPDAction          string         `gorm:"size:32;default:'clear'" json:"dpd_action"`
+	CipherPreset       string         `gorm:"size:32;default:'balanced'" json:"cipher_preset"`
+	IKEProposals       string         `gorm:"size:512;default:'aes256gcm16-prfsha384-ecp384,aes256-sha256-modp2048'" json:"ike_proposals"`
+	ESPProposals       string         `gorm:"size:512;default:'aes256gcm16,aes128gcm16,chacha20poly1305'" json:"esp_proposals"`
+	MSSClamping        int            `gorm:"default:1360" json:"mss_clamping"`
+	UpdatedAt          time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
 }

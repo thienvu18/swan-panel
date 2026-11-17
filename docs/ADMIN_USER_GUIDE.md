@@ -278,7 +278,7 @@ Fine-tune kernel IPsec parameters and strongSwan daemon runtime settings without
 * **MTU MSS Clamping:** Automatically clamped to `1360` bytes to eliminate IP fragmentation across lower MTU carrier networks.
 
 ### 10.3. Dynamic Zero-Downtime Reload
-When changes are made, click the top-right contextual button **Save Changes**. SwanPanel compiles the parameters into a native VICI dictionary and reloads connections directly in strongSwan daemon memory with **0 seconds downtime**.
+When changes are made, click **Save Changes**. SwanPanel renders one managed configuration from the database, writes it atomically to the strongSwan configuration include directory, and applies the same connections immediately through VICI. It updates its dedicated nftables rules in a single transaction without a routine deny-all interruption. Existing tunnels normally stay established during policy edits; a true daemon restart always terminates existing SAs, after which clients reconnect using the persisted configuration.
 
 ---
 
@@ -500,3 +500,64 @@ Eliminate noise and isolate critical security anomalies within the live socket c
 ![Logs Scope Filter](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-actions-evidence/32_system_logs_scope_filter.png)
 
 ![Logs Stream Paused](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-actions-evidence/33_system_logs_stream_paused.png)
+
+---
+
+## Gateway Settings (Go 1.27.4 / P1 hardening)
+
+The **Server Settings** page has three tabs:
+
+- **Basic settings:** VPN display name (used in newly generated Apple, Windows and strongSwan Android profiles), endpoint IP/FQDN, server certificate identity, cryptography compatibility preset, MOBIKE and forced NAT-T. Previously installed client profiles are not renamed automatically.
+- **Advanced JSON:** edit the complete supported gateway settings object. Standard fields such as `reauth_time`, `rekey_time_ike`, `rekey_time_child`, `inactivity_timeout`, `fragmentation`, `dpd_delay`, `dpd_action`, `ike_proposals`, `esp_proposals` and `mss_clamping` are available here. Additional safe VICI connection and CHILD_SA primitive/list options can be supplied in `advanced_connection` and `advanced_child`. Invalid JSON, unknown top-level keys and protected VICI keys controlling identity, authentication, IP pools or traffic selectors are rejected. Admins can use **Format JSON**, **Reset to saved**, and **Validate & apply JSON**.
+- **Certificate Authority:** displays the *actual issued X.509 Root CA* subject, serial and expiration. Before the first device is issued, an administrator can explicitly issue a new CA subject after typing `ROTATE CA`; existing key material is backed up. Once any device or historical revocation exists, the CA subject is immutable in this interface. Modifying the VPN display name does **not** require CA rotation. For fresh installs, `CA_COMMON_NAME`, `CA_ORGANIZATION`, `CA_COUNTRY`, `CA_PROVINCE`, and `CA_LOCALITY` may set the initial CA subject before starting SwanPanel for the first time.
+
+### Data-plane apply status
+
+An administrator can view `applied`, `applying`, `pending`, or `failed` and use **Retry apply**. API endpoints: `GET /api/system/apply-status` and `POST /api/system/apply` (admin only). The reconciler persists desired state and checks both the on-disk configuration checksum and the live VICI socket identity every 30 seconds. A daemon restart triggers reapplication even if database settings are unchanged. **Retry apply** also redeploys gateway certificates and the signed CRL. The nftables table is atomically replaced without a blanket deny-all during normal updates; removed grants are closed before the VICI connection update. An enforcement failure remains visible as pending/failed and must be investigated.
+
+### Operational notes
+
+- **Recommended deployment:** Docker Compose all-in-one, with its own strongSwan and persistent `/etc/swanctl` volume. Save `JWT_SECRET` in `.env` before `docker compose up -d`; keep that file and the database/PKI volumes across upgrades.
+- **Optional host strongSwan:** An explicit Compose override uses host networking so VICI, XFRM, DNS gateway VIPs, nftables and NAT operate in one namespace. The firewall only drops/clamps IPsec traffic from enrolled SwanPanel VIPs (including revoked identities), not every host IPsec packet. Do not overlap another VPN's VIP ranges, and check host DNS/API/IKE ports, kernel forwarding and `/etc/swanctl` before switching. On hosts where Docker daemon runs, Docker's default `iptables -P FORWARD DROP` will drop forwarded VPN traffic unless permitted in Docker's dedicated `DOCKER-USER` chain (`sudo iptables -I DOCKER-USER 1 -s <VPN_SUBNET> -j ACCEPT` and `sudo iptables -I DOCKER-USER 2 -d <VPN_SUBNET> -j ACCEPT`). Host daemon Start/Stop/Restart remains unavailable in the container UI; live connection configuration and session actions continue through VICI.
+- Use **Go 1.27.4** for building. The Docker and devcontainer build images are pinned to that patch version.
+- `STRONGSWAN_SYSTEMD_UNIT` can override the default `strongswan` unit name on distributions using another systemd unit.
+- SwanPanel writes its connection/pool fragment to `/etc/swanctl/conf.d/swanpanel-gateway.conf` (override with `SWANPANEL_SWANCTL_FILE` only if the daemon is configured to include that location). This file and strongSwan credentials must be accessible by the same daemon. The Linux installer installs a `strongswan.service` restart hook to load all persisted connections. The official Docker Compose stack persists `/etc/swanctl` in its own named volume. The host-daemon override bind-mounts the host `/etc/swanctl` and the live `/run` directory (read-only) at `/host-run`; bind-mounting just the VICI socket file would retain a stale socket inode after an external daemon restart.
+- IKEv2 supports `dpd_delay`; it does **not** expose a separately configurable `dpd_timeout` via `swanctl.conf`. The legacy `dpd_timeout` field remains readable for compatibility but cannot be edited.
+- The first address within each VPN subnet is reserved for a gateway, alongside network and broadcast addresses. A device's VIP can be reused after its identity has been revoked and the device deleted. Do not recycle VIPs while the original connection is still active.
+- Database-backed API/PKI tests use `APP_ENV=test`, which deliberately skips live firewall and VICI operations. These tests do **not** replace end-to-end VPN connectivity, nftables syntax validation, CRL reload, actual IP allocation and daemon restart checks on a Linux gateway.
+- Rotating the Root CA can invalidate existing trust. Never delete the `.backup-*` private key material without an explicit key-retention and recovery plan; keep it restricted and backed up.
+
+### Isolated Docker IKEv2 integration test
+
+The original scripts/test_e2e_integration.sh has been replaced with a safe
+wrapper around scripts/test_docker_integration.sh, because its former test
+payloads and assumptions no longer matched the application.
+
+On a Linux host with Docker Engine, functioning IPsec/XFRM kernel support,
+NET_ADMIN inside containers, curl and jq, run:
+
+    bash scripts/test_docker_integration.sh
+
+The test uses tests/docker/compose.yml, builds an actual gateway image and
+strongSwan Linux client image, and creates disposable credentials/data in a
+separate Compose project. It checks live VICI readiness, PKI and per-device
+connection configuration, nftables default deny, persistent gateway files,
+independent strongSwan restart and automatic VICI/pool recovery, client tunnel
+and assigned VIP, and revocation blocking reconnect. It binds the test API only to
+127.0.0.1:18080, cleans up containers and volumes, and must never be run
+against production data.
+
+You may also start the Docker IKEv2 Integration GitHub Actions workflow
+manually. Docker Desktop on macOS runs a LinuxKit kernel; support for the
+necessary XFRM/ESP operations must be verified on the actual host. A passing
+Go unit test or docker compose config does not prove real VPN connectivity.
+
+### Safe controls in the administration UI
+
+SwanPanel uses one consistent native-select appearance in dark and light themes.
+Deleting users, groups, subnets, DNS records, access rules and identity providers;
+revoking VPN certificates; terminating sessions; assigning or removing system
+administrators; changing live gateway state or the Root CA; and applying
+advanced VICI settings require an explicit confirmation dialog showing the
+affected entity and consequences. Cancel never invokes the operation. If an
+API request fails, the dialog stays open and displays the server error.

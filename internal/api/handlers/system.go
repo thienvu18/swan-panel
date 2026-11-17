@@ -40,84 +40,153 @@ func (h *SystemHandler) GetDaemonStatus(c *gin.Context) {
 	viciClient := vici.GetClient("")
 	stats, err := viciClient.GetDaemonStats(c.Request.Context())
 	if err != nil {
-		slog.Warn("Failed to retrieve live daemon statistics, falling back to basic status", "error", err)
-		c.JSON(http.StatusOK, gin.H{
-			"service": "strongswan",
-			"status":  "inactive",
-			"pid":     0,
-			"memory":  "0 MB",
-			"uptime":  "Offline",
+		slog.Warn("Failed to retrieve live daemon statistics", "error", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"service":           "strongswan",
+			"status":            "unknown",
+			"error":             "VICI unavailable",
+			"pid":               0,
+			"memory":            "0 MB",
+			"uptime":            "Offline",
+			"control_supported": os.Getenv("SWANPANEL_EXTERNAL_STRONGSWAN") != "1",
 		})
 		return
 	}
 
+	stats.ControlSupported = os.Getenv("SWANPANEL_EXTERNAL_STRONGSWAN") != "1"
 	c.JSON(http.StatusOK, stats)
 }
 
 // ControlDaemon starts, stops, or restarts the strongSwan daemon (US-11)
 func (h *SystemHandler) ControlDaemon(c *gin.Context) {
 	var req struct {
-		Action string `json:"action" binding:"required"` // 'start', 'stop', 'restart'
+		Action string `json:"action" binding:"required"`
 	}
-
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Field 'action' is required (start, stop, restart)"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Action must be start, stop or restart"})
 		return
 	}
-
 	action := strings.ToLower(req.Action)
 	if action != "start" && action != "stop" && action != "restart" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid action; must be 'start', 'stop', or 'restart'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid daemon action"})
 		return
 	}
-
-	slog.Info("Admin initiated strongSwan daemon control command", "action", action)
-
-	var command *exec.Cmd
-	if isSystemdAvailable() {
-		command = exec.CommandContext(c.Request.Context(), "systemctl", action, "strongswan")
+	if os.Getenv("SWANPANEL_EXTERNAL_STRONGSWAN") == "1" {
+		// The container has no safe authority to manage the host's systemd unit.
+		// Never start a second charon or execute ipsec against the wrong daemon.
+		c.JSON(http.StatusConflict, gin.H{"error": "External host strongSwan lifecycle control is unavailable; manage its systemd unit on the host"})
+		return
+	}
+	ctx := c.Request.Context()
+	systemd := isSystemdAvailable()
+	unit := os.Getenv("STRONGSWAN_SYSTEMD_UNIT")
+	if unit == "" {
+		unit = "strongswan"
+	}
+	var cmd *exec.Cmd
+	if systemd {
+		cmd = exec.CommandContext(ctx, "systemctl", action, unit)
 	} else if _, err := exec.LookPath("ipsec"); err == nil {
-		command = exec.CommandContext(c.Request.Context(), "ipsec", action)
+		cmd = exec.CommandContext(ctx, "ipsec", action)
 	} else {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Neither systemd strongswan unit nor ipsec CLI is available"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "No supported daemon control mechanism"})
 		return
 	}
-	output, err := command.CombinedOutput()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		slog.Error("Daemon command failed", "action", action, "error", err, "output", string(output))
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "strongSwan control command failed"})
+		slog.Error("strongSwan control failed", "action", action, "error", err, "output", string(output))
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon control command failed"})
 		return
 	}
-	if action == "restart" || action == "start" {
-		time.Sleep(1 * time.Second)
-		if err := vici.GetClient("").Reconnect(); err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon command completed but VICI is unavailable"})
-			return
-		}
-		if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
-			slog.Error("Daemon resumed without enforced policy", "error", err)
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon started but security policy was not applied"})
-			return
-		}
-	}
-	runtime, err := vici.GetClient("").GetDaemonStats(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Cannot verify daemon state"})
-		return
-	}
-	expected := "active"
+	client := vici.GetClient("")
 	if action == "stop" {
-		expected = "inactive"
-	}
-	if runtime.Status != expected {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon command returned, but runtime state does not match request", "status": runtime.Status})
+		// A stopped daemon is expected to make VICI unavailable.
+		if err := client.Reconnect(); err == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon still responds after stop"})
+			return
+		}
+		if systemd {
+			active := exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", unit)
+			if active.Run() == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Systemd still reports daemon active"})
+				return
+			}
+		} else {
+			stats, _ := client.GetDaemonStats(ctx)
+			if stats != nil && stats.PID > 0 {
+				if _, err := os.Stat(fmt.Sprintf("/proc/%d", stats.PID)); err == nil {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon process is still running"})
+					return
+				}
+			}
+		}
+		realtime.DefaultBroker.Broadcast("gateway_status", gin.H{"status": "inactive", "action": action})
+		c.JSON(http.StatusOK, gin.H{"message": "Daemon stopped and verified", "status": "inactive", "action": action})
 		return
 	}
-	realtime.DefaultBroker.Broadcast("gateway_status", map[string]any{"action": action, "status": runtime.Status})
+	// Wait for VICI readiness rather than assuming startup completes in one second.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if err := client.Reconnect(); err == nil && client.CheckHealth(ctx) == nil {
+			break
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon command returned but VICI did not become healthy"})
+			return
+		}
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-ctx.Done():
+			return
+		}
+	}
+	if err := policy.Reconcile(ctx, db.DB); err != nil {
+		slog.Error("Daemon running without fully applied policy", "error", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon started, but firewall/policy synchronization failed"})
+		return
+	}
+	runtime, err := client.GetDaemonStats(ctx)
+	if err != nil || runtime.Status != "active" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Daemon state verification failed"})
+		return
+	}
+	realtime.DefaultBroker.Broadcast("gateway_status", gin.H{"status": runtime.Status, "action": action})
 	c.JSON(http.StatusOK, gin.H{
 		"message": fmt.Sprintf("Daemon %s completed and verified", action),
-		"action":  action, "status": runtime.Status, "timestamp": time.Now().Format(time.RFC3339),
+		"action":  action, "status": runtime.Status, "timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+// GetApplyStatus exposes durable data-plane synchronization state.
+func (h *SystemHandler) GetApplyStatus(c *gin.Context) {
+	state, err := policy.GetApplyState(c.Request.Context(), db.DB)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Runtime apply state unavailable"})
+		return
+	}
+	needed, err := policy.NeedsReconciliation(c.Request.Context(), db.DB)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Cannot inspect pending gateway configuration"})
+		return
+	}
+	status := state.Status
+	if needed && status == "applied" {
+		status = "pending"
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status": status, "desired_generation": state.DesiredGeneration,
+		"applied_generation": state.AppliedGeneration, "last_error": state.LastError,
+		"last_applied_at": state.LastAppliedAt,
+	})
+}
+
+// RetryApply lets administrators explicitly retry a failed data-plane update.
+func (h *SystemHandler) RetryApply(c *gin.Context) {
+	if err := policy.ReconcileGateway(c.Request.Context(), db.DB); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Data-plane reconciliation failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"runtime_status": "applied"})
 }
 
 // isSystemdAvailable detects if the process is running on a host with active systemd

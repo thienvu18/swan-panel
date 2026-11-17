@@ -28,7 +28,10 @@ LimitNPROC=4096
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
 NoNewPrivileges=true
+# Keep /etc read-only except for SwanPanel-managed strongSwan credentials,
+# signed revocation lists, and persistent connection fragments.
 ProtectSystem=full
+ReadWritePaths=/etc/swanctl
 ProtectHome=true
 PrivateTmp=true
 ProtectKernelTunables=false

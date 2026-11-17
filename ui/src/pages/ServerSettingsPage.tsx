@@ -1,487 +1,369 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Check, Code2, FileJson2, RotateCcw, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Check } from 'lucide-react';
+import { useConfirmAction } from '../components/ConfirmDialog';
 
-interface ServerSettingsProps {
-  onRegisterSaveButton?: (button: React.ReactNode) => void;
+interface ServerSettingsProps { onRegisterSaveButton?: (button: React.ReactNode) => void; }
+type SettingsTab = 'basic' | 'advanced' | 'ca';
+interface GatewaySettings {
+  id?: number;
+  vpn_name: string;
+  server_endpoint: string;
+  server_identity: string;
+  mobike_enabled: boolean;
+  force_encap_natt: boolean;
+  cipher_preset: string;
+  ike_proposals: string;
+  esp_proposals: string;
+  advanced_connection?: Record<string, unknown> | null;
+  advanced_child?: Record<string, unknown> | null;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+interface CAIdentity {
+  common_name: string; organization: string; country: string;
+  province: string; locality: string; serial: string; not_after: string;
+}
+interface CAResponse { ca: CAIdentity; can_rotate: boolean; }
+interface RuntimeApplyStatus {
+  status: 'pending' | 'applying' | 'applied' | 'failed';
+  desired_generation: number;
+  applied_generation: number;
+  last_error?: string;
+  last_applied_at?: string | null;
 }
 
+const presets: Record<string, { ike: string; esp: string }> = {
+  modern: { ike: 'aes256gcm16-prfsha384-ecp384,chacha20poly1305-prfsha256-curve25519', esp: 'aes256gcm16,chacha20poly1305' },
+  balanced: { ike: 'aes256gcm16-prfsha384-ecp384,aes256-sha256-modp2048', esp: 'aes256gcm16,aes128gcm16,chacha20poly1305' },
+};
+function authHeaders(): HeadersInit { return { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }; }
+async function getJSON<T>(url: string): Promise<T> {
+  const response = await fetch(url, { headers: authHeaders(), cache: 'no-store' });
+  if (!response.ok) throw new Error('Request failed (HTTP ' + response.status + ')');
+  return response.json() as Promise<T>;
+}
+async function submitJSON<T>(url: string, method: 'PUT' | 'POST', value: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method,
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(value),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'Request failed (HTTP ' + response.status + ')');
+  return result as T;
+}
+const inputClass = 'w-full rounded-lg border subtle-border surface-input px-3 py-2 text-xs focus:outline-none focus:border-blue-500';
+const labelClass = 'block mb-1.5 font-medium text-xs text-subtle';
+
 export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSaveButton }) => {
+  const queryClient = useQueryClient();
   const { t } = useTranslation();
+  const { requestConfirmation, confirmationDialog } = useConfirmAction();
+  const [tab, setTab] = useState<SettingsTab>('basic');
+  const [form, setForm] = useState({
+    vpn_name: 'SwanPanel VPN', server_endpoint: '', server_identity: '',
+    mobike_enabled: true, force_encap_natt: false, cipher_preset: 'balanced',
+  });
+  const [advancedText, setAdvancedText] = useState('{}');
+  const [caForm, setCAForm] = useState({ common_name: '', organization: '', country: '', province: '', locality: '' });
+  const [confirmation, setConfirmation] = useState('');
+  const [notice, setNotice] = useState('');
 
-  // State form
-  const [reauthVal, setReauthVal] = useState('12');
-  const [reauthUnit, setReauthUnit] = useState('h');
-  const [rekeyIKE, setRekeyIKE] = useState('4h');
-  const [rekeyChild, setRekeyChild] = useState('1h');
-  const [inactivity, setInactivity] = useState('30m');
-
-  const [mobike, setMobike] = useState(true);
-  const [encap, setEncap] = useState(false);
-  const [fragmentation, setFragmentation] = useState(true);
-
-  const [dpdDelay, setDpdDelay] = useState('30s');
-  const [dpdTimeout, setDpdTimeout] = useState('120s');
-  const [dpdAction, setDpdAction] = useState('clear');
-
-  const [serverFqdn, setServerFqdn] = useState('vpn.company.com');
-  const [serverIdentity, setServerIdentity] = useState('');
-  const [mssClamping, setMssClamping] = useState(1360);
-
-  const [cipherPreset, setCipherPreset] = useState<'modern' | 'balanced' | 'custom'>('balanced');
-  const [ikeProposals, setIkeProposals] = useState('aes256gcm16-prfsha384-ecp384,aes256-sha256-modp2048');
-  const [espProposals, setEspProposals] = useState('aes256gcm16,aes128gcm16,chacha20poly1305');
-
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [saveWarning, setSaveWarning] = useState('');
-
-  // Fetch configuration from API
-  const { data, isPending: isSettingsPending, isError: isSettingsError } = useQuery({
-    queryKey: ['strongswan_settings'],
-    queryFn: async () => {
-      const res = await fetch('/api/settings/strongswan', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
-      });
-      if (!res.ok) throw new Error('Failed to load gateway settings');
-      return res.json();
+  const settings = useQuery<GatewaySettings>({
+    queryKey: ['strongswan_settings'], queryFn: () => getJSON('/api/settings/strongswan'),
+  });
+  const ca = useQuery<CAResponse>({
+    queryKey: ['ca_identity'], queryFn: () => getJSON('/api/settings/ca'), enabled: tab === 'ca',
+  });
+  const runtimeStatus = useQuery<RuntimeApplyStatus>({
+    queryKey: ['runtime_apply_status'], queryFn: () => getJSON('/api/system/apply-status'),
+  });
+  const retryApply = useMutation({
+    mutationFn: () => submitJSON('/api/system/apply', 'POST', {}),
+    onSuccess: async () => {
+      setNotice('Gateway reconciliation completed.');
+      await queryClient.invalidateQueries({ queryKey: ['runtime_apply_status'] });
+      await queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
     },
   });
-
   useEffect(() => {
-    if (data) {
-      if (data.reauth_time) {
-        setReauthVal(data.reauth_time.replace(/[^0-9]/g, '') || '12');
-        setReauthUnit(data.reauth_time.replace(/[0-9]/g, '') || 'h');
-      }
-      if (data.rekey_time_ike) setRekeyIKE(data.rekey_time_ike);
-      if (data.rekey_time_child) setRekeyChild(data.rekey_time_child);
-      if (data.inactivity_timeout) setInactivity(data.inactivity_timeout);
-      setMobike(data.mobike_enabled);
-      setEncap(data.force_encap_natt);
-      setFragmentation(data.fragmentation === 'yes');
-      if (data.dpd_delay) setDpdDelay(data.dpd_delay);
-      if (data.dpd_timeout) setDpdTimeout(data.dpd_timeout);
-      if (data.dpd_action) setDpdAction(data.dpd_action);
-      if (data.server_endpoint) setServerFqdn(data.server_endpoint);
-      setServerIdentity(data.server_identity || '');
-      if (data.mss_clamping) setMssClamping(data.mss_clamping);
-      if (data.cipher_preset) setCipherPreset(data.cipher_preset as any);
-      if (data.ike_proposals) setIkeProposals(data.ike_proposals);
-      if (data.esp_proposals) setEspProposals(data.esp_proposals);
-    }
-  }, [data]);
+    const s = settings.data;
+    if (!s) return;
+    setForm({
+      vpn_name: s.vpn_name || 'SwanPanel VPN',
+      server_endpoint: s.server_endpoint || '',
+      server_identity: s.server_identity || '',
+      mobike_enabled: s.mobike_enabled,
+      force_encap_natt: s.force_encap_natt,
+      cipher_preset: s.cipher_preset || 'balanced',
+    });
+    const { id: _id, updated_at: _updated, dpd_timeout: _unsupported, ...editable } = s;
+    setAdvancedText(JSON.stringify({
+      ...editable, advanced_connection: s.advanced_connection || {}, advanced_child: s.advanced_child || {},
+    }, null, 2));
+  }, [settings.data]);
+  useEffect(() => {
+    if (!ca.data?.ca) return;
+    const value = ca.data.ca;
+    setCAForm({
+      common_name: value.common_name, organization: value.organization,
+      country: value.country, province: value.province, locality: value.locality,
+    });
+  }, [ca.data]);
+  useEffect(() => {
+    onRegisterSaveButton?.(null);
+    return () => onRegisterSaveButton?.(null);
+  }, [onRegisterSaveButton]);
 
-  const handlePresetChange = (preset: 'modern' | 'balanced' | 'custom') => {
-    setCipherPreset(preset);
-    if (preset === 'modern') {
-      setIkeProposals('aes256gcm16-prfsha384-ecp384,chacha20poly1305-prfsha256-curve25519');
-      setEspProposals('aes256gcm16,chacha20poly1305');
-    } else if (preset === 'balanced') {
-      setIkeProposals('aes256gcm16-prfsha384-ecp384,aes256-sha256-modp2048');
-      setEspProposals('aes256gcm16,aes128gcm16,chacha20poly1305');
+  const save = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      submitJSON<{ runtime_status: string; error?: string }>('/api/settings/strongswan', 'PUT', payload),
+    onMutate: () => setNotice(''),
+    onSuccess: async result => {
+      setNotice(result.runtime_status === 'applied'
+        ? 'Configuration saved and applied to the gateway.'
+        : 'Configuration saved, gateway reconciliation pending: ' + (result.error || ''));
+      await queryClient.invalidateQueries({ queryKey: ['strongswan_settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['runtime_apply_status'] });
+    },
+  });
+  const rotate = useMutation({
+    mutationFn: () => submitJSON<{ runtime_status: string }>('/api/settings/ca/rotate', 'POST', { ...caForm, confirm: confirmation }),
+    onMutate: () => setNotice(''),
+    onSuccess: async result => {
+      setConfirmation('');
+      setNotice(result.runtime_status === 'applied'
+        ? 'New Root CA issued and gateway updated. Keep the old CA backup securely.'
+        : 'New Root CA issued. Gateway configuration is pending; use Retry apply to complete.');
+      await queryClient.invalidateQueries({ queryKey: ['ca_identity'] });
+    },
+  });
+  const advanced = useMemo(() => {
+    try {
+      const value: unknown = JSON.parse(advancedText);
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return { error: 'Root must be a JSON object', value: null };
+      }
+      return { error: '', value: value as Record<string, unknown> };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Invalid JSON', value: null };
     }
+  }, [advancedText]);
+  const submitBasic = () => {
+    if (!settings.data) return;
+    const selected = presets[form.cipher_preset];
+    save.mutate({
+      ...settings.data, ...form,
+      ...(selected ? { ike_proposals: selected.ike, esp_proposals: selected.esp } : {}),
+    });
   };
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      const payload = {
-        reauth_time: `${reauthVal}${reauthUnit}`,
-        rekey_time_ike: rekeyIKE,
-        rekey_time_child: rekeyChild,
-        inactivity_timeout: inactivity,
-        mobike_enabled: mobike,
-        force_encap_natt: encap,
-        fragmentation: fragmentation ? 'yes' : 'no',
-        dpd_delay: dpdDelay,
-        dpd_timeout: dpdTimeout,
-        dpd_action: dpdAction,
-        server_endpoint: serverFqdn.trim(),
-        server_identity: serverIdentity.trim(),
-        mss_clamping: Number(mssClamping),
-        cipher_preset: cipherPreset,
-        ike_proposals: ikeProposals,
-        esp_proposals: espProposals,
-      };
-
-      const res = await fetch('/api/settings/strongswan', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const response = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(response.error || t('server.save_failed'));
-      return response;
-    },
-    onMutate: () => {
-      setSaveSuccess(false);
-      setSaveWarning('');
-    },
-    onSuccess: (response) => {
-      if (response.runtime_status !== 'applied') {
-        setSaveWarning(response.error || t('server.saved_not_applied'));
-        return;
-      }
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    },
-  });
-
-  const cannotSave = isSettingsPending || isSettingsError ||
-    !serverFqdn.trim() || !serverIdentity.trim();
-
-  // Register contextual Save Changes action button on Header
-  useEffect(() => {
-    if (onRegisterSaveButton) {
-      onRegisterSaveButton(
-        <button
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending || cannotSave}
-          className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs"
-        >
-          <Check className="w-3.5 h-3.5" />
-          {saveMutation.isPending ? 'Saving...' : t('common.save_changes')}
-        </button>
-      );
-    }
-  }, [onRegisterSaveButton, saveMutation.isPending, cannotSave, t]);
 
   return (
     <div className="space-y-4">
-      {saveSuccess && (
-        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs flex items-center gap-2">
-          <Check className="w-4 h-4" />
-          <span>{t('server.applied_success')}</span>
+      {confirmationDialog}
+      <nav className="flex flex-wrap gap-2" aria-label="Gateway settings sections">
+        {([
+          ['basic', SlidersHorizontal, 'Basic settings'],
+          ['advanced', FileJson2, 'Advanced JSON'],
+          ['ca', ShieldCheck, 'Certificate Authority'],
+        ] as const).map(([key, Icon, label]) => (
+          <button type="button" key={key} onClick={() => { setTab(key); setNotice(''); }}
+            aria-current={tab === key ? 'page' : undefined}
+            className={'flex items-center gap-2 border rounded-lg px-3 py-2 text-xs font-medium ' +
+              (tab === key ? 'border-blue-500 bg-blue-500/10 text-blue-500' : 'subtle-border text-subtle hover:text-current')}>
+            <Icon className="h-4 w-4" />{label}
+          </button>
+        ))}
+      </nav>
+      {settings.isLoading && <p role="status" className="text-xs text-dim">Loading gateway settings…</p>}
+      {settings.isError && <p role="alert" className="text-xs text-red-500">Unable to load gateway settings.</p>}
+      {notice && <p role="status" className="text-xs p-3 border subtle-border rounded-lg">{notice}</p>}
+      <section className="rounded-lg border subtle-border surface-card px-4 py-3 flex flex-wrap items-center justify-between gap-3" aria-label="Gateway apply status">
+        <div className="space-y-1">
+          <div className="text-xs font-semibold">Gateway configuration status: {runtimeStatus.data?.status ?? 'unknown'}</div>
+          {runtimeStatus.data?.last_error && runtimeStatus.data.status !== 'applied' &&
+            <p role="alert" className="text-xs text-red-500">{runtimeStatus.data.last_error}</p>}
+          {runtimeStatus.isError && <p role="alert" className="text-xs text-red-500">Could not verify the gateway configuration status.</p>}
+          {runtimeStatus.data?.status === 'applied' && (
+            <p className="text-[11px] text-emerald-500">{t('server.managed_config_applied')}</p>
+          )}
+          {runtimeStatus.data?.last_applied_at && <p className="text-[11px] text-dim">
+            Last successful apply: {new Date(runtimeStatus.data.last_applied_at).toLocaleString()}
+          </p>}
         </div>
-      )}
+        <div className="flex gap-2">
+          <button type="button" onClick={() => { void runtimeStatus.refetch(); }}
+            className="rounded-lg border subtle-border px-3 py-2 text-xs">Refresh status</button>
+          {(runtimeStatus.data?.status === 'pending' || runtimeStatus.data?.status === 'failed') &&
+            <button type="button" disabled={retryApply.isPending} onClick={() => retryApply.mutate()}
+              className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">
+              {retryApply.isPending ? 'Retrying…' : 'Retry apply'}
+            </button>}
+        </div>
+      </section>
+      {retryApply.isError && <p role="alert" className="text-xs text-red-500">{retryApply.error.message}</p>}
+      {save.isError && <p role="alert" className="text-xs text-red-500">{save.error.message}</p>}
+      {rotate.isError && <p role="alert" className="text-xs text-red-500">{rotate.error.message}</p>}
 
-      {isSettingsError && (
-        <div role="alert" className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-500 rounded-xl text-xs">
-          {t('server.load_failed')}
-        </div>
-      )}
-      {saveMutation.error && (
-        <div role="alert" className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-500 rounded-xl text-xs">
-          {saveMutation.error.message}
-        </div>
-      )}
-      {saveWarning && (
-        <div role="status" className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-500 rounded-xl text-xs">
-          {saveWarning}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* CARD 1: SESSION LIFETIMES & RE-AUTHENTICATION */}
-        <div className="border subtle-border rounded-xl p-4 surface-card space-y-3.5 shadow-xs">
-          <div className="border-b subtle-border pb-2">
-            <h3 className="font-semibold text-xs text-slate-900 dark:text-white">{t('server.lifetimes_title')}</h3>
-            <p className="text-[11px] text-dim">{t('server.lifetimes_desc')}</p>
+      {tab === 'basic' && settings.data && (
+        <section className="surface-card border subtle-border rounded-xl p-5 space-y-5 max-w-3xl">
+          <div>
+            <h2 className="text-sm font-semibold">Common VPN settings</h2>
+            <p className="text-xs text-dim mt-1">Only the settings commonly changed during administration. All other supported options are in Advanced JSON.</p>
           </div>
-
-          <div className="space-y-3 text-xs">
-            <div>
-              <label className="text-subtle font-medium block mb-1">{t('server.max_session')}</label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  value={reauthVal}
-                  onChange={(e) => setReauthVal(e.target.value)}
-                  className="surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs w-24 focus:outline-none focus:border-blue-500"
-                />
-                <select
-                  value={reauthUnit}
-                  onChange={(e) => setReauthUnit(e.target.value)}
-                  className="surface-input border subtle-border rounded-lg px-2 py-1.5 text-xs focus:outline-none"
-                >
-                  <option value="h">{t('common.hours')}</option>
-                  <option value="d">{t('common.days')}</option>
-                  <option value="m">{t('common.minutes')}</option>
-                </select>
-                <div className="flex-1 flex items-center text-[11px] text-dim italic pl-1">
-                  {t('server.max_session_hint')}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-1 border-t subtle-border">
-              <div>
-                <label className="text-subtle font-medium block mb-1">{t('server.tunnel_key_renewal')}</label>
-                <input
-                  type="text"
-                  value={rekeyIKE}
-                  onChange={(e) => setRekeyIKE(e.target.value)}
-                  className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
-                />
-                <span className="text-[10px] text-dim block mt-0.5">{t('server.tunnel_key_renewal_hint')}</span>
-              </div>
-
-              <div>
-                <label className="text-subtle font-medium block mb-1">{t('server.data_key_renewal')}</label>
-                <input
-                  type="text"
-                  value={rekeyChild}
-                  onChange={(e) => setRekeyChild(e.target.value)}
-                  className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
-                />
-                <span className="text-[10px] text-dim block mt-0.5">{t('server.data_key_renewal_hint')}</span>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-subtle font-medium block mb-1">{t('server.idle_timeout')}</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={inactivity}
-                  onChange={(e) => setInactivity(e.target.value)}
-                  className="w-24 surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
-                />
-                <span className="text-[11px] text-dim">{t('server.idle_timeout_hint')}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* CARD 2: NETWORK ROAMING & TRAVERSAL */}
-        <div className="border subtle-border rounded-xl p-4 surface-card space-y-3.5 shadow-xs">
-          <div className="border-b subtle-border pb-2">
-            <h3 className="font-semibold text-xs text-slate-900 dark:text-white">{t('server.roaming_title')}</h3>
-            <p className="text-[11px] text-dim">{t('server.roaming_desc')}</p>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            {/* MOBIKE */}
-            <div className="flex items-start justify-between gap-4 p-2 rounded-lg surface-header border subtle-border">
-              <div>
-                <div className="font-medium text-slate-900 dark:text-white">{t('server.mobike')}</div>
-                <div className="text-[11px] text-dim mt-0.5">{t('server.mobike_hint')}</div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
-                <input
-                  type="checkbox"
-                  checked={mobike}
-                  onChange={(e) => setMobike(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-
-            {/* NAT-T */}
-            <div className="flex items-start justify-between gap-4 p-2 rounded-lg surface-header border subtle-border">
-              <div>
-                <div className="font-medium text-slate-900 dark:text-white">{t('server.force_encap')}</div>
-                <div className="text-[11px] text-dim mt-0.5">{t('server.force_encap_hint')}</div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
-                <input
-                  type="checkbox"
-                  checked={encap}
-                  onChange={(e) => setEncap(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-
-            {/* Fragmentation */}
-            <div className="flex items-start justify-between gap-4 p-2 rounded-lg surface-header border subtle-border">
-              <div>
-                <div className="font-medium text-slate-900 dark:text-white">{t('server.fragmentation')}</div>
-                <div className="text-[11px] text-dim mt-0.5">{t('server.fragmentation_hint')}</div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
-                <input
-                  type="checkbox"
-                  checked={fragmentation}
-                  onChange={(e) => setFragmentation(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {/* CARD 3: CONNECTION HEALTH CHECK */}
-        <div className="border subtle-border rounded-xl p-4 surface-card space-y-3.5 shadow-xs">
-          <div className="border-b subtle-border pb-2">
-            <h3 className="font-semibold text-xs text-slate-900 dark:text-white">{t('server.health_title')}</h3>
-            <p className="text-[11px] text-dim">{t('server.health_desc')}</p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div>
-              <label className="text-subtle font-medium block mb-1">{t('server.ping_interval')}</label>
-              <input
-                type="text"
-                value={dpdDelay}
-                onChange={(e) => setDpdDelay(e.target.value)}
-                className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
-              />
-              <span className="text-[10px] text-dim block mt-0.5">{t('server.ping_interval_hint')}</span>
-            </div>
-
-            <div>
-              <label className="text-subtle font-medium block mb-1">{t('server.timeout')}</label>
-              <input
-                type="text"
-                value={dpdTimeout}
-                onChange={(e) => setDpdTimeout(e.target.value)}
-                className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
-              />
-              <span className="text-[10px] text-dim block mt-0.5">{t('server.timeout_hint')}</span>
-            </div>
-
-            <div>
-              <label className="text-subtle font-medium block mb-1">{t('server.offline_action')}</label>
-              <select
-                value={dpdAction}
-                onChange={(e) => setDpdAction(e.target.value)}
-                className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
-              >
-                <option value="clear">{t('server.action_release')}</option>
-                <option value="trap">{t('server.action_hold')}</option>
-                <option value="restart">{t('server.action_retry')}</option>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="block md:col-span-2">
+              <span className={labelClass}>VPN display name</span>
+              <input className={inputClass} value={form.vpn_name} maxLength={128}
+                onChange={e => setForm(s => ({ ...s, vpn_name: e.target.value }))} placeholder="Company VPN" />
+              <span className="text-[11px] text-dim">Used in newly exported client profiles. Installed profiles are not renamed.</span>
+            </label>
+            <label>
+              <span className={labelClass}>VPN server address (IP or hostname)</span>
+              <input className={inputClass} value={form.server_endpoint}
+                onChange={e => setForm(s => ({ ...s, server_endpoint: e.target.value }))} placeholder="vpn.example.com" />
+            </label>
+            <label>
+              <span className={labelClass}>Server certificate identity</span>
+              <input className={inputClass} value={form.server_identity}
+                onChange={e => setForm(s => ({ ...s, server_identity: e.target.value }))} placeholder="vpn.example.com" />
+              <span className="text-[11px] text-dim">Must match the certificate SAN, even when connecting by IP.</span>
+            </label>
+            <label>
+              <span className={labelClass}>Cryptography preset</span>
+              <select className={inputClass} value={form.cipher_preset}
+                onChange={e => setForm(s => ({ ...s, cipher_preset: e.target.value }))}>
+                <option value="balanced">Balanced</option>
+                <option value="modern">Modern</option>
+                <option value="custom">Custom (edit proposals in Advanced)</option>
               </select>
-              <span className="text-[10px] text-dim block mt-0.5">{t('server.offline_action_hint')}</span>
+            </label>
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-xs">
+                <input type="checkbox" checked={form.mobike_enabled}
+                  onChange={e => setForm(s => ({ ...s, mobike_enabled: e.target.checked }))} />
+                Enable MOBIKE (network roaming)
+              </label>
+              <label className="flex items-center gap-2 text-xs">
+                <input type="checkbox" checked={form.force_encap_natt}
+                  onChange={e => setForm(s => ({ ...s, force_encap_natt: e.target.checked }))} />
+                Force UDP encapsulation (NAT-T)
+              </label>
             </div>
           </div>
-        </div>
+          <button type="button" disabled={save.isPending || !form.server_endpoint.trim() || !form.server_identity.trim() || !form.vpn_name.trim()}
+            onClick={submitBasic} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+            <span className="inline-flex items-center gap-2"><Check className="h-4 w-4" />{save.isPending ? 'Applying…' : 'Save settings'}</span>
+          </button>
+        </section>
+      )}
 
-        {/* CARD 4: GATEWAY ENDPOINT & MTU TUNING */}
-        <div className="border subtle-border rounded-xl p-4 surface-card space-y-3.5 shadow-xs">
-          <div className="border-b subtle-border pb-2">
-            <h3 className="font-semibold text-xs text-slate-900 dark:text-white">{t('server.endpoint_title')}</h3>
-            <p className="text-[11px] text-dim">{t('server.endpoint_desc')}</p>
+      {tab === 'advanced' && settings.data && (
+        <section className="surface-card border subtle-border rounded-xl p-5 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold flex items-center gap-2"><Code2 className="h-4 w-4" />Advanced strongSwan configuration</h2>
+            <p className="text-xs text-dim mt-1">
+              Edit the full gateway settings JSON. Add extra VICI options to <code>advanced_connection</code> or <code>advanced_child</code>.
+              Authentication, peer identity, address pools and traffic selectors are controlled by SwanPanel and cannot be overridden.
+            </p>
           </div>
+          <textarea aria-label="Advanced gateway JSON configuration" spellCheck={false} value={advancedText}
+            onChange={e => setAdvancedText(e.target.value)} rows={22}
+            className="w-full font-mono text-xs leading-5 rounded-lg border subtle-border surface-input p-4 focus:outline-none focus:border-blue-500" />
+          {advanced.error
+            ? <p role="alert" className="text-xs text-red-500">{advanced.error}</p>
+            : <p role="status" className="text-xs text-emerald-500">Valid JSON</p>}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => { if (advanced.value) setAdvancedText(JSON.stringify(advanced.value, null, 2)); }}
+              disabled={!advanced.value} className="border subtle-border rounded-lg px-3 py-2 text-xs disabled:opacity-50">Format JSON</button>
+            <button type="button" onClick={() => {
+              const { id: _id, updated_at: _updated, dpd_timeout: _unsupported, ...editable } = settings.data!;
+              setAdvancedText(JSON.stringify({
+                ...editable, advanced_connection: settings.data!.advanced_connection || {},
+                advanced_child: settings.data!.advanced_child || {},
+              }, null, 2));
+            }} className="border subtle-border rounded-lg px-3 py-2 text-xs inline-flex gap-2 items-center">
+              <RotateCcw className="h-3.5 w-3.5" />Reset to saved
+            </button>
+            <button type="button" disabled={save.isPending || !advanced.value}
+              onClick={() => {
+                if (!advanced.value) return;
+                const value = advanced.value;
+                requestConfirmation({
+                  title: t('confirm.apply_advanced_title'),
+                  description: t('confirm.apply_advanced_description'),
+                  confirmLabel: t('common.save_changes'),
+                  tone: 'warning',
+                  onConfirm: () => save.mutateAsync(value),
+                });
+              }}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+              {save.isPending ? 'Applying…' : 'Validate & apply JSON'}
+            </button>
+          </div>
+          <p className="text-[11px] text-dim">Unknown top-level fields are rejected by the server. Invalid or unsupported VICI options fail reconciliation and will not be shown as applied.</p>
+        </section>
+      )}
 
-          <div className="space-y-3 text-xs">
-            <div>
-              <label className="text-subtle font-medium block mb-1">{t('server.public_hostname')}</label>
-              <input
-                type="text"
-                value={serverFqdn}
-                onChange={(e) => setServerFqdn(e.target.value)}
-                className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
-              />
-              <span className="text-[11px] text-dim block mt-0.5">{t('server.public_hostname_hint')}</span>
-            </div>
-
-            <div>
-              <label className="text-subtle font-medium block mb-1" htmlFor="gateway-identity">{t('server.gateway_identity')}</label>
-              <input
-                id="gateway-identity"
-                type="text"
-                value={serverIdentity}
-                onChange={(e) => setServerIdentity(e.target.value)}
-                required
-                placeholder="vpn.company.com"
-                className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
-              />
-              <span className="text-[11px] text-dim block mt-0.5">{t('server.gateway_identity_hint')}</span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="w-1/2">
-                <label className="text-subtle font-medium block mb-1">{t('server.mss_clamping')}</label>
-                <input
-                  type="number"
-                  value={mssClamping}
-                  onChange={(e) => setMssClamping(Number(e.target.value))}
-                  className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
-                />
+      {tab === 'ca' && (
+        <section className="surface-card border subtle-border rounded-xl p-5 space-y-4 max-w-3xl">
+          <div>
+            <h2 className="font-semibold text-sm">VPN Root Certificate Authority</h2>
+            <p className="text-xs text-dim mt-1">Values embedded in the signed Root CA certificate, not merely UI labels. A CA subject cannot be edited in place.</p>
+          </div>
+          {ca.isLoading && <p className="text-xs">Loading certificate identity…</p>}
+          {ca.isError && <p role="alert" className="text-red-500 text-xs">Unable to load CA information.</p>}
+          {ca.data && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {([
+                  ['common_name', 'CA common name'],
+                  ['organization', 'Organization'],
+                  ['country', 'Country (2 letters)'],
+                  ['province', 'Province / state'],
+                  ['locality', 'City / locality'],
+                ] as const).map(([field, title]) => (
+                  <label key={field}>
+                    <span className={labelClass}>{title}</span>
+                    <input className={inputClass} value={caForm[field]} disabled={!ca.data.can_rotate}
+                      onChange={e => setCAForm(s => ({ ...s, [field]: e.target.value }))} />
+                  </label>
+                ))}
               </div>
-              <div className="w-1/2 text-[11px] text-dim pt-4">{t('server.mss_clamping_hint')}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* CARD 5: ENCRYPTION & COMPATIBILITY */}
-      <div className="border subtle-border rounded-xl p-4 surface-card space-y-3.5 shadow-xs text-xs">
-        <div className="border-b subtle-border pb-2">
-          <h3 className="font-semibold text-xs text-slate-900 dark:text-white">{t('server.ciphers_title')}</h3>
-          <p className="text-[11px] text-dim">{t('server.ciphers_desc')}</p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <label
-            onClick={() => handlePresetChange('modern')}
-            className={`flex flex-col p-3 border rounded-lg cursor-pointer transition-colors ${
-              cipherPreset === 'modern'
-                ? 'border-2 border-emerald-600 bg-emerald-600/5'
-                : 'subtle-border surface-header hover:border-blue-500/50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-xs text-slate-900 dark:text-white">{t('server.preset_modern')}</span>
-              <input type="radio" checked={cipherPreset === 'modern'} readOnly />
-            </div>
-            <span className="text-[11px] text-subtle mt-1">{t('server.preset_modern_desc')}</span>
-          </label>
-
-          <label
-            onClick={() => handlePresetChange('balanced')}
-            className={`flex flex-col p-3 border rounded-lg cursor-pointer transition-colors ${
-              cipherPreset === 'balanced'
-                ? 'border-2 border-blue-600 bg-blue-600/5'
-                : 'subtle-border surface-header hover:border-blue-500/50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-xs text-blue-400">{t('server.preset_balanced')}</span>
-              <input type="radio" checked={cipherPreset === 'balanced'} readOnly />
-            </div>
-            <span className="text-[11px] text-subtle mt-1">{t('server.preset_balanced_desc')}</span>
-          </label>
-
-          <label
-            onClick={() => handlePresetChange('custom')}
-            className={`flex flex-col p-3 border rounded-lg cursor-pointer transition-colors ${
-              cipherPreset === 'custom'
-                ? 'border-2 border-amber-500 bg-amber-500/5'
-                : 'subtle-border surface-header hover:border-blue-500/50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-xs text-slate-900 dark:text-white">{t('server.preset_custom')}</span>
-              <input type="radio" checked={cipherPreset === 'custom'} readOnly />
-            </div>
-            <span className="text-[11px] text-subtle mt-1">{t('server.preset_custom_desc')}</span>
-          </label>
-        </div>
-
-        <div className="space-y-2 pt-2 border-t subtle-border font-mono text-xs">
-          <div>
-            <label className="text-subtle text-[11px] font-sans block mb-0.5">
-              {t('server.key_exchange_ciphers')}
-            </label>
-            <input
-              type="text"
-              value={ikeProposals}
-              onChange={(e) => setIkeProposals(e.target.value)}
-              className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs text-subtle focus:outline-none focus:text-white"
-            />
-          </div>
-          <div>
-            <label className="text-subtle text-[11px] font-sans block mb-0.5">
-              {t('server.data_encryption_ciphers')}
-            </label>
-            <input
-              type="text"
-              value={espProposals}
-              onChange={(e) => setEspProposals(e.target.value)}
-              className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs text-subtle focus:outline-none focus:text-white"
-            />
-          </div>
-        </div>
-      </div>
+              <p className="text-[11px] text-dim break-all">
+                Certificate serial: {ca.data.ca.serial} · Expires: {new Date(ca.data.ca.not_after).toLocaleDateString()}
+              </p>
+              {ca.data.can_rotate ? (
+                <div className="border border-amber-500/40 rounded-lg p-3 space-y-3">
+                  <p className="text-xs text-amber-500">
+                    Issuing a new Root CA invalidates trust in the previous CA. This is only permitted before the first device enrollment.
+                    Old CA material is retained as a backup.
+                  </p>
+                  <label className="block">
+                    <span className={labelClass}>Type ROTATE CA to confirm</span>
+                    <input className={inputClass} value={confirmation} onChange={e => setConfirmation(e.target.value)} />
+                  </label>
+                  <button type="button" disabled={confirmation !== 'ROTATE CA' || rotate.isPending}
+                    onClick={() => requestConfirmation({
+                      title: t('confirm.rotate_ca_title'),
+                      description: t('confirm.rotate_ca_description', { name: caForm.common_name }),
+                      confirmLabel: 'Issue new Root CA',
+                      onConfirm: () => rotate.mutateAsync(),
+                    })} className="rounded-lg border border-red-500 text-red-500 px-4 py-2 text-xs font-medium disabled:opacity-50">
+                    {rotate.isPending ? 'Rotating…' : 'Issue new Root CA'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-dim border subtle-border p-3 rounded-lg">
+                  CA identity is locked because device or revocation records exist. A separate, explicitly planned CA migration is required.
+                </p>
+              )}
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 };

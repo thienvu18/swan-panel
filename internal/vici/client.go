@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/strongswan/govici/vici"
@@ -26,22 +28,26 @@ type SessionInfo struct {
 
 // ConnectionConfig defines parameters for dynamic strongSwan IKEv2 connection loading
 type ConnectionConfig struct {
-	Name           string   `json:"name"`
-	ServerIdentity string   `json:"server_identity"`
-	ReauthTime     string   `json:"reauth_time"`
-	RekeyTimeIKE   string   `json:"rekey_time_ike"`
-	RekeyTimeChild string   `json:"rekey_time_child"`
-	MobikeEnabled  bool     `json:"mobike_enabled"`
-	ForceEncapNATT bool     `json:"force_encap_natt"`
-	DPDDelay       string   `json:"dpd_delay"`
-	DPDTimeout     string   `json:"dpd_timeout"`
-	IKEProposals   string   `json:"ike_proposals"`
-	ESPProposals   string   `json:"esp_proposals"`
-	Pools          []string `json:"pools"`
-	RemoteIdentity string   `json:"remote_identity"`
-	RemoteTS       []string `json:"remote_ts"`
-	LocalTS        []string `json:"local_ts"`
-	DPDAction      string   `json:"dpd_action"`
+	Name               string   `json:"name"`
+	ServerIdentity     string   `json:"server_identity"`
+	ReauthTime         string   `json:"reauth_time"`
+	RekeyTimeIKE       string   `json:"rekey_time_ike"`
+	RekeyTimeChild     string   `json:"rekey_time_child"`
+	MobikeEnabled      bool     `json:"mobike_enabled"`
+	ForceEncapNATT     bool     `json:"force_encap_natt"`
+	DPDDelay           string   `json:"dpd_delay"`
+	DPDTimeout         string   `json:"dpd_timeout"`
+	IKEProposals       string   `json:"ike_proposals"`
+	ESPProposals       string   `json:"esp_proposals"`
+	Pools              []string `json:"pools"`
+	RemoteIdentity     string   `json:"remote_identity"`
+	RemoteTS           []string `json:"remote_ts"`
+	LocalTS            []string `json:"local_ts"`
+	DPDAction          string   `json:"dpd_action"`
+	Fragmentation      string
+	InactivityTimeout  string
+	AdvancedConnection map[string]any
+	AdvancedChild      map[string]any
 }
 
 // DaemonStats represents live charon daemon runtime statistics
@@ -53,6 +59,9 @@ type DaemonStats struct {
 	Uptime    string `json:"uptime"`
 	Workers   int    `json:"workers"`
 	ActiveSAs int    `json:"active_sas"`
+	// Populated by the API: an external host daemon cannot be controlled
+	// safely through the container's local ipsec/systemctl binaries.
+	ControlSupported bool `json:"control_supported"`
 }
 
 // Client wraps govici.Session with thread-safe auto-reconnect and robust VICI command handling
@@ -65,6 +74,7 @@ type Client struct {
 // DefaultClient is the package singleton client
 var DefaultClient *Client
 var once sync.Once
+var readProcStatus = os.ReadFile
 
 // GetClient initializes or returns the global VICI client
 func GetClient(socketPath string) *Client {
@@ -159,9 +169,45 @@ func (c *Client) Reconnect() error {
 
 // IsConnected returns whether the client is currently connected to a live charon daemon
 func (c *Client) IsConnected() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return c.CheckHealth(ctx) == nil
+}
+
+// CheckHealth uses a live VICI command; a cached socket is not proof of health.
+func (c *Client) CheckHealth(ctx context.Context) error {
+	session, err := c.getSession()
+	if err != nil {
+		return err
+	}
+	resp, err := session.Call(ctx, "stats", vici.NewMessage())
+	if err != nil {
+		c.invalidateSession()
+		return fmt.Errorf("VICI health check failed: %w", err)
+	}
+	if resp == nil {
+		return fmt.Errorf("empty VICI health response")
+	}
+	return nil
+}
+
+// DaemonBootID tracks the UNIX socket inode that changes when charon restarts,
+// even if the desired database configuration has not changed.
+func (c *Client) DaemonBootID(ctx context.Context) (string, error) {
+	if err := c.CheckHealth(ctx); err != nil {
+		return "", err
+	}
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.session != nil
+	path := c.socketPath
+	c.mu.RUnlock()
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		return fmt.Sprintf("%d-%d", stat.Ino, info.ModTime().UnixNano()), nil
+	}
+	return fmt.Sprintf("%d-%d", info.Size(), info.ModTime().UnixNano()), nil
 }
 
 // ListSAs queries active IKE and CHILD SAs
@@ -303,6 +349,30 @@ func (c *Client) LoadConnectionConfig(ctx context.Context, cfg ConnectionConfig)
 		_ = connMsg.Set("dpd_delay", cfg.DPDDelay)
 	}
 
+	if cfg.Fragmentation != "" {
+		if err := connMsg.Set("fragmentation", cfg.Fragmentation); err != nil {
+			return err
+		}
+	}
+	for key, value := range cfg.AdvancedConnection {
+		switch v := value.(type) {
+		case bool:
+			if v {
+				value = "yes"
+			} else {
+				value = "no"
+			}
+		case []any:
+			items := make([]string, 0, len(v))
+			for _, s := range v {
+				items = append(items, s.(string))
+			}
+			value = items
+		}
+		if err := connMsg.Set(key, value); err != nil {
+			return fmt.Errorf("advanced connection option %s: %w", key, err)
+		}
+	}
 	// Proposals: govici encodes []string as a VICI LIST
 	if cfg.IKEProposals != "" {
 		var ikeProps []string
@@ -323,6 +393,9 @@ func (c *Client) LoadConnectionConfig(ctx context.Context, cfg ConnectionConfig)
 		pools = []string{"swanpanel-pool"}
 	}
 	_ = connMsg.Set("pools", pools)
+
+	// Ensure gateway unconditionally sends certificate payloads so iOS/macOS native clients authenticate
+	_ = connMsg.Set("send_cert", "always")
 
 	// Local authentication round
 	localMsg := vici.NewMessage()
@@ -367,6 +440,30 @@ func (c *Client) LoadConnectionConfig(ctx context.Context, cfg ConnectionConfig)
 		}
 		if len(espProps) > 0 {
 			_ = childMsg.Set("esp_proposals", espProps)
+		}
+	}
+	if cfg.InactivityTimeout != "" {
+		if err := childMsg.Set("inactivity", cfg.InactivityTimeout); err != nil {
+			return err
+		}
+	}
+	for key, value := range cfg.AdvancedChild {
+		switch v := value.(type) {
+		case bool:
+			if v {
+				value = "yes"
+			} else {
+				value = "no"
+			}
+		case []any:
+			items := make([]string, 0, len(v))
+			for _, s := range v {
+				items = append(items, s.(string))
+			}
+			value = items
+		}
+		if err := childMsg.Set(key, value); err != nil {
+			return fmt.Errorf("advanced child option %s: %w", key, err)
 		}
 	}
 	if cfg.RekeyTimeChild != "" {
@@ -434,14 +531,22 @@ func (c *Client) LoadConnection(ctx context.Context, connName string, params map
 
 // LoadPool dynamically configures an IP address pool in strongSwan RAM via VICI load-pool
 func (c *Client) LoadPool(ctx context.Context, poolName, cidr string) error {
+	return c.LoadPoolWithDNS(ctx, poolName, cidr, nil)
+}
+
+// LoadPoolWithDNS dynamically configures an IP address pool and DNS server attributes in strongSwan RAM via VICI load-pool
+func (c *Client) LoadPoolWithDNS(ctx context.Context, poolName, cidr string, dnsServers []string) error {
 	session, err := c.getSession()
 	if err != nil {
 		return err
 	}
 
-	slog.Info("Loading IP pool into strongSwan RAM via VICI", "pool", poolName, "cidr", cidr)
+	slog.Info("Loading IP pool into strongSwan RAM via VICI", "pool", poolName, "cidr", cidr, "dns", dnsServers)
 	subMsg := vici.NewMessage()
 	_ = subMsg.Set("addrs", cidr)
+	if len(dnsServers) > 0 {
+		_ = subMsg.Set("dns", dnsServers)
+	}
 	rootMsg := vici.NewMessage()
 	_ = rootMsg.Set(poolName, subMsg)
 
@@ -453,11 +558,64 @@ func (c *Client) LoadPool(ctx context.Context, poolName, cidr string) error {
 	}
 
 	if success := resp.Get("success"); success != nil && success.(string) == "yes" {
-		slog.Info("IP Pool loaded into strongSwan RAM successfully", "pool", poolName, "cidr", cidr)
+		slog.Info("IP Pool loaded into strongSwan RAM successfully", "pool", poolName, "cidr", cidr, "dns", dnsServers)
 		return nil
 	}
 
 	return fmt.Errorf("VICI load-pool rejected: %v", resp.Get("errmsg"))
+}
+
+// ListManagedPools only reports pools using SwanPanel's reserved device prefix.
+// It never considers pools created by another strongSwan operator.
+func (c *Client) ListManagedPools(ctx context.Context) ([]string, error) {
+	session, err := c.getSession()
+	if err != nil {
+		return nil, err
+	}
+	response, err := session.Call(ctx, "get-pools", vici.NewMessage())
+	if err != nil {
+		c.invalidateSession()
+		return nil, fmt.Errorf("list strongSwan pools: %w", err)
+	}
+	if response == nil {
+		return nil, fmt.Errorf("empty VICI pool listing")
+	}
+	if response.Get("success") == "no" {
+		return nil, fmt.Errorf("VICI get-pools rejected: %v", response.Get("errmsg"))
+	}
+	var names []string
+	for _, name := range response.Keys() {
+		if strings.HasPrefix(name, "swanpanel-vip-") {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// UnloadPool is safe for live clients: charon rejects removal of a pool with
+// an online lease. Callers should defer cleanup until clients disconnect.
+func (c *Client) UnloadPool(ctx context.Context, name string) error {
+	if !strings.HasPrefix(name, "swanpanel-vip-") {
+		return fmt.Errorf("refusing to unload unmanaged pool")
+	}
+	session, err := c.getSession()
+	if err != nil {
+		return err
+	}
+	request := vici.NewMessage()
+	if err := request.Set("name", name); err != nil {
+		return err
+	}
+	response, err := session.Call(ctx, "unload-pool", request)
+	if err != nil {
+		c.invalidateSession()
+		return fmt.Errorf("VICI unload-pool %s: %w", name, err)
+	}
+	if response == nil || response.Get("success") != "yes" {
+		return fmt.Errorf("VICI unload-pool %s: %v", name, response)
+	}
+	return nil
 }
 
 // GetDaemonStats returns live charon runtime metrics via VICI stats and Linux /proc
@@ -472,12 +630,16 @@ func (c *Client) GetDaemonStats(ctx context.Context) (*DaemonStats, error) {
 
 	// 1. Read PID from strongSwan pidfiles
 	pidPaths := []string{
+		os.Getenv("SWANPANEL_CHARON_PID_FILE"),
 		"/run/charon.pid",
 		"/var/run/charon.pid",
 		"/var/run/starter.charon.pid",
 		"/run/starter.charon.pid",
 	}
 	for _, p := range pidPaths {
+		if p == "" {
+			continue
+		}
 		if data, err := os.ReadFile(p); err == nil {
 			trimmed := strings.TrimSpace(string(data))
 			if pid, err := strconv.Atoi(trimmed); err == nil && pid > 0 {
@@ -489,9 +651,16 @@ func (c *Client) GetDaemonStats(ctx context.Context) (*DaemonStats, error) {
 
 	// 2. Query VICI stats command
 	session, err := c.getSession()
-	if err == nil && session != nil {
+	if err != nil {
+		return stats, err
+	}
+	if session != nil {
 		req := vici.NewMessage()
 		resp, err := session.Call(ctx, "stats", req)
+		if err != nil {
+			c.invalidateSession()
+			return stats, fmt.Errorf("VICI stats: %w", err)
+		}
 		if err == nil && resp != nil {
 			stats.Status = "active"
 
@@ -532,7 +701,7 @@ func (c *Client) GetDaemonStats(ctx context.Context) (*DaemonStats, error) {
 	// 3. Read memory usage from Linux /proc/<pid>/status
 	if stats.PID > 0 {
 		statusFile := fmt.Sprintf("/proc/%d/status", stats.PID)
-		if data, err := os.ReadFile(statusFile); err == nil {
+		if data, err := readProcStatus(statusFile); err == nil {
 			for _, line := range strings.Split(string(data), "\n") {
 				if strings.HasPrefix(line, "VmRSS:") {
 					fields := strings.Fields(line)
@@ -570,6 +739,33 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dm %ds", minutes, seconds)
 	}
 	return fmt.Sprintf("%ds", seconds)
+}
+
+// ListManagedConnections discovers every previously loaded SwanPanel peer,
+// including stale connections for devices that have since been soft-deleted.
+func (c *Client) ListManagedConnections(ctx context.Context) ([]string, error) {
+	session, err := c.getSession()
+	if err != nil {
+		return nil, err
+	}
+	known := make(map[string]bool)
+	for msg, streamErr := range session.CallStreaming(ctx, "list-conns", "list-conn", vici.NewMessage()) {
+		if streamErr != nil {
+			c.invalidateSession()
+			return nil, fmt.Errorf("list strongSwan connections: %w", streamErr)
+		}
+		for _, name := range msg.Keys() {
+			if strings.HasPrefix(name, "swanpanel-") {
+				known[name] = true
+			}
+		}
+	}
+	names := make([]string, 0, len(known))
+	for name := range known {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 // UnloadConnection removes an issued device identity from the daemon.

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Info, Plus, Trash2, Search, ShieldAlert, ShieldCheck, Filter, X } from 'lucide-react';
 import { Modal } from '../components/Modal';
+import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
 
@@ -22,12 +23,13 @@ export const AccessRulesPage: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const { requestConfirmation, confirmationDialog } = useConfirmAction();
   const [searchQuery, setSearchQuery] = useState('');
   const [actionFilter, setActionFilter] = useState<'all' | 'ALLOW' | 'DENY'>('all');
 
   // Form states
-  const [subjectType, setSubjectType] = useState<'user_group' | 'user'>('user_group');
-  const [subjectName, setSubjectName] = useState('');
+  const [subjectType, setSubjectType] = useState<'user_group' | 'user' | 'device'>('user_group');
+  const [subjectID, setSubjectID] = useState('');
   const [action, setAction] = useState<'ALLOW' | 'DENY'>('ALLOW');
   const [targetType, setTargetType] = useState<'resource_group' | 'cidr_ip'>('resource_group');
   const [targetValue, setTargetValue] = useState('');
@@ -44,6 +46,57 @@ export const AccessRulesPage: React.FC = () => {
   });
 
   const rules = data?.access_rules || [];
+  const groupsQuery = useQuery<{ user_groups: { id: string; name: string }[] }>({
+    queryKey: ['user_groups'],
+    queryFn: async () => {
+      const response = await fetch('/api/user-groups', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      if (!response.ok) throw new Error('Failed to load groups');
+      return response.json();
+    },
+  });
+  const usersQuery = useQuery<{ users: { id: string; name: string; email: string; status: string }[] }>({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const response = await fetch('/api/users', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      if (!response.ok) throw new Error('Failed to load users');
+      return response.json();
+    },
+  });
+  const devicesQuery = useQuery<{ devices: { id: string; hostname: string; is_revoked: boolean }[] }>({
+    queryKey: ['devices'],
+    queryFn: async () => {
+      const response = await fetch('/api/devices', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      if (!response.ok) throw new Error('Failed to load devices');
+      return response.json();
+    },
+  });
+  const targetsQuery = useQuery<{ resource_groups: { id: string; name: string; cidr_block: string }[] }>({
+    queryKey: ['resource_groups'],
+    queryFn: async () => {
+      const response = await fetch('/api/resource-groups', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      if (!response.ok) throw new Error('Failed to load resource groups');
+      return response.json();
+    },
+  });
+  const availableSubjects = subjectType === 'user_group'
+    ? (groupsQuery.data?.user_groups || []).map(group => ({ id: group.id, label: group.name }))
+    : subjectType === 'user'
+      ? (usersQuery.data?.users || []).filter(user => user.status === 'ACTIVE')
+        .map(user => ({ id: user.id, label: `${user.name} (${user.email})` }))
+      : (devicesQuery.data?.devices || []).filter(device => !device.is_revoked)
+        .map(device => ({ id: device.id, label: device.hostname }));
+  const selectedSubjectLabel = availableSubjects.find(subject => subject.id === subjectID)?.label || subjectID;
+  const selectedTargetLabel = targetType === 'resource_group'
+    ? targetsQuery.data?.resource_groups?.find(group => group.id === targetValue)?.name || targetValue
+    : targetValue;
 
   const createRuleMutation = useMutation({
     mutationFn: async () => {
@@ -55,7 +108,7 @@ export const AccessRulesPage: React.FC = () => {
         },
         body: JSON.stringify({
           subject_type: subjectType,
-          subject_id: subjectName,
+          subject_id: subjectID,
           action,
           target_type: targetType,
           target_value: targetValue,
@@ -71,7 +124,7 @@ export const AccessRulesPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['access_rules'] });
       setIsAddOpen(false);
       createRuleMutation.reset();
-      setSubjectName('');
+      setSubjectID('');
       setTargetValue('');
     },
   });
@@ -263,7 +316,12 @@ export const AccessRulesPage: React.FC = () => {
                       <td className="py-2.5 px-3.5 text-right font-sans">
                         <button
                           type="button"
-                          onClick={() => deleteRuleMutation.mutate(r.id)}
+                          onClick={() => requestConfirmation({
+                            title: t('confirm.delete_rule_title'),
+                            description: t('confirm.delete_rule_description', { action: r.action, subject: r.subject_name, target: r.target_name || r.target_value }),
+                            confirmLabel: t('common.delete'),
+                            onConfirm: () => deleteRuleMutation.mutateAsync(r.id),
+                          })}
                           className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors"
                           title={t('common.delete')}
                         >
@@ -291,36 +349,45 @@ export const AccessRulesPage: React.FC = () => {
       >
         <div className="space-y-3 text-xs">
           <div>
-            <label className="text-subtle block mb-1">Subject Type</label>
-            <div className="grid grid-cols-2 gap-2">
+            <label className="text-subtle block mb-1">{t('access.subject_type')}</label>
+            <div className="grid grid-cols-3 gap-2">
               <label
-                onClick={() => setSubjectType('user_group')}
+                onClick={() => { setSubjectType('user_group'); setSubjectID(''); }}
                 className={`p-2 border rounded-lg cursor-pointer text-center font-medium ${
                   subjectType === 'user_group' ? 'border-blue-500 bg-blue-600/10 text-white' : 'subtle-border surface-header text-subtle'
                 }`}
               >
-                User Group
+                {t('access.subject_group')}
               </label>
               <label
-                onClick={() => setSubjectType('user')}
+                onClick={() => { setSubjectType('user'); setSubjectID(''); }}
                 className={`p-2 border rounded-lg cursor-pointer text-center font-medium ${
                   subjectType === 'user' ? 'border-blue-500 bg-blue-600/10 text-white' : 'subtle-border surface-header text-subtle'
                 }`}
               >
-                Specific User
+                {t('access.subject_user')}
+              </label>
+              <label onClick={() => { setSubjectType('device'); setSubjectID(''); }}
+                className={`p-2 border rounded-lg cursor-pointer text-center font-medium ${
+                  subjectType === 'device' ? 'border-blue-500 bg-blue-600/10 text-white' : 'subtle-border surface-header text-subtle'
+                }`}>
+                {t('access.subject_device')}
               </label>
             </div>
           </div>
 
           <div>
-            <label className="text-subtle block mb-1">Subject Identifier (Group Name or User Email)</label>
-            <input
-              type="text"
-              value={subjectName}
-              onChange={(e) => setSubjectName(e.target.value)}
-              placeholder="e.g. DevOps or nam@company.com"
-              className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-            />
+            <label className="text-subtle block mb-1">{t('access.select_subject')}</label>
+            <select value={subjectID} onChange={event => setSubjectID(event.target.value)}
+              className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500">
+              <option value="">{t('access.select_subject_placeholder')}</option>
+              {availableSubjects.map(subject => (
+                <option key={subject.id} value={subject.id}>{subject.label}</option>
+              ))}
+            </select>
+            {(groupsQuery.isError || usersQuery.isError || devicesQuery.isError) && <p role="alert" className="text-rose-500">
+              {t('access.load_choices_error')}
+            </p>}
           </div>
 
           <div>
@@ -346,33 +413,47 @@ export const AccessRulesPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="text-subtle block mb-1">Destination Target Type</label>
+            <label className="text-subtle block mb-1">{t('access.destination_type')}</label>
             <select
               value={targetType}
-              onChange={(e) => setTargetType(e.target.value as any)}
+              onChange={(e) => { setTargetType(e.target.value as 'resource_group' | 'cidr_ip'); setTargetValue(''); }}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
             >
-              <option value="resource_group">Resource Group / Subnet</option>
-              <option value="cidr_ip">Specific IP or CIDR (e.g. 10.50.99.0/24)</option>
+              <option value="resource_group">{t('access.destination_group')}</option>
+              <option value="cidr_ip">{t('access.destination_cidr')}</option>
             </select>
           </div>
 
           <div>
             <label className="text-subtle block mb-1">{t('access.target')}</label>
-            <input
-              type="text"
-              value={targetValue}
-              onChange={(e) => setTargetValue(e.target.value)}
-              placeholder="e.g. Production VPC or 10.100.1.5/32"
-              className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
-            />
+            {targetType === 'resource_group' ? (
+              <select value={targetValue} onChange={event => setTargetValue(event.target.value)}
+                className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500">
+                <option value="">{t('access.select_target_placeholder')}</option>
+                {(targetsQuery.data?.resource_groups || []).map(group => (
+                  <option key={group.id} value={group.id}>{group.name} ({group.cidr_block})</option>
+                ))}
+              </select>
+            ) : (
+              <input type="text" value={targetValue} onChange={event => setTargetValue(event.target.value)}
+                placeholder="10.100.1.5/32" className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500" />
+            )}
+            {targetsQuery.isError && targetType === 'resource_group' && (
+              <p role="alert" className="text-rose-500">{t('access.load_choices_error')}</p>
+            )}
           </div>
         </div>
 
         <div className="flex gap-2 pt-2 border-t subtle-border">
           <button
-            onClick={() => createRuleMutation.mutate()}
-            disabled={!subjectName || !targetValue || createRuleMutation.isPending}
+            onClick={() => requestConfirmation({
+              title: t('confirm.create_rule_title'),
+              description: t('confirm.create_rule_description', { action, subject: selectedSubjectLabel, target: selectedTargetLabel }),
+              confirmLabel: t('access.add_rule'),
+              tone: action === 'DENY' ? 'danger' : 'warning',
+              onConfirm: () => createRuleMutation.mutateAsync(),
+            })}
+            disabled={!subjectID || !targetValue || createRuleMutation.isPending}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
             {createRuleMutation.isPending ? 'Saving...' : t('common.save')}
@@ -388,6 +469,7 @@ export const AccessRulesPage: React.FC = () => {
           </button>
         </div>
       </Modal>
+      {confirmationDialog}
     </div>
   );
 };

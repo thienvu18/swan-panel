@@ -3,7 +3,9 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -16,8 +18,9 @@ type ipLimiter struct {
 }
 
 var (
-	limiters = make(map[string]*ipLimiter)
-	mu       sync.Mutex
+	limiters  = make(map[string]*ipLimiter)
+	nextScope atomic.Uint64
+	mu        sync.Mutex
 )
 
 func init() {
@@ -43,16 +46,20 @@ func init() {
 
 // RateLimit creates a token-bucket rate limiter middleware per client IP
 func RateLimit(r rate.Limit, b int) gin.HandlerFunc {
+	// Each middleware has its own policy and burst. Sharing a single bucket by
+	// IP would let the global API limiter override the stricter login limiter.
+	scope := strconv.FormatUint(nextScope.Add(1), 10)
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
+		key := scope + ":" + ip
 
 		mu.Lock()
-		entry, exists := limiters[ip]
+		entry, exists := limiters[key]
 		if !exists {
 			entry = &ipLimiter{
 				limiter: rate.NewLimiter(r, b),
 			}
-			limiters[ip] = entry
+			limiters[key] = entry
 			slog.Debug("New rate limiter instance initialized for client IP", "ip", ip)
 		}
 		entry.lastSeen = time.Now()
