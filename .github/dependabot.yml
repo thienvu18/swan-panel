@@ -1,13 +1,20 @@
 version: 2
+
+multi-ecosystem-groups:
+  all-dependencies:
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "09:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    target-branch: "dev"
+
 updates:
   - package-ecosystem: "gomod"
     directory: "/"
-    schedule:
-      interval: "weekly"
-    groups:
-      go-dependencies:
-        patterns:
-          - "*"
+    patterns:
+      - "*"
+    multi-ecosystem-group: "all-dependencies"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -15,12 +22,9 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/ui"
-    schedule:
-      interval: "weekly"
-    groups:
-      frontend-dependencies:
-        patterns:
-          - "*"
+    patterns:
+      - "*"
+    multi-ecosystem-group: "all-dependencies"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -28,12 +32,9 @@ updates:
 
   - package-ecosystem: "github-actions"
     directory: "/"
-    schedule:
-      interval: "weekly"
-    groups:
-      actions-dependencies:
-        patterns:
-          - "*"
+    patterns:
+      - "*"
+    multi-ecosystem-group: "all-dependencies"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
