@@ -61,6 +61,8 @@ On first startup SwanPanel creates **no default login**. It generates a 256-bit 
 
 Read the token locally on the gateway (for example, `sudo cat /var/lib/swan-panel/swanpanel.db.setup-token`), enter it in the web setup page, and choose the first administrator's name, email and a password of 12–72 bytes. The token is consumed immediately after the administrator is created. Do not paste it into chat, tickets or logs.
 
+![SwanPanel Initial Administrator Setup with One-Time Token](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/01b_setup_token.png)
+
 OIDC is configured separately after initial setup; SSO candidates must be approved by an administrator.
 
 ### 2.3. Language & Theme Customization
@@ -90,6 +92,13 @@ The table displays real-time parameters streamed directly from `charon.vici`:
 * **Remote WAN IP:** Public IP address and NAT traversal UDP port (`172.18.0.3[4500]`).
 * **Cipher Suite:** Active cryptographic parameters negotiated in RAM (e.g. `AES_GCM_16-256 / PRF_HMAC_SHA2_384 / ECP_384`).
 * **Instant Disconnect (Kill-Switch):** Administrators can immediately terminate any suspicious tunnel by clicking the red trash button, sending a VICI `terminate` command without disturbing other tunnels.
+
+### 3.3. Dual View Mode (Admin vs. User View)
+Administrators can toggle between **Admin View** and **User View** via the view selector control at the top right of the dashboard:
+* **Admin View:** Displays global telemetry cards, active tunnel metrics, and system-wide IPsec security associations.
+* **User View:** Provides a self-service client dashboard displaying **My Personal Devices**, allowing authenticated users to view enrolled endpoints, connection status, IP addresses, and directly download native configuration profiles (Apple `.mobileconfig`, Windows PowerShell, Linux NetworkManager, Android).
+
+![SwanPanel Dashboard User View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/02b_dashboard_user_view.png)
 
 ---
 
@@ -134,7 +143,7 @@ SwanPanel treats devices as first-class cryptographic identities.
      * **Dynamic:** Leased automatically on connect via RADIUS/IKEv2 configuration attributes.
      * **Static:** Reserve a fixed VIP within the assigned subnet (e.g. `10.150.0.10`).
    * **Platform:** Select destination OS (`macOS`, `Windows`, `Linux`, `iOS`, `Android`).
-3. Click **Create Device**. SwanPanel's internal PKI generates a 2048-bit RSA key pair, signs the X.509 client certificate, computes its SHA-256 fingerprint, and stores the record securely.
+3. Click **Create Device**. SwanPanel's internal PKI generates a 2048-bit RSA key pair, signs the X.509 client certificate, computes its SHA-256 fingerprint, and stores the record securely. If gateway reconciliation is **pending**, verify the apply status before using the new profile.
 
 ![Modal Add Device](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/06_modal_add_device.png)
 
@@ -148,8 +157,22 @@ SwanPanel treats devices as first-class cryptographic identities.
 If an endpoint is lost, stolen, or decommissioned:
 1. Locate the device row in the table.
 2. Click the red **ShieldAlert** icon in the actions column.
-3. Confirm the prompt: *"Revoke security certificate for <hostname>?"*.
+3. Confirm the prompt in the **ConfirmDialog**: *"Revoke security certificate for <hostname>?"*.
 4. SwanPanel sets `is_revoked = true`, adds the serial to the revocation index, and immediately terminates any active tunnels associated with that certificate.
+
+![SwanPanel Destructive Action Confirmation Dialog](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/20_confirm_dialog.png)
+
+### 5.4. Android Native Setup (App-Free IKEv2 / IPsec RSA)
+For Android endpoints, SwanPanel eliminates the need for third-party APKs or client apps:
+1. Under **Resources** > **Devices**, click the **Set up Android VPN** action on any enrolled Android device.
+2. The **Android Native Setup Dialog** presents four numbered steps:
+   * **Import client certificate:** Download the PKCS#12 `.p12` bundle, import via Android's VPN/app certificate settings, and use the copyable import password (masked until explicitly revealed).
+   * **Create native VPN:** Under Android VPN settings, select `IKEv2/IPsec RSA` and enter the displayed server address, server certificate identity and client identity.
+   * **Import CA if requested:** Some Android versions require a separately installed root CA `.cer`; the client bundle already contains the CA chain.
+   * **Connect and clean up:** Save the VPN entry, connect, then permanently delete the downloaded `.p12` from Downloads/shared storage.
+3. The dialog warns before download: a `.p12` contains a private key. Access credentials only via HTTPS or a trusted private network; never share or screenshot revealed secrets. OEM menus and native VPN support vary by device. No ADB, APK sideloading or third-party VPN app is required.
+
+![SwanPanel Android Native Setup Dialog](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/19_modal_android_setup.png)
 
 ---
 
@@ -173,7 +196,12 @@ SwanPanel implements a **Default-Deny** microsegmentation engine.
    * **Policy Action:** Toggle between `ALLOW` (Emerald) or `DENY` (Rose).
    * **Target Type:** Choose `resource_group` or specific `cidr_ip`.
    * **Target Value:** Enter the destination subnet or CIDR (e.g. `10.150.0.0/24`).
-4. Click **Create Rule**. Changes take effect immediately across all connected client sessions.
+4. Click **Create Rule**. The rule is saved, and SwanPanel attempts to reconcile it with the VPN data plane. If the API reports `pending`, the gateway has **not** confirmed enforcement yet; inspect **Server Settings > Gateway apply status** before relying on the policy.
+
+### 6.3. Effective Access Preview
+The **Effective Access** panel at the top of **Access Rules** allows an administrator to select a non-revoked device, inspect compiled **ALLOW** and **DENY** CIDR selectors, and enter a destination IPv4 address to preview the predicted result. The verdict is shown first with the evaluated destination, **ALLOW/DENY**, matched network, and contributing rule IDs grouped by device/user/group origin. An unmatched destination is **default DENY** and does not claim a matching rule. The precedence is explicit `DENY` before `ALLOW`, followed by default `DENY`.
+
+This is a **configuration-level preview**, not a live network probe. The panel also displays the desired and applied gateway generation state; a pending or failed application means the preview may not match currently enforced policy. Only administrators can access `GET /api/access-rules/effective/:id`.
 
 ![Modal Add Access Rule](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/12_modal_add_rule.png)
 
@@ -257,28 +285,52 @@ Group users logically (e.g. `DevOps Engineers`, `External Auditors`, `Finance Te
 
 ---
 
-## 10. STRONGSWAN ENGINE CONFIGURATION
+## 10. STRONGSWAN ENGINE & SERVER SETTINGS
 
-Fine-tune kernel IPsec parameters and strongSwan daemon runtime settings without ever editing text config files.
+Fine-tune kernel IPsec parameters, strongSwan daemon runtime settings, and manage cryptographic authority without editing configuration files on disk.
 
 ![Server Settings Page](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17_server_settings.png)
 
-### 10.1. Cryptographic Proposal Presets
+### 10.1. Gateway Reconciliation Status Banner
+At the top of Server Settings, a live status banner continuously monitors policy sync between the control plane and the VPN gateway data plane:
+* **Applied (Emerald):** Desired configuration generation matches the applied generation (`desired_generation == applied_generation`). All rules and pools are fully enforced in kernel memory.
+* **Pending / Applying (Amber):** Changes have been saved to SQLite and strongSwan configuration fragments, but runtime synchronization through VICI is in progress or pending.
+* **Failed (Rose):** Daemon reported an error applying configuration. The banner displays the last error and a **Retry Apply** button to trigger immediate reconciliation.
+
+### 10.2. Cryptographic Proposal Presets
 * **Modern (High Security):**
-  * IKE: `aes256gcm16-prfsha384-ecp384`
+  * IKE: `aes256gcm16-prfsha384-ecp384,chacha20poly1305-prfsha256-curve25519`
   * ESP: `aes256gcm16,chacha20poly1305`
 * **Balanced (Recommended):**
   * IKE: `aes256gcm16-prfsha384-ecp384,aes256-sha256-modp2048`
   * ESP: `aes256gcm16,aes128gcm16,chacha20poly1305`
 * **Custom:** Freeform string for specialized hardware accelerators or compliance standards.
 
-### 10.2. Network Roaming & Traversal
+### 10.3. Network Roaming & Traversal
 * **MOBIKE (RFC 4555):** Enabled by default. Clients switching networks (e.g. office Wi-Fi to cellular LTE) seamlessly update their tunnel IP address without dropping active TCP connections or re-authenticating.
 * **Force UDP Encapsulation (NAT-T):** Enforces UDP port 4500 encapsulation for traversing strict carrier-grade NATs.
 * **MTU MSS Clamping:** Automatically clamped to `1360` bytes to eliminate IP fragmentation across lower MTU carrier networks.
 
-### 10.3. Dynamic Zero-Downtime Reload
-When changes are made, click **Save Changes**. SwanPanel renders one managed configuration from the database, writes it atomically to the strongSwan configuration include directory, and applies the same connections immediately through VICI. It updates its dedicated nftables rules in a single transaction without a routine deny-all interruption. Existing tunnels normally stay established during policy edits; a true daemon restart always terminates existing SAs, after which clients reconnect using the persisted configuration.
+### 10.4. Advanced JSON Gateway Configuration
+For complex enterprise environments requiring fine-grained strongSwan parameters beyond standard form controls, switch to the **Advanced JSON** tab:
+* **JSON Syntax Validation:** Built-in live validation displays a real-time status badge indicating whether the payload is valid JSON before submission.
+* **Direct Parameter Control:** Fine-tune advanced strongSwan daemon parameters, custom rekeying margins, dead-peer-detection (DPD) timing, and specialized plugin options.
+* **Editor Controls:** Provides **Format JSON** to re-indent and beautify configurations, along with **Reset** to revert uncommitted edits.
+
+![Advanced JSON Configuration Tab](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17c_server_settings_advanced.png)
+
+### 10.5. Dynamic Zero-Downtime Reload
+When changes are made, click **Save & apply**. SwanPanel renders one managed configuration from the database, writes it atomically to the strongSwan configuration include directory, and attempts to apply the same connections through VICI. The UI shows whether the desired generation was successfully applied or is still pending; a saved configuration does not necessarily mean the gateway is enforcing it yet. It updates its dedicated nftables rules in a single transaction without a routine deny-all interruption. Existing tunnels normally stay established during policy edits; a true daemon restart always terminates existing SAs, after which clients reconnect using the persisted configuration.
+
+### 10.6. Internal Root CA Management & Rotation
+Under the **Certificate Authority (CA)** tab, administrators can inspect and manage the embedded X.509 Root CA:
+* **Subject Parameters:** Common Name (`CN`), Organization (`O`), Country (`C`), State/Province (`ST`), Locality (`L`).
+* **Cryptographic Identity:** Certificate Serial Number, SHA-256 Fingerprint, and Expiration Date (`Not After`).
+* **Safe CA Rotation:** Rotating the Root CA creates a new 4096-bit authority and archives existing private key material to `.backup-*`. Because rotation invalidates existing client trust chains until new profiles are distributed, SwanPanel enforces a multi-step safety confirmation requiring the administrator to explicitly type `"ROTATE CA"` before executing.
+
+![Certificate Authority Management Tab](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17b_server_settings_ca.png)
+
+![CA Rotation Confirmation Dialog](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/21_ca_rotate_confirm.png)
 
 ---
 
@@ -288,10 +340,12 @@ Monitor low-level daemon events and debug client connectivity in real time.
 
 ![System Logs Page](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/18_system_logs.png)
 
-### 11.1. Live charon Socket Stream
-The log terminal receives structured log events directly from the `/var/run/charon.vici` UNIX socket:
-* **Timestamp & Log Level:** `INFO` (blue), `WARN` (amber), `ERROR` (rose).
-* **Subsystem Tags:** `ike` (IKE_SA negotiation), `chd` (CHILD_SA installation), `enc` (crypto engines), `net` (routing).
+### 11.1. SwanPanel Application Log Stream
+The terminal displays SwanPanel's in-memory structured application logs (up to the most recent 1,000 entries), delivered through authenticated HTTP and refreshed on **SSE log notifications**. No browser polling is used. This view is **not** a raw strongSwan/charon journal or a durable audit archive; use the gateway's system journal for full daemon diagnostics.
+* **Timestamp & Severity:** `INFO`, `WARN`, `ERROR`.
+* **Search & Scope:** Filter by the available device/user tags or search text.
+* **Connection State:** The UI distinguishes live SSE connectivity from reconnecting; manually refresh if disconnected.
+* **Pause/Clear:** Pause freezes the current view. Clear hides displayed entries but does not erase server logs.
 
 ### 11.2. Smart Auto-Scroll Control
 * **Auto-Scroll Active:** Terminal automatically scrolls to the bottom as new lines arrive.
@@ -333,15 +387,31 @@ SwanPanel provides 100% parity across both languages and color schemes:
 
 | Feature Route | English Light | English Dark | Vietnamese Light | Vietnamese Dark |
 | :--- | :---: | :---: | :---: | :---: |
-| **Login Screen** | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/01_login_page.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/01_login_page.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/01_login_page.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/01_login_page.png) |
-| **Dashboard** | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/02_dashboard.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/02_dashboard.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/02_dashboard.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/02_dashboard.png) |
-| **Subnets** | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/03_resources_subnets.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/03_resources_subnets.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/03_resources_subnets.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/03_resources_subnets.png) |
-| **Devices** | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/05_resources_devices.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/05_resources_devices.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/05_resources_devices.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/05_resources_devices.png) |
-| **Access Rules** | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/11_access_rules.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/11_access_rules.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/11_access_rules.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/11_access_rules.png) |
-| **DNS Engine** | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/13_dns_engine.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/13_dns_engine.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/13_dns_engine.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/13_dns_engine.png) |
-| **OIDC Providers** | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/15_oidc_providers.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/15_oidc_providers.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/15_oidc_providers.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/15_oidc_providers.png) |
-| **Server Settings** | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/17_server_settings.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17_server_settings.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/17_server_settings.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/17_server_settings.png) |
-| **System Logs** | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/18_system_logs.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/18_system_logs.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/18_system_logs.png) | [View](file://https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/18_system_logs.png) |
+| **Setup Token Screen** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/01b_setup_token.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/01b_setup_token.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/01b_setup_token.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/01b_setup_token.png) |
+| **Login Screen** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/01_login_page.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/01_login_page.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/01_login_page.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/01_login_page.png) |
+| **Dashboard** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/02_dashboard.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/02_dashboard.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/02_dashboard.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/02_dashboard.png) |
+| **Dashboard (User View)** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/02b_dashboard_user_view.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/02b_dashboard_user_view.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/02b_dashboard_user_view.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/02b_dashboard_user_view.png) |
+| **Subnets** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/03_resources_subnets.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/03_resources_subnets.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/03_resources_subnets.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/03_resources_subnets.png) |
+| **Add Subnet Modal** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/04_modal_add_subnet.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/04_modal_add_subnet.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/04_modal_add_subnet.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/04_modal_add_subnet.png) |
+| **Devices** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/05_resources_devices.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/05_resources_devices.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/05_resources_devices.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/05_resources_devices.png) |
+| **Add Device Modal** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/06_modal_add_device.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/06_modal_add_device.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/06_modal_add_device.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/06_modal_add_device.png) |
+| **Android Native Setup** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/19_modal_android_setup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/19_modal_android_setup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/19_modal_android_setup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/19_modal_android_setup.png) |
+| **Confirm Action Dialog** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/20_confirm_dialog.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/20_confirm_dialog.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/20_confirm_dialog.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/20_confirm_dialog.png) |
+| **Users Directory** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/07_users_directory.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/07_users_directory.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/07_users_directory.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/07_users_directory.png) |
+| **Add User Modal** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/08_modal_add_user.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/08_modal_add_user.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/08_modal_add_user.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/08_modal_add_user.png) |
+| **User Groups** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/09_user_groups.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/09_user_groups.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/09_user_groups.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/09_user_groups.png) |
+| **Add Group Modal** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/10_modal_add_group.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/10_modal_add_group.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/10_modal_add_group.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/10_modal_add_group.png) |
+| **Access Rules & Effective Access** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/11_access_rules.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/11_access_rules.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/11_access_rules.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/11_access_rules.png) |
+| **Add Rule Modal** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/12_modal_add_rule.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/12_modal_add_rule.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/12_modal_add_rule.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/12_modal_add_rule.png) |
+| **DNS Engine** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/13_dns_engine.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/13_dns_engine.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/13_dns_engine.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/13_dns_engine.png) |
+| **Add DNS Override Modal** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/14_modal_add_dns_override.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/14_modal_add_dns_override.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/14_modal_add_dns_override.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/14_modal_add_dns_override.png) |
+| **OIDC Providers** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/15_oidc_providers.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/15_oidc_providers.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/15_oidc_providers.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/15_oidc_providers.png) |
+| **Add OIDC Provider Modal** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/16_modal_add_oidc.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/16_modal_add_oidc.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/16_modal_add_oidc.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/16_modal_add_oidc.png) |
+| **Server Settings** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/17_server_settings.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17_server_settings.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/17_server_settings.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/17_server_settings.png) |
+| **Advanced JSON Settings** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/17c_server_settings_advanced.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17c_server_settings_advanced.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/17c_server_settings_advanced.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/17c_server_settings_advanced.png) |
+| **Certificate Authority (CA)** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/17b_server_settings_ca.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17b_server_settings_ca.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/17b_server_settings_ca.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/17b_server_settings_ca.png) |
+| **CA Rotate Confirmation** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/21_ca_rotate_confirm.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/21_ca_rotate_confirm.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/21_ca_rotate_confirm.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/21_ca_rotate_confirm.png) |
+| **System Logs** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/18_system_logs.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/18_system_logs.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/18_system_logs.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/18_system_logs.png) |
 
 ---
 
@@ -508,12 +578,12 @@ Eliminate noise and isolate critical security anomalies within the live socket c
 The **Server Settings** page has three tabs:
 
 - **Basic settings:** VPN display name (used in newly generated Apple, Windows and strongSwan Android profiles), endpoint IP/FQDN, server certificate identity, cryptography compatibility preset, MOBIKE and forced NAT-T. Previously installed client profiles are not renamed automatically.
-- **Advanced JSON:** edit the complete supported gateway settings object. Standard fields such as `reauth_time`, `rekey_time_ike`, `rekey_time_child`, `inactivity_timeout`, `fragmentation`, `dpd_delay`, `dpd_action`, `ike_proposals`, `esp_proposals` and `mss_clamping` are available here. Additional safe VICI connection and CHILD_SA primitive/list options can be supplied in `advanced_connection` and `advanced_child`. Invalid JSON, unknown top-level keys and protected VICI keys controlling identity, authentication, IP pools or traffic selectors are rejected. Admins can use **Format JSON**, **Reset to saved**, and **Validate & apply JSON**.
+- **Advanced JSON:** edit the complete supported gateway settings object. Standard fields such as `reauth_time`, `rekey_time_ike`, `rekey_time_child`, `inactivity_timeout`, `fragmentation`, `dpd_delay`, `dpd_action`, `ike_proposals`, `esp_proposals` and `mss_clamping` are available here. Additional safe VICI connection and CHILD_SA primitive/list options can be supplied in `advanced_connection` and `advanced_child`. Invalid JSON, unknown top-level keys and protected VICI keys controlling identity, authentication, IP pools or traffic selectors are rejected. Admins can use **Format JSON** and **Reset to saved**, then the single contextual **Save & apply** action in the page header. Advanced edits require a confirmation before saving.
 - **Certificate Authority:** displays the *actual issued X.509 Root CA* subject, serial and expiration. Before the first device is issued, an administrator can explicitly issue a new CA subject after typing `ROTATE CA`; existing key material is backed up. Once any device or historical revocation exists, the CA subject is immutable in this interface. Modifying the VPN display name does **not** require CA rotation. For fresh installs, `CA_COMMON_NAME`, `CA_ORGANIZATION`, `CA_COUNTRY`, `CA_PROVINCE`, and `CA_LOCALITY` may set the initial CA subject before starting SwanPanel for the first time.
 
 ### Data-plane apply status
 
-An administrator can view `applied`, `applying`, `pending`, or `failed` and use **Retry apply**. API endpoints: `GET /api/system/apply-status` and `POST /api/system/apply` (admin only). The reconciler persists desired state and checks both the on-disk configuration checksum and the live VICI socket identity every 30 seconds. A daemon restart triggers reapplication even if database settings are unchanged. **Retry apply** also redeploys gateway certificates and the signed CRL. The nftables table is atomically replaced without a blanket deny-all during normal updates; removed grants are closed before the VICI connection update. An enforcement failure remains visible as pending/failed and must be investigated.
+An administrator can see a distinct unsaved-edit warning, the **saved revision** and **active Gateway revision**, plus localized `applied`, `applying`, `pending` or `failed` states. **Save & apply** stores the desired settings and attempts synchronization; a saved response does not guarantee enforcement. **Retry apply** retries the already saved configuration without resubmitting the edit. API endpoints: `GET /api/system/apply-status` and `POST /api/system/apply` (admin only). The reconciler persists desired state and checks both the on-disk configuration checksum and the live VICI socket identity every 30 seconds. A daemon restart triggers reapplication even if database settings are unchanged. **Retry apply** also redeploys gateway certificates and the signed CRL. The nftables table is atomically replaced without a blanket deny-all during normal updates; removed grants are closed before the VICI connection update. An enforcement failure remains visible as pending/failed and must be investigated.
 
 ### Operational notes
 

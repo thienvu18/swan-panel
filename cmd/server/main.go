@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	swanpanel "github.com/swan-panel/swan-panel"
 	"github.com/swan-panel/swan-panel/internal/api"
+	"github.com/swan-panel/swan-panel/internal/api/realtime"
 	"github.com/swan-panel/swan-panel/internal/config"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/dns"
@@ -32,6 +34,16 @@ func main() {
 	// 1. Load configuration and initialize structured logger
 	cfg := config.Load()
 	logger.InitLogger(cfg.LogLevel, cfg.Environment)
+	// Log notifications invalidate the admin logs view; payloads never leave the server.
+	var lastLogSignal atomic.Int64
+	logger.SetLogEventPublisher(func() {
+		now := time.Now().UnixMilli()
+		previous := lastLogSignal.Load()
+		if now-previous < 750 || !lastLogSignal.CompareAndSwap(previous, now) {
+			return
+		}
+		realtime.DefaultBroker.Broadcast("log_event", nil)
+	})
 
 	slog.Info("Starting SwanPanel gateway",
 		"environment", cfg.Environment,

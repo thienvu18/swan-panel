@@ -177,9 +177,9 @@
       </section>
 
       <section id="install-quick" tabindex="-1">
-        <h2 data-i18n="guide.quick_title">1-Line Automated Production Installer</h2>
+        <h2 data-i18n="guide.quick_title">Native Linux installer (advanced)</h2>
         <p data-i18n="guide.quick_desc">
-          The recommended deployment method for Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, and Fedora. The installer automatically detects your distribution, installs strongSwan with the VICI plugin, tunes Linux kernel packet forwarding, generates an initial PKI CA, and registers a systemd service:
+          For administrators who prefer a host-managed Linux service. This installer changes host networking and strongSwan configuration; Docker Compose below is the recommended default.
         </p>
 
         <div class="terminal-panel">
@@ -204,12 +204,12 @@
       <section id="install-docker" tabindex="-1">
         <h2 data-i18n="guide.docker_title">Production Docker Compose Deployment</h2>
         <p data-i18n="guide.docker_desc">
-          If you prefer containerized workloads, run SwanPanel via Docker Compose. Ensure the host has the strongSwan VICI UNIX socket mapped at <code>/var/run/charon.vici</code>:
+          Recommended: one container with SwanPanel, strongSwan and persistent data. No host strongSwan service or VICI socket mount is needed. Generate a permanent signing secret before starting.
         </p>
 
         <div class="terminal-panel">
           <div class="terminal-header">
-            <span class="terminal-title">docker-compose.yml</span>
+            <span class="terminal-title">Terminal</span>
             <button class="copy-btn" data-target="guide-docker-code" aria-label="Copy Docker Compose snippet">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -219,25 +219,12 @@
             </button>
           </div>
           <div class="terminal-body" style="padding: 1rem 1.25rem;">
-            <pre id="guide-docker-code" style="color: #cbd5e1; font-family: ui-monospace, monospace; font-size: 0.85rem; line-height: 1.5; overflow-x: auto; white-space: pre;">services:
-  swan-panel:
-    image: ghcr.io/thienvu18/swan-panel:latest
-    container_name: swan-panel
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-      - "500:500/udp"
-      - "4500:4500/udp"
-      - "53:53/udp"
-    volumes:
-      - /var/run/charon.vici:/var/run/charon.vici:rw
-      - swan-data:/var/lib/swan-panel
-    environment:
-      - PORT=8080
-      - DB_PATH=/var/lib/swan-panel/swanpanel.db
-      - LOG_LEVEL=INFO
-volumes:
-  swan-data:</pre>
+            <pre id="guide-docker-code" style="color: #cbd5e1; font-family: ui-monospace, monospace; font-size: 0.85rem; line-height: 1.5; overflow-x: auto; white-space: pre;">git clone https://github.com/thienvu18/swan-panel.git
+cd swan-panel
+umask 077
+printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > .env
+docker compose up -d
+docker compose ps</pre>
           </div>
         </div>
       </section>
@@ -245,23 +232,23 @@ volumes:
       <section id="install-config" tabindex="-1">
         <h2 data-i18n="guide.config_title">Configuration & Environment Variables</h2>
         <p data-i18n="guide.config_desc">Configure SwanPanel via environment variables or <code>/etc/swan-panel/config.env</code>:</p>
-        <pre><code># Web Server Binding
+        <pre><code># Web interface
 PORT=8080
-HOST=0.0.0.0
 
-# Database Storage (Pure Go SQLite)
+# SQLite database
 DB_PATH=/var/lib/swan-panel/swanpanel.db
 
-# strongSwan IPC Socket
+# Bundled strongSwan socket (host installs require a reachable socket)
 VICI_SOCKET=/var/run/charon.vici
 
-# Split-DNS Engine
+# Internal DNS service
+ENABLE_DNS=true
 DNS_PORT=53
-DNS_DOMAIN=strongnet
-UPSTREAM_DNS=1.1.1.1,8.8.8.8
 
-# Security & Logs (DEBUG, INFO, WARN, ERROR)
-LOG_LEVEL=INFO</code></pre>
+# Production security and logs
+APP_ENV=production
+JWT_SECRET=replace-with-a-random-secret-at-least-32-characters
+LOG_LEVEL=info</code></pre>
       </section>
 
       <section id="install-proxy" tabindex="-1">
@@ -282,17 +269,22 @@ vpn.yourcompany.com {
       <div class="doc-section-badge" data-i18n="guide_sidebar.group_admin">2. Administrator Guide (Visual Walkthrough)</div>
 
       <section id="admin-login" tabindex="-1">
-        <h1 data-i18n="guide.admin_login_title">Initial Administrator Sign In</h1>
+        <h1 data-i18n="guide.admin_login_title">Initial Administrator Setup & Sign In</h1>
         <p data-i18n="guide.admin_login_desc">
-          Navigate to <code>http://&lt;SERVER_IP&gt;:8080</code>. Log in using the default administrative credentials:
+          Navigate to <code>http://&lt;SERVER_IP&gt;:8080</code>. On initial startup, SwanPanel requires a one-time setup token:
         </p>
-        <ul>
-          <li><strong>Email:</strong> <code>admin@swanpanel.internal</code></li>
-          <li><strong>Default Password:</strong> <code>Admin@SwanPanel123!</code></li>
-        </ul>
+        <div class="code-box">
+          <pre><code>sudo cat /var/lib/swan-panel/swanpanel.db.setup-token</code></pre>
+        </div>
         <p data-i18n="guide.admin_login_warn">
-          You will be prompted to replace this default secret immediately upon your first sign in to ensure zero-trust compliance.
+          Enter the token into the setup form and create your initial administrator account. The token is immediately consumed upon creation.
         </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/01b_setup_token.png" class="dark-only" alt="One-Time Setup Token" loading="lazy">
+          <img src="assets/images/user-guide/en/light/01b_setup_token.png" class="light-only" alt="One-Time Setup Token" loading="lazy">
+          <figcaption data-i18n="guide.caption_setup_token">Figure 2.1b: Initial administrator setup using the one-time 256-bit setup token.</figcaption>
+        </figure>
 
         <figure class="doc-figure">
           <img src="assets/images/user-guide/en/dark/01_login_page.png" class="dark-only" alt="SwanPanel Login Screen" loading="lazy">
@@ -311,6 +303,12 @@ vpn.yourcompany.com {
           <img src="assets/images/user-guide/en/dark/02_dashboard.png" class="dark-only" alt="SwanPanel Dashboard" loading="lazy">
           <img src="assets/images/user-guide/en/light/02_dashboard.png" class="light-only" alt="SwanPanel Dashboard" loading="lazy">
           <figcaption data-i18n="guide.caption_dash">Figure 2.2: Live Gateway Dashboard showing connected native clients and VICI memory socket status.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/02b_dashboard_user_view.png" class="dark-only" alt="SwanPanel Dashboard User View" loading="lazy">
+          <img src="assets/images/user-guide/en/light/02b_dashboard_user_view.png" class="light-only" alt="SwanPanel Dashboard User View" loading="lazy">
+          <figcaption data-i18n="guide.caption_dash_user_view">Figure 2.2b: Dashboard User View displaying personal enrolled devices and native profile download links.</figcaption>
         </figure>
       </section>
 
@@ -350,6 +348,18 @@ vpn.yourcompany.com {
           <img src="assets/images/user-guide/en/light/06_modal_add_device.png" class="light-only" alt="Add Device Modal" loading="lazy">
           <figcaption data-i18n="guide.caption_add_device">Figure 2.6: Device provisioning modal supporting Apple, Windows, Linux, and Android presets.</figcaption>
         </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/19_modal_android_setup.png" class="dark-only" alt="Android Native Setup Dialog" loading="lazy">
+          <img src="assets/images/user-guide/en/light/19_modal_android_setup.png" class="light-only" alt="Android Native Setup Dialog" loading="lazy">
+          <figcaption data-i18n="guide.caption_modal_android_setup">Figure 2.6b: Android native IKEv2/IPsec RSA setup dialog with zero APK dependency and direct credential downloads.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/20_confirm_dialog.png" class="dark-only" alt="High-Impact Confirm Action Dialog" loading="lazy">
+          <img src="assets/images/user-guide/en/light/20_confirm_dialog.png" class="light-only" alt="High-Impact Confirm Action Dialog" loading="lazy">
+          <figcaption data-i18n="guide.caption_confirm_dialog">Figure 2.6c: High-impact confirmation dialog preventing accidental revocation or destructive actions.</figcaption>
+        </figure>
       </section>
 
       <section id="admin-users" tabindex="-1">
@@ -374,13 +384,13 @@ vpn.yourcompany.com {
       <section id="admin-rules" tabindex="-1">
         <h2 data-i18n="guide.admin_rules_title">Zero-Trust Access Rules Engine</h2>
         <p data-i18n="guide.admin_rules_desc">
-          Under <strong>Access Rules</strong>, define explicit ALLOW and DENY policies mapping User Groups to Resource Groups. When you save a rule, SwanPanel dynamically recompiles Linux kernel traffic selectors and pushes the changes into RAM via the VICI socket without dropping any live tunnels.
+          Choose who can access each private network. Effective Access Preview shows the configured ALLOW/DENY decision, matching network and contributing rule for an IPv4 address. It does not test live connectivity.
         </p>
 
         <figure class="doc-figure">
           <img src="assets/images/user-guide/en/dark/11_access_rules.png" class="dark-only" alt="Access Rules Engine" loading="lazy">
           <img src="assets/images/user-guide/en/light/11_access_rules.png" class="light-only" alt="Access Rules Engine" loading="lazy">
-          <figcaption data-i18n="guide.caption_rules">Figure 2.9: Micro-segmentation matrix mapping User Groups to Resource Subnets with instant RAM reload.</figcaption>
+          <figcaption data-i18n="guide.caption_rules">Figure 2.9: Micro-segmentation matrix mapping User Groups to Resource Subnets with instant RAM reload and Effective Access preview.</figcaption>
         </figure>
 
         <figure class="doc-figure">
@@ -431,13 +441,31 @@ vpn.yourcompany.com {
       <section id="admin-settings" tabindex="-1">
         <h2 data-i18n="guide.admin_settings_title">Server Settings & VICI Socket Tuning</h2>
         <p data-i18n="guide.admin_settings_desc">
-          Under <strong>Server Settings</strong>, set your gateway's public FQDN (e.g. <code>vpn.company.com</code>), configure default DNS search domains, and verify UNIX socket connectivity to <code>/var/run/charon.vici</code>.
+          Edit Gateway settings, then use <strong>Save &amp; apply</strong> in the page header. The status card distinguishes saved settings from those running on the VPN gateway and offers Retry apply if synchronization is pending or failed.
         </p>
 
         <figure class="doc-figure">
           <img src="assets/images/user-guide/en/dark/17_server_settings.png" class="dark-only" alt="Server Settings" loading="lazy">
           <img src="assets/images/user-guide/en/light/17_server_settings.png" class="light-only" alt="Server Settings" loading="lazy">
-          <figcaption data-i18n="guide.caption_settings">Figure 2.15: Server settings managing gateway public address, PKI certificate regeneration, and socket health.</figcaption>
+          <figcaption data-i18n="guide.caption_settings">Figure 2.15: Server settings managing gateway sync status, cryptographic presets, and Root CA management.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/17c_server_settings_advanced.png" class="dark-only" alt="Advanced JSON Settings" loading="lazy">
+          <img src="assets/images/user-guide/en/light/17c_server_settings_advanced.png" class="light-only" alt="Advanced JSON Settings" loading="lazy">
+          <figcaption data-i18n="guide.caption_settings_advanced">Figure 2.15d: Advanced JSON configuration tab with real-time syntax validation and raw parameter controls.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/17b_server_settings_ca.png" class="dark-only" alt="Root CA Management" loading="lazy">
+          <img src="assets/images/user-guide/en/light/17b_server_settings_ca.png" class="light-only" alt="Root CA Management" loading="lazy">
+          <figcaption data-i18n="guide.caption_settings_ca">Figure 2.15b: Internal X.509 Root CA inspection tab showing validity dates, SHA-256 fingerprint, and rotation status.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/21_ca_rotate_confirm.png" class="dark-only" alt="CA Rotation Confirmation Dialog" loading="lazy">
+          <img src="assets/images/user-guide/en/light/21_ca_rotate_confirm.png" class="light-only" alt="CA Rotation Confirmation Dialog" loading="lazy">
+          <figcaption data-i18n="guide.caption_ca_rotate_confirm">Figure 2.15c: CA rotation safety confirmation dialog verifying zero active devices and revocations before key rollover.</figcaption>
         </figure>
       </section>
 
@@ -462,9 +490,9 @@ vpn.yourcompany.com {
       <div class="doc-section-badge" data-i18n="guide_sidebar.group_user">3. End-User VPN Guide</div>
 
       <section id="user-overview" tabindex="-1">
-        <h1 data-i18n="guide.user_why_title">Why SwanPanel Uses 100% Native OS Clients</h1>
+        <h1 data-i18n="guide.user_why_title">Why Use Your Device's Built-In VPN?</h1>
         <p data-i18n="guide.user_why_desc">
-          Unlike legacy VPN solutions that force employees to install bulky, battery-draining client applications, SwanPanel leverages the native IKEv2/IPsec engine built directly into every modern operating system.
+          On supported devices, employees connect from system settings without managing an extra VPN app. Android IKEv2/IPsec RSA support varies by model.
         </p>
 
         <div class="feature-grid" style="margin: 2rem 0;">
@@ -561,24 +589,20 @@ sudo nmcli connection up SwanPanel</code></pre>
       <section id="user-android" tabindex="-1">
         <h2 data-i18n="guide.user_android_title">Google Android (Native IKEv2 RSA)</h2>
         <p data-i18n="guide.user_android_desc">
-          Android connects via native IKEv2/IPSec RSA using standard system settings:
+          Supported Android devices can connect in system settings without another VPN app. Menu names and availability vary by manufacturer:
         </p>
         <ol class="os-steps" style="margin: 1.5rem 0 1.5rem 1.5rem;">
-          <li><strong>Step 1:</strong> Download the <code>.p12</code> bundle from SwanPanel onto your Android device.</li>
-          <li><strong>Step 2:</strong> Go to <strong>Settings &rarr; Security &rarr; Encryption & Credentials &rarr; Install a Certificate &rarr; VPN & App User Certificate</strong>.</li>
-          <li><strong>Step 3:</strong> Select the file, enter the decryption password shown in SwanPanel, and tap OK.</li>
-          <li><strong>Step 4:</strong> In Android VPN settings, add an <strong>IKEv2/IPSec RSA</strong> connection and tap <strong>Connect</strong>.</li>
+          <li data-i18n="guide.android_action_1">Open Set up Android VPN for your device, then download the .p12 certificate. Copy the import password without revealing it.</li>
+          <li data-i18n="guide.android_action_2">In Android Settings, install the .p12 under VPN &amp; app user certificates.</li>
+          <li data-i18n="guide.android_action_3">Add an IKEv2/IPsec RSA VPN and enter the server and identity values shown in SwanPanel. Import the Root CA from the dialog if Android requests it.</li>
+          <li data-i18n="guide.android_action_4">Save, connect, then delete the downloaded .p12 from Downloads. Never share the file or password.</li>
         </ol>
 
         <div class="doc-profile-download-box">
           <div>
-            <div class="doc-profile-download-title">SwanPanel Root CA Certificate</div>
-            <div class="doc-profile-download-desc">Standard X.509 Root CA certificate for Android certificate store.</div>
+            <div class="doc-profile-download-title" data-i18n="guide.android_ca_title">Your Gateway's Root CA</div>
+            <div class="doc-profile-download-desc" data-i18n="guide.android_ca_hint">If Android requests a trusted CA, download the certificate from your device's SwanPanel setup dialog. Do not install sample certificates.</div>
           </div>
-          <a href="assets/images/user-guide/client-profiles/swanpanel-root-ca.crt" download class="btn btn-secondary">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            <span>Download Root CA</span>
-          </a>
         </div>
       </section>
 
@@ -607,7 +631,7 @@ sudo nmcli connection up SwanPanel</code></pre>
       <a href="https://github.com/thienvu18/swan-panel/blob/main/docs/ADMIN_USER_GUIDE.md" target="_blank" rel="noopener" data-i18n="footer.admin_guide">Admin Guide</a>
       <a href="https://github.com/thienvu18/swan-panel/blob/main/docs/END_USER_GUIDE.md" target="_blank" rel="noopener" data-i18n="footer.enduser_guide">End-User Guide</a>
       <a href="https://github.com/thienvu18/swan-panel" target="_blank" rel="noopener" data-i18n="footer.github">GitHub</a>
-      <a href="https://github.com/thienvu18/swan-panel/releases/tag/v0.0.2" target="_blank" rel="noopener" data-i18n="footer.releases">Release v0.0.2</a>
+      <a href="https://github.com/thienvu18/swan-panel/releases/tag/v1.0.0" target="_blank" rel="noopener" data-i18n="footer.releases">Release v1.0.0</a>
       <a href="https://github.com/thienvu18/swan-panel/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="footer.license">AGPL-3.0 License</a>
     </div>
     <p data-i18n="footer.credit">SwanPanel is open-source software created by Thái Thiên Vũ. Licensed under GNU AGPL-3.0.</p>

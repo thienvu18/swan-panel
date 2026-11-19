@@ -20,7 +20,7 @@ body:
     attributes:
       label: SwanPanel Version & OS Environment
       description: Operating System, Linux distribution, kernel version, and SwanPanel release version.
-      placeholder: Ubuntu 24.04 LTS, kernel 6.8.0, SwanPanel v0.0.1, strongSwan 5.9.13
+      placeholder: Ubuntu 24.04 LTS, kernel 6.8.0, SwanPanel v1.0.0, strongSwan 5.9.13
     validations:
       required: true
   - type: dropdown

@@ -3,6 +3,8 @@ package pki
 import (
 	"encoding/json"
 	"encoding/xml"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -74,7 +76,7 @@ func TestAppleProfileNamedEscapesUserFacingVPNNameAndDefaultsEmptyName(t *testin
 	for {
 		_, err := decoder.Token()
 		if err != nil {
-			if err.Error() == "EOF" {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			t.Fatalf("Apple profile is not valid XML: %v", err)

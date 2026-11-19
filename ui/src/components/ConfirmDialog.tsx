@@ -54,7 +54,7 @@ export const ConfirmDialog: React.FC<{
       closeDisabled={isPending}
     >
       <div className="flex items-start gap-3">
-        <div className={`rounded-lg p-2 shrink-0 ${action?.tone === 'warning' ? 'bg-amber-500/10 text-amber-500' : 'bg-rose-500/10 text-rose-500'}`}>
+        <div className={`rounded-lg p-2 shrink-0 ${action?.tone === 'warning' ? 'bg-amber-500/10 text-status-warning' : 'bg-rose-500/10 text-status-danger'}`}>
           <AlertTriangle className="w-5 h-5" aria-hidden="true" />
         </div>
         <p id={descriptionId} className="text-xs leading-5 text-subtle">{action?.description}</p>

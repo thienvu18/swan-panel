@@ -1,3 +1,4 @@
+import { useToast } from '../components/ToastProvider';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -6,6 +7,8 @@ import { Modal } from '../components/Modal';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
+import { QueryErrorBanner } from '../components/QueryErrorBanner';
+import { EffectiveAccessPanel } from '../components/EffectiveAccessPanel';
 
 interface AccessRuleItem {
   id: string;
@@ -19,8 +22,15 @@ interface AccessRuleItem {
   rule_nature: string;
 }
 
+const subjectFieldTranslations = {
+  user_group: { label: 'access.select_subject_group', placeholder: 'access.select_subject_group_placeholder' },
+  user: { label: 'access.select_subject_user', placeholder: 'access.select_subject_user_placeholder' },
+  device: { label: 'access.select_subject_device', placeholder: 'access.select_subject_device_placeholder' },
+} as const;
+
 export const AccessRulesPage: React.FC = () => {
   const { t } = useTranslation();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const { requestConfirmation, confirmationDialog } = useConfirmAction();
@@ -29,12 +39,13 @@ export const AccessRulesPage: React.FC = () => {
 
   // Form states
   const [subjectType, setSubjectType] = useState<'user_group' | 'user' | 'device'>('user_group');
+  const subjectField = subjectFieldTranslations[subjectType];
   const [subjectID, setSubjectID] = useState('');
   const [action, setAction] = useState<'ALLOW' | 'DENY'>('ALLOW');
   const [targetType, setTargetType] = useState<'resource_group' | 'cidr_ip'>('resource_group');
   const [targetValue, setTargetValue] = useState('');
 
-  const { data } = useQuery<{ access_rules: AccessRuleItem[] }>({
+  const { data, isError: rulesError, refetch: refetchRules } = useQuery<{ access_rules: AccessRuleItem[] }>({
     queryKey: ['access_rules'],
     queryFn: async () => {
       const res = await fetch('/api/access-rules', {
@@ -120,8 +131,12 @@ export const AccessRulesPage: React.FC = () => {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (result: { runtime_status?: string }) => {
       queryClient.invalidateQueries({ queryKey: ['access_rules'] });
+      queryClient.invalidateQueries({ queryKey: ['effective_policy'] });
+      result.runtime_status === 'pending'
+        ? toast.info(t('server.enforcement_pending_notice'))
+        : toast.success(t('common.operation_created'));
       setIsAddOpen(false);
       createRuleMutation.reset();
       setSubjectID('');
@@ -150,21 +165,28 @@ export const AccessRulesPage: React.FC = () => {
       if (!res.ok) throw new Error('Failed to delete rule');
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (result: { runtime_status?: string }) => {
       queryClient.invalidateQueries({ queryKey: ['access_rules'] });
+      queryClient.invalidateQueries({ queryKey: ['effective_policy'] });
+      result.runtime_status === 'pending'
+        ? toast.info(t('server.enforcement_pending_notice'))
+        : toast.success(t('common.operation_deleted'));
     },
   });
 
   return (
     <div className="space-y-4">
+      {rulesError && <QueryErrorBanner onRetry={() => void refetchRules()} />}
       {/* Policy Evaluation Order guidance card */}
       <div className="border subtle-border rounded-xl p-3 surface-card flex items-start gap-2.5 text-xs text-subtle shadow-xs">
-        <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+        <Info className="w-4 h-4 text-accent shrink-0 mt-0.5" />
         <div>
           <strong className="text-slate-900 dark:text-white">{t('access.guidance_title')}: </strong>
           {t('access.guidance_desc')}
         </div>
       </div>
+
+      <EffectiveAccessPanel devices={devicesQuery.data?.devices || []} />
 
       {/* Access Rules Table */}
       <div className="space-y-2">
@@ -179,7 +201,7 @@ export const AccessRulesPage: React.FC = () => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search rules by subject, target, action..."
+                placeholder={t('access.search_placeholder')}
                 className="w-full surface-input border subtle-border rounded-lg pl-8 pr-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -198,7 +220,7 @@ export const AccessRulesPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-1.5 text-[11px] px-1">
           <span className="text-subtle font-medium flex items-center gap-1 mr-1">
             <Filter className="w-3 h-3" />
-            Action:
+            {t('access.action_filter')}:
           </span>
           {(['all', 'ALLOW', 'DENY'] as const).map((act) => {
             const count = act === 'all' ? rules.length : rules.filter((r) => r.action === act).length;
@@ -211,8 +233,8 @@ export const AccessRulesPage: React.FC = () => {
                 className={`px-2 py-0.5 rounded-md border subtle-border transition-colors font-mono text-[10px] ${
                   isSelected
                     ? act === 'DENY'
-                      ? 'bg-rose-500/15 border-rose-500/40 text-rose-500 font-semibold'
-                      : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-500 font-semibold'
+                      ? 'bg-rose-500/15 border-rose-500/40 text-status-danger font-semibold'
+                      : 'bg-emerald-500/15 border-emerald-500/40 text-status-success font-semibold'
                     : 'text-subtle hover:text-current hover:bg-slate-500/10'
                 }`}
               >
@@ -228,9 +250,9 @@ export const AccessRulesPage: React.FC = () => {
                 setActionFilter('all');
                 setSearchQuery('');
               }}
-              className="ml-auto text-rose-500 hover:text-rose-400 flex items-center gap-1 text-[11px] font-medium"
+              className="ml-auto text-status-danger hover:text-rose-700 dark:hover:text-rose-400 flex items-center gap-1 text-[11px] font-medium"
             >
-              <X className="w-3 h-3" /> Reset filters
+              <X className="w-3 h-3" /> {t('common.reset_filters')}
             </button>
           )}
         </div>
@@ -253,9 +275,9 @@ export const AccessRulesPage: React.FC = () => {
                     <td colSpan={5} className="py-8">
                       <EmptyState
                         icon={ShieldCheck}
-                        title={searchQuery || actionFilter !== 'all' ? 'No matching access rules' : 'No access rules configured yet'}
-                        description={searchQuery || actionFilter !== 'all' ? `No access rules match the active filter criteria.` : "SwanPanel enforces zero-trust: all non-explicit traffic is blocked by default. Create your first rule to grant access."}
-                        actionLabel={searchQuery || actionFilter !== 'all' ? 'Clear Filters' : t('access.add_rule')}
+                        title={searchQuery || actionFilter !== 'all' ? t('access.no_matching_rules') : t('access.no_rules')}
+                        description={searchQuery || actionFilter !== 'all' ? t('access.no_matching_rules_description') : t('access.no_rules_description')}
+                        actionLabel={searchQuery || actionFilter !== 'all' ? t('common.clear_filters') : t('access.add_rule')}
                         actionIcon={searchQuery || actionFilter !== 'all' ? X : Plus}
                         onAction={searchQuery || actionFilter !== 'all' ? () => { setSearchQuery(''); setActionFilter('all'); } : () => setIsAddOpen(true)}
                         className="border-none shadow-none bg-transparent"
@@ -272,24 +294,24 @@ export const AccessRulesPage: React.FC = () => {
                     >
                       <td className="py-2.5 px-3.5 font-medium">
                         {r.action === 'DENY' ? (
-                          <span className="text-rose-400 flex items-center gap-1.5">
-                            <ShieldAlert className="w-3.5 h-3.5" />
+                          <span className="text-status-danger flex items-center gap-1.5 font-medium">
+                            <ShieldAlert className="w-3.5 h-3.5 text-status-danger shrink-0" />
                             {r.subject_name}
                           </span>
                         ) : (
-                          <span className="text-slate-900 dark:text-white flex items-center gap-1.5">
-                            <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                          <span className="text-slate-900 dark:text-white flex items-center gap-1.5 font-medium">
+                            <ShieldCheck className="w-3.5 h-3.5 text-accent shrink-0" />
                             {r.subject_name}
                           </span>
                         )}
                       </td>
                       <td className="py-2.5 px-3.5">
                         {r.action === 'DENY' ? (
-                          <span className="bg-rose-500/10 text-rose-500 border border-rose-500/20 font-bold px-2 py-0.5 rounded-md text-[10px] font-mono">
+                          <span className="bg-rose-500/10 text-status-danger border border-rose-500/20 font-bold px-2 py-0.5 rounded-md text-[10px] font-mono">
                             DENY
                           </span>
                         ) : (
-                          <span className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 font-bold px-2 py-0.5 rounded-md text-[10px] font-mono">
+                          <span className="bg-emerald-500/10 text-status-success border border-emerald-500/20 font-bold px-2 py-0.5 rounded-md text-[10px] font-mono">
                             ALLOW
                           </span>
                         )}
@@ -302,11 +324,11 @@ export const AccessRulesPage: React.FC = () => {
                       </td>
                       <td className="py-2.5 px-3.5">
                         {r.rule_nature === 'user_exclusion' ? (
-                          <span className="text-rose-400 text-[10px] border border-rose-500/30 px-1.5 py-0.5 rounded font-mono">
+                          <span className="text-status-danger text-[10px] border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 rounded font-mono font-medium">
                             {t('access.user_exclusion')}
                           </span>
                         ) : r.rule_nature === 'direct_grant' ? (
-                          <span className="text-blue-400 text-[10px] border border-blue-500/30 px-1.5 py-0.5 rounded font-mono">
+                          <span className="text-accent text-[10px] border border-blue-500/30 px-1.5 py-0.5 rounded font-mono">
                             {t('access.direct_grant')}
                           </span>
                         ) : (
@@ -322,7 +344,7 @@ export const AccessRulesPage: React.FC = () => {
                             confirmLabel: t('common.delete'),
                             onConfirm: () => deleteRuleMutation.mutateAsync(r.id),
                           })}
-                          className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors"
+                          className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors"
                           title={t('common.delete')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -351,41 +373,41 @@ export const AccessRulesPage: React.FC = () => {
           <div>
             <label className="text-subtle block mb-1">{t('access.subject_type')}</label>
             <div className="grid grid-cols-3 gap-2">
-              <label
+              <button type="button" aria-pressed={subjectType === 'user_group'}
                 onClick={() => { setSubjectType('user_group'); setSubjectID(''); }}
-                className={`p-2 border rounded-lg cursor-pointer text-center font-medium ${
-                  subjectType === 'user_group' ? 'border-blue-500 bg-blue-600/10 text-white' : 'subtle-border surface-header text-subtle'
+                className={`p-2 border rounded-lg cursor-pointer text-center font-medium transition-colors ${
+                  subjectType === 'user_group' ? 'border-blue-500 bg-blue-500/10 text-accent font-semibold' : 'subtle-border surface-header text-subtle hover:text-current hover:bg-slate-500/10'
                 }`}
               >
                 {t('access.subject_group')}
-              </label>
-              <label
+              </button>
+              <button type="button" aria-pressed={subjectType === 'user'}
                 onClick={() => { setSubjectType('user'); setSubjectID(''); }}
-                className={`p-2 border rounded-lg cursor-pointer text-center font-medium ${
-                  subjectType === 'user' ? 'border-blue-500 bg-blue-600/10 text-white' : 'subtle-border surface-header text-subtle'
+                className={`p-2 border rounded-lg cursor-pointer text-center font-medium transition-colors ${
+                  subjectType === 'user' ? 'border-blue-500 bg-blue-500/10 text-accent font-semibold' : 'subtle-border surface-header text-subtle hover:text-current hover:bg-slate-500/10'
                 }`}
               >
                 {t('access.subject_user')}
-              </label>
-              <label onClick={() => { setSubjectType('device'); setSubjectID(''); }}
-                className={`p-2 border rounded-lg cursor-pointer text-center font-medium ${
-                  subjectType === 'device' ? 'border-blue-500 bg-blue-600/10 text-white' : 'subtle-border surface-header text-subtle'
+              </button>
+              <button type="button" aria-pressed={subjectType === 'device'} onClick={() => { setSubjectType('device'); setSubjectID(''); }}
+                className={`p-2 border rounded-lg cursor-pointer text-center font-medium transition-colors ${
+                  subjectType === 'device' ? 'border-blue-500 bg-blue-500/10 text-accent font-semibold' : 'subtle-border surface-header text-subtle hover:text-current hover:bg-slate-500/10'
                 }`}>
                 {t('access.subject_device')}
-              </label>
+              </button>
             </div>
           </div>
 
           <div>
-            <label className="text-subtle block mb-1">{t('access.select_subject')}</label>
-            <select value={subjectID} onChange={event => setSubjectID(event.target.value)}
+            <label htmlFor="access-rule-subject" className="text-subtle block mb-1">{t(subjectField.label)}</label>
+            <select id="access-rule-subject" value={subjectID} onChange={event => setSubjectID(event.target.value)}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500">
-              <option value="">{t('access.select_subject_placeholder')}</option>
+              <option value="">{t(subjectField.placeholder)}</option>
               {availableSubjects.map(subject => (
                 <option key={subject.id} value={subject.id}>{subject.label}</option>
               ))}
             </select>
-            {(groupsQuery.isError || usersQuery.isError || devicesQuery.isError) && <p role="alert" className="text-rose-500">
+            {(groupsQuery.isError || usersQuery.isError || devicesQuery.isError) && <p role="alert" className="text-status-danger">
               {t('access.load_choices_error')}
             </p>}
           </div>
@@ -393,22 +415,22 @@ export const AccessRulesPage: React.FC = () => {
           <div>
             <label className="text-subtle block mb-1">{t('access.action')}</label>
             <div className="grid grid-cols-2 gap-2">
-              <label
+              <button type="button" aria-pressed={action === 'ALLOW'}
                 onClick={() => setAction('ALLOW')}
-                className={`p-2 border rounded-lg cursor-pointer text-center font-bold font-mono ${
-                  action === 'ALLOW' ? 'border-emerald-500 bg-emerald-600/10 text-emerald-400' : 'subtle-border surface-header text-subtle'
+                className={`p-2 border rounded-lg cursor-pointer text-center font-bold font-mono transition-colors ${
+                  action === 'ALLOW' ? 'border-emerald-500 bg-emerald-500/15 text-status-success font-semibold' : 'subtle-border surface-header text-subtle hover:text-current hover:bg-slate-500/10'
                 }`}
               >
                 ALLOW
-              </label>
-              <label
+              </button>
+              <button type="button" aria-pressed={action === 'DENY'}
                 onClick={() => setAction('DENY')}
-                className={`p-2 border rounded-lg cursor-pointer text-center font-bold font-mono ${
-                  action === 'DENY' ? 'border-rose-500 bg-rose-600/10 text-rose-400' : 'subtle-border surface-header text-subtle'
+                className={`p-2 border rounded-lg cursor-pointer text-center font-bold font-mono transition-colors ${
+                  action === 'DENY' ? 'border-rose-500 bg-rose-500/15 text-status-danger font-semibold' : 'subtle-border surface-header text-subtle hover:text-current hover:bg-slate-500/10'
                 }`}
               >
                 DENY
-              </label>
+              </button>
             </div>
           </div>
 
@@ -439,7 +461,7 @@ export const AccessRulesPage: React.FC = () => {
                 placeholder="10.100.1.5/32" className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500" />
             )}
             {targetsQuery.isError && targetType === 'resource_group' && (
-              <p role="alert" className="text-rose-500">{t('access.load_choices_error')}</p>
+              <p role="alert" className="text-status-danger">{t('access.load_choices_error')}</p>
             )}
           </div>
         </div>
@@ -456,7 +478,7 @@ export const AccessRulesPage: React.FC = () => {
             disabled={!subjectID || !targetValue || createRuleMutation.isPending}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
-            {createRuleMutation.isPending ? 'Saving...' : t('common.save')}
+            {createRuleMutation.isPending ? t('common.saving') : t('common.save')}
           </button>
           <button
             onClick={() => {

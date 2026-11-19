@@ -27,4 +27,8 @@ User Group  ------->  [Access Rule: ALLOW/DENY]  ------->  Resource Group
 ```
 
 - When an `ALLOW` rule exists between a user's group and a target resource group, the compiler injects the resource group's CIDR into the strongSwan IKEv2 traffic selectors (`local_ts`).
-- When a `DENY` rule exists, the compiler injects explicit IPsec kernel DROP policies or omits the route from the client's routing proposal, effectively preventing lateral movement across corporate assets.
+- Explicit `DENY` rules take precedence over `ALLOW`; unmatched destinations are denied by default. SwanPanel compiles the selectors and reconciles the corresponding managed VPN/firewall configuration.
+
+## 3. Effective Access Preview
+
+In **Access Rules**, choose an enrolled device and enter a destination IPv4 address. The preview shows **ALLOW** or **DENY**, the matched CIDR and the contributing device, user or group rules. This explains the configured policy; it does **not** send a packet or confirm live connectivity. Check the saved and active gateway revisions before relying on a new rule.

@@ -7,7 +7,7 @@ SwanPanel gateway binaries target **Linux AMD64 and ARM64**. SQLite is integrate
 Run after editing Go files. These commands validate syntax, formatting, dependency hygiene, application behavior, and linters.
 
 ```sh
-cd /Users/thienvu/Documents/Projects/Mines/swan-panel
+cd "$(git rev-parse --show-toplevel)"
 
 go mod tidy
 gofmt -w embed.go embed_test.go $(find cmd internal -name '*.go')
@@ -60,7 +60,7 @@ Existing authentication, policy, certificate revocation and platform profile tes
 ```sh
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends build-essential musl-tools binutils file
-cd /path/to/swan-panel
+cd "$(git rev-parse --show-toplevel)"
 (cd ui && npm ci && npm test && npm run build)
 CGO_ENABLED=1 go test -race -count=1 ./...
 VERSION=dev sh scripts/build-linux-static.sh

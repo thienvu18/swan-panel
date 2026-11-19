@@ -3,6 +3,9 @@ package handlers
 import (
 	"log/slog"
 	"net/http"
+	"net/netip"
+	"regexp"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -77,6 +80,33 @@ func (h *DNSHandler) ListOverrides(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"dns_overrides": overrides})
 }
 
+var dnsOverrideHostnameLabel = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+
+func isValidDNSOverrideTarget(recordType, target string) bool {
+	value := strings.TrimSpace(target)
+	switch recordType {
+	case "A":
+		address, err := netip.ParseAddr(value)
+		return err == nil && address.Is4()
+	case "CNAME":
+		hostname := strings.TrimSuffix(value, ".")
+		if len(hostname) == 0 || len(hostname) > 253 || !strings.Contains(hostname, ".") {
+			return false
+		}
+		if address, err := netip.ParseAddr(hostname); err == nil && address.Is4() {
+			return false
+		}
+		for _, label := range strings.Split(hostname, ".") {
+			if !dnsOverrideHostnameLabel.MatchString(label) {
+				return false
+			}
+		}
+		return true
+	default:
+		return true // Other record types may be created through existing API integrations.
+	}
+}
+
 // CreateOverride creates a new custom DNS mapping (e.g. gitlab.internal -> 192.168.1.100)
 func (h *DNSHandler) CreateOverride(c *gin.Context) {
 	var req struct {
@@ -90,8 +120,14 @@ func (h *DNSHandler) CreateOverride(c *gin.Context) {
 		return
 	}
 
+	req.RecordType = strings.ToUpper(strings.TrimSpace(req.RecordType))
 	if req.RecordType == "" {
 		req.RecordType = "A"
+	}
+	req.TargetAddress = strings.TrimSpace(req.TargetAddress)
+	if !isValidDNSOverrideTarget(req.RecordType, req.TargetAddress) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid DNS override target for record type " + req.RecordType})
+		return
 	}
 
 	override := db.DNSOverride{

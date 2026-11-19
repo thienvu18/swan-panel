@@ -2,12 +2,16 @@ package policy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/pki"
 	"gorm.io/gorm"
 )
+
+// ErrGatewayCAUnavailable indicates that the gateway identity root cannot be initialized.
+var ErrGatewayCAUnavailable = errors.New("initialize gateway CA")
 
 // ReconcileGateway also restores credentials and the signed CRL, not only
 // connections and firewall. This supports failed CA rotations and daemon
@@ -27,7 +31,7 @@ func ReconcileGateway(ctx context.Context, database *gorm.DB) (retErr error) {
 	}()
 	manager, err := pki.GetPKIManager()
 	if err != nil {
-		return fmt.Errorf("initialize gateway CA: %w", err)
+		return fmt.Errorf("%w: %w", ErrGatewayCAUnavailable, err)
 	}
 	var settings db.StrongswanSettings
 	if err := database.WithContext(ctx).First(&settings, 1).Error; err != nil {

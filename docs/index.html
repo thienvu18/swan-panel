@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
   <title>SwanPanel - Modern Zero-Trust Control Plane for strongSwan VPN</title>
-  <meta name="description" content="Enterprise-grade, zero-trust web control plane for strongSwan IKEv2/IPsec VPNs with 100% native client provisioning, automated PKI, Split-DNS, and zero-downtime RAM reloads.">
+  <meta name="description" content="SwanPanel makes secure remote access simpler: manage strongSwan VPN users, devices and access rules in one dashboard, with native VPN setup on supported devices.">
   <link rel="stylesheet" href="assets/style.css">
   <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 </head>
@@ -24,7 +24,7 @@
           <rect x="35" y="61" width="41" height="7" rx="3.5" fill="#60a5fa" />
         </svg>
         <span>SwanPanel</span>
-        <span class="logo-badge">v0.0.2</span>
+        <span class="logo-badge">v1.0.0</span>
       </a>
 
       <!-- Primary Navigation Landmark (Concise: 3 main links) -->
@@ -107,7 +107,7 @@
 
       <h1 class="hero-title">
         <span data-i18n="hero.title_start">Enterprise Zero-Trust Remote Access.</span><br>
-        <span class="accent-text" data-i18n="hero.title_accent">100% Native Clients. Zero 3rd-Party Apps.</span>
+        <span class="accent-text" data-i18n="hero.title_accent">Built-in VPN on supported devices. Less setup.</span>
       </h1>
 
       <p class="hero-desc" data-i18n="hero.desc">
@@ -145,13 +145,13 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
-            <span data-i18n="hero.install_hint_2">Zero config required • Ready in under 60s</span>
+            <span data-i18n="hero.install_hint_2">Review host changes before running</span>
           </div>
           <div class="terminal-feature-item">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
-            <span data-i18n="hero.install_hint_3">Single pure Go binary + embedded React SPA</span>
+            <span data-i18n="hero.install_hint_3">Recommended Docker Compose setup is in the guide</span>
           </div>
         </div>
       </div>
@@ -231,7 +231,7 @@
               </svg>
               <span data-i18n="pains.p1_sol_badge">SwanPanel Solution</span>
             </div>
-            <p class="sol-desc" data-i18n="pains.p1_sol">100% Native Connectivity: Connect directly from macOS, iOS, Windows, Linux, and Android system settings with native hardware-accelerated IPsec encryption. Zero apps to install or maintain.</p>
+            <p class="sol-desc" data-i18n="pains.p1_sol">Connect using the built-in VPN on supported devices. Employees get secure access without learning a new app; Android compatibility depends on the device.</p>
           </div>
         </div>
 
@@ -341,7 +341,7 @@
             </svg>
           </div>
           <h3 class="feature-title" data-i18n="features.f4_title">Micro-Segmented Access Policies</h3>
-          <p class="feature-desc" data-i18n="features.f4_desc">Granular zero-trust access control mapping User Groups to Resource Groups, compiled dynamically into kernel traffic selectors and DROP filters.</p>
+          <p class="feature-desc" data-i18n="features.f4_desc">Grant access by user, group or device. Preview ALLOW/DENY decisions, matching networks and contributing rules before troubleshooting connectivity.</p>
         </div>
 
         <!-- Feature 5: Zero-SSH Dynamic VICI -->
@@ -352,8 +352,8 @@
               <path d="M12 19h8"></path>
             </svg>
           </div>
-          <h3 class="feature-title" data-i18n="features.f5_title">Dynamic RAM Control via VICI</h3>
-          <p class="feature-desc" data-i18n="features.f5_desc">Direct strongSwan charon daemon management over UNIX socket /var/run/charon.vici. Dynamic RAM reloads without dropping live engineer tunnels.</p>
+          <h3 class="feature-title" data-i18n="features.f5_title">Controlled Gateway Updates</h3>
+          <p class="feature-desc" data-i18n="features.f5_desc">Save settings centrally, see what is active on the VPN gateway, and retry pending updates without SSH.</p>
         </div>
 
         <!-- Feature 6: Single Pure Go Binary -->
@@ -366,7 +366,7 @@
             </svg>
           </div>
           <h3 class="feature-title" data-i18n="features.f6_title">Single Self-Contained Binary</h3>
-          <p class="feature-desc" data-i18n="features.f6_desc">Go backend, SQLite database with auto-migration, embedded React 19 SPA, and DNS engine compile into one pure Go executable with zero CGO dependencies.</p>
+          <p class="feature-desc" data-i18n="features.f6_desc">Go, SQLite, the web dashboard and DNS in one Linux control-plane binary; Docker Compose also bundles the strongSwan VPN gateway.</p>
         </div>
       </div>
     </section>
@@ -395,7 +395,7 @@
           <tbody>
             <tr>
               <td><strong data-i18n="comparison.r1_title">3rd-Party Client App Required</strong></td>
-              <td><span class="badge-check" data-i18n="comparison.r1_swan">No (100% Native OS)</span></td>
+              <td><span class="badge-check" data-i18n="comparison.r1_swan">No extra app on supported devices</span></td>
               <td><span class="badge-check" data-i18n="comparison.r1_raw">No (Native OS)</span></td>
               <td><span class="badge-cross" data-i18n="comparison.r1_wire">Yes (Always Required)</span></td>
               <td><span class="badge-cross" data-i18n="comparison.r1_saas">Yes (Proprietary Agent)</span></td>
@@ -448,17 +448,17 @@
         <div class="section-tag" data-i18n="deploy.tag">Get Started Today</div>
         <h2 data-i18n="deploy.title">Ready to Modernize Your Remote Access?</h2>
         <p data-i18n="deploy.desc">
-          Deploy SwanPanel in under 60 seconds with our automated production script, or read our comprehensive guide with visual walkthroughs for administrators and end-users.
+          Bring your team's private access under one dashboard. Start with Docker Compose, then follow the short setup guide to get users connected.
         </p>
 
         <!-- Tabbed Deployment Quick View -->
         <div style="max-width: 760px; margin: 1.5rem auto 2rem; text-align: left;">
           <div class="tab-nav">
-            <button type="button" class="tab-btn active" data-tab="tab-script" data-i18n="deploy.tab_script">1-Line Production Script</button>
-            <button type="button" class="tab-btn" data-tab="tab-docker" data-i18n="deploy.tab_docker">Docker Compose</button>
+            <button type="button" class="tab-btn" data-tab="tab-script" data-i18n="deploy.tab_script">Advanced Host Installer</button>
+            <button type="button" class="tab-btn active" data-tab="tab-docker" data-i18n="deploy.tab_docker">Docker Compose (Recommended)</button>
           </div>
 
-          <div id="tab-script" class="tab-panel active">
+          <div id="tab-script" class="tab-panel">
             <div class="terminal-panel" style="margin: 0;">
               <div class="terminal-header">
                 <span class="terminal-title">curl installer</span>
@@ -476,10 +476,10 @@
             </div>
           </div>
 
-          <div id="tab-docker" class="tab-panel">
+          <div id="tab-docker" class="tab-panel active">
             <div class="terminal-panel" style="margin: 0;">
               <div class="terminal-header">
-                <span class="terminal-title">docker-compose.yml</span>
+                <span class="terminal-title">Docker Compose quickstart</span>
                 <button class="copy-btn" data-target="docker-code" aria-label="Copy docker snippet">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -489,21 +489,12 @@
                 </button>
               </div>
               <div class="terminal-body" style="padding: 1rem 1.25rem;">
-                <pre id="docker-code" style="color: #cbd5e1; font-family: ui-monospace, monospace; font-size: 0.85rem; line-height: 1.5; overflow-x: auto; white-space: pre;">services:
-  swan-panel:
-    image: ghcr.io/thienvu18/swan-panel:latest
-    container_name: swan-panel
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-      - "500:500/udp"
-      - "4500:4500/udp"
-      - "53:53/udp"
-    volumes:
-      - /var/run/charon.vici:/var/run/charon.vici:rw
-      - swan-data:/var/lib/swan-panel
-volumes:
-  swan-data:</pre>
+                <pre id="docker-code" style="color: #cbd5e1; font-family: ui-monospace, monospace; font-size: 0.85rem; line-height: 1.5; overflow-x: auto; white-space: pre;">git clone https://github.com/thienvu18/swan-panel.git
+cd swan-panel
+umask 077
+printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > .env
+docker compose up -d
+docker compose ps</pre>
               </div>
             </div>
           </div>
@@ -535,7 +526,7 @@ volumes:
       <a href="https://github.com/thienvu18/swan-panel" target="_blank" rel="noopener" data-i18n="footer.github">GitHub Repository</a>
       <a href="guide.html" data-i18n="footer.guide">Docs & Guide</a>
       <a href="https://github.com/thienvu18/swan-panel/wiki" target="_blank" rel="noopener" data-i18n="footer.wiki">Wiki</a>
-      <a href="https://github.com/thienvu18/swan-panel/releases/tag/v0.0.2" target="_blank" rel="noopener" data-i18n="footer.releases">Release v0.0.2</a>
+      <a href="https://github.com/thienvu18/swan-panel/releases/tag/v1.0.0" target="_blank" rel="noopener" data-i18n="footer.releases">Release v1.0.0</a>
       <a href="https://github.com/thienvu18/swan-panel/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="footer.license">AGPL-3.0 License</a>
     </div>
     <p data-i18n="footer.credit">SwanPanel is an open-source project created by Thái Thiên Vũ. Licensed under GNU AGPL-3.0.</p>

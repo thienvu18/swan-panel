@@ -1,6 +1,6 @@
 # Production Deployment & Hardening
 
-This guide covers best practices for running SwanPanel securely in high-traffic enterprise production environments.
+Use HTTPS for the administration UI, restrict management access, and keep signing secrets and VPN identities in persistent protected storage.
 
 ---
 
@@ -56,23 +56,22 @@ sudo ufw allow 4500/udp
 sudo ufw allow 443/tcp
 sudo ufw allow 80/tcp
 
-# Enable NAT Masquerading for VPN subnets
-sudo iptables -t nat -A POSTROUTING -s 10.60.0.0/16 -o eth0 -j MASQUERADE
+# SwanPanel manages firewall and NAT for enrolled VPN addresses.
+# Do not add a blanket NAT or ACCEPT rule for the full VPN subnet.
 ```
 
 ---
 
 ## 3. Environment Variables Reference
 
-Configure `/etc/swan-panel/config.env`:
+Docker Compose reads `JWT_SECRET` from the repository `.env` and sets service environment variables in `docker-compose.yml`. For the optional host installation, configure `/etc/swan-panel/config.env`:
 
 | Variable | Recommended Production Setting | Description |
 | :--- | :--- | :--- |
 | `APP_ENV` | `production` | Enables production security optimizations |
-| `SERVER_PORT` | `8080` | Internal port bound by SwanPanel |
-| `SERVER_HOST` | `127.0.0.1` | Bind to localhost when using reverse proxy |
+| `PORT` | `8080` | Web UI and API port inside the service |
 | `JWT_SECRET` | 32-byte cryptographically secure random string | Used for HMAC-SHA256 session token signing |
 | `LOG_LEVEL` | `info` or `warn` | Minimum log severity level |
-| `VICI_SOCKET` | `/var/run/charon.vici` | Path to strongSwan UNIX socket |
+| `VICI_SOCKET` | `/var/run/charon.vici` | UNIX socket used by the bundled strongSwan daemon; host deployments require a reachable host socket |
 | `ENABLE_DNS` | `true` | Runs integrated Split-DNS server |
-| `DNS_PORT` | `53` | Standard DNS port (requires root or `CAP_NET_BIND_SERVICE`) |
+| `DNS_PORT` | `53` (Compose) | DNS port inside the container; host mapping defaults to 53 |

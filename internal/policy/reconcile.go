@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -17,6 +18,21 @@ import (
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/vici"
 	"gorm.io/gorm"
+)
+
+// Reconciliation failures have stable identities so callers can inspect the
+// failure mode without depending on the diagnostic message.
+var (
+	ErrRuntimeApplyStateUnavailable       = errors.New("load runtime apply state")
+	ErrDesiredConfigurationUnavailable    = errors.New("read desired configuration")
+	ErrDesiredStateChangedDuringApply     = errors.New("desired state changed while applying; retry required")
+	ErrGatewayConfigurationRenderFailed   = errors.New("render persistent strongSwan configuration")
+	ErrGatewayConfigurationPersistFailed  = errors.New("persist strongSwan configuration")
+	ErrFirewallFailClosedFallbackFailed   = errors.New("fail-closed fallback")
+	ErrFirewallFailClosedBarrierActive    = errors.New("fail-closed barrier active")
+	ErrRuntimeApplyStatePersistenceFailed = errors.New("persist apply state")
+	ErrDaemonRestartedDuringApply         = errors.New("strongSwan restarted while applying")
+	ErrDaemonIdentityVerificationFailed   = errors.New("verify strongSwan daemon identity during apply")
 )
 
 var reconcileMu sync.Mutex
@@ -183,11 +199,11 @@ func Reconcile(ctx context.Context, database *gorm.DB) (retErr error) {
 	defer reconcileMu.Unlock()
 	state, err := GetApplyState(ctx, database)
 	if err != nil {
-		return fmt.Errorf("load runtime apply state: %w", err)
+		return fmt.Errorf("%w: %w", ErrRuntimeApplyStateUnavailable, err)
 	}
 	digest, err := DesiredDigest(ctx, database)
 	if err != nil {
-		return fmt.Errorf("read desired configuration: %w", err)
+		return fmt.Errorf("%w: %w", ErrDesiredConfigurationUnavailable, err)
 	}
 	if digest != state.DesiredDigest || state.DesiredGeneration == 0 {
 		state.DesiredGeneration++
@@ -196,15 +212,15 @@ func Reconcile(ctx context.Context, database *gorm.DB) (retErr error) {
 	state.Status = "applying"
 	state.LastError = ""
 	if err := database.WithContext(ctx).Save(&state).Error; err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrRuntimeApplyStatePersistenceFailed, err)
 	}
 	defer func() {
 		if retErr == nil {
 			current, err := DesiredDigest(context.Background(), database)
 			if err != nil {
-				retErr = err
+				retErr = fmt.Errorf("%w: %w", ErrDesiredConfigurationUnavailable, err)
 			} else if current != state.DesiredDigest {
-				retErr = fmt.Errorf("desired state changed while applying; retry required")
+				retErr = ErrDesiredStateChangedDuringApply
 			}
 		}
 		if retErr == nil && os.Getenv("APP_ENV") != "test" {
@@ -236,7 +252,7 @@ func Reconcile(ctx context.Context, database *gorm.DB) (retErr error) {
 			state.LastError = ""
 		}
 		if err := database.WithContext(context.Background()).Save(&state).Error; err != nil {
-			retErr = fmt.Errorf("persist apply state: %w (runtime error: %v)", err, retErr)
+			retErr = fmt.Errorf("%w: %w (runtime error: %v)", ErrRuntimeApplyStatePersistenceFailed, err, retErr)
 		}
 	}()
 	return reconcileRuntime(ctx, database)
@@ -301,7 +317,7 @@ func reconcileRuntime(ctx context.Context, database *gorm.DB) error {
 	}
 	content, err := RenderSwanctlConfig(plan)
 	if err != nil {
-		return fmt.Errorf("render persistent strongSwan configuration: %w", err)
+		return fmt.Errorf("%w: %w", ErrGatewayConfigurationRenderFailed, err)
 	}
 	// Validate all connection options before touching the kernel. A rejected
 	// advanced option must not leave a newly assigned gateway VIP behind.
@@ -313,7 +329,7 @@ func reconcileRuntime(ctx context.Context, database *gorm.DB) error {
 		return firewall.Apply(ctx)
 	}
 	if err := PersistSwanctlConfig(SwanctlFilePath(), content); err != nil {
-		return fmt.Errorf("persist strongSwan configuration: %w", err)
+		return fmt.Errorf("%w: %w", ErrGatewayConfigurationPersistFailed, err)
 	}
 	// The nftables table is replaced in one kernel transaction. Removing a
 	// grant closes access immediately; other live clients stay connected.
@@ -324,9 +340,9 @@ func reconcileRuntime(ctx context.Context, database *gorm.DB) error {
 		fallbackErr := firewall.ApplyDenyAll(fallbackCtx)
 		cancel()
 		if fallbackErr != nil {
-			return fmt.Errorf("activate firewall policy: %w (fail-closed fallback: %v)", err, fallbackErr)
+			return fmt.Errorf("activate firewall policy: %w (%w: %w)", err, ErrFirewallFailClosedFallbackFailed, fallbackErr)
 		}
-		return fmt.Errorf("activate firewall policy: %w (fail-closed barrier active)", err)
+		return fmt.Errorf("activate firewall policy: %w (%w)", err, ErrFirewallFailClosedBarrierActive)
 	}
 	client := vici.GetClient("")
 	// Empty gateways must still verify the daemon is reachable. Capture the
@@ -396,8 +412,11 @@ func reconcileRuntime(ctx context.Context, database *gorm.DB) error {
 		}
 	}
 	afterBoot, err := client.DaemonBootID(ctx)
-	if err != nil || afterBoot != beforeBoot {
-		return fmt.Errorf("strongSwan restarted while applying; reconcile again: %v", err)
+	if err != nil {
+		return fmt.Errorf("%w; reconcile again: %w", ErrDaemonRestartedDuringApply, err)
+	}
+	if afterBoot != beforeBoot {
+		return fmt.Errorf("%w; reconcile again", ErrDaemonRestartedDuringApply)
 	}
 	return nil
 }

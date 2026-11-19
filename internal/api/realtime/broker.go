@@ -62,7 +62,9 @@ func (b *Broker) listen() {
 				select {
 				case clientChan <- event:
 				default:
-					slog.Warn("Skipping saturated SSE client buffer", "event_type", event.Type)
+					if event.Type != "log_event" {
+						slog.Warn("Skipping saturated SSE client buffer", "event_type", event.Type)
+					}
 				}
 			}
 			b.mu.RUnlock()
@@ -72,12 +74,22 @@ func (b *Broker) listen() {
 
 // Broadcast sends a real-time event to all connected dashboard subscribers
 func (b *Broker) Broadcast(eventType string, payload interface{}) {
-	slog.Debug("Broadcasting realtime event", "type", eventType)
-	b.broadcast <- Event{
+	if eventType != "log_event" {
+		slog.Debug("Broadcasting realtime event", "type", eventType)
+	}
+	event := Event{
 		Type:      eventType,
 		Payload:   payload,
 		Timestamp: time.Now().UnixMilli(),
 	}
+	if eventType == "log_event" {
+		select {
+		case b.broadcast <- event:
+		default: // Never stall request logging if clients are unavailable.
+		}
+		return
+	}
+	b.broadcast <- event
 }
 
 // liveSessionRole prevents a long-lived SSE request from retaining revoked account

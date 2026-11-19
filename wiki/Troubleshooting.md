@@ -10,6 +10,16 @@ Common troubleshooting scenarios and diagnostic steps for SwanPanel.
 Admin dashboard reports `strongSwan Daemon: Disconnected` or `VICI socket not found`.
 
 ### Resolution:
+For the recommended Docker Compose installation, run these commands from the repository directory:
+
+```bash
+docker compose ps
+docker compose logs --tail=100 swan-panel
+docker compose exec swan-panel ls -l /var/run/charon.vici
+```
+
+For the optional host strongSwan installation:
+
 1. Ensure the strongSwan daemon is active:
    ```bash
    sudo systemctl status strongswan
@@ -69,9 +79,4 @@ Client connects successfully, but domain names ending in `.strongnet` do not res
    ```bash
    sudo ss -ulpn | grep ':53'
    ```
-2. Check if `systemd-resolved` is occupying port 53:
-   ```bash
-   # Temporarily disable stub listener if needed:
-   sudo sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
-   sudo systemctl restart systemd-resolved
-   ```
+2. If port 53 is already occupied, identify the host process using `sudo ss -ulpn | grep ':53'`. Resolve the conflict according to your host DNS setup; do not change `systemd-resolved` blindly. For Docker Compose, inspect `docker compose logs --tail=100 swan-panel`.

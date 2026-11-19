@@ -70,7 +70,7 @@ export const CopyButton: React.FC<CopyButtonProps> = ({
         className={`p-1 rounded-md transition-colors text-subtle hover:text-current hover:bg-slate-500/10 min-w-[24px] min-h-[24px] inline-flex items-center justify-center ${className}`}
       >
         {copied ? (
-          <Check className="text-emerald-500 animate-in zoom-in-50 duration-150" style={{ width: iconSize, height: iconSize }} />
+          <Check className="text-status-success animate-in zoom-in-50 duration-150" style={{ width: iconSize, height: iconSize }} />
         ) : (
           <Copy className="transition-opacity duration-150" style={{ width: iconSize, height: iconSize }} />
         )}

@@ -26,12 +26,12 @@ To assist in rapid triage and remediation, please include:
 
 ## Supported Versions
 
-Only the latest active minor release receives official security patches and updates. We strongly advise all operators to maintain their installations on the latest release tag.
+Security fixes target the latest stable release. Operators should update to the newest published release tag.
 
 | Version | Supported | Security Notes |
 | :--- | :--- | :--- |
-| `v0.0.x` | Supported | Current active development and stable release line |
-| `< v0.0.1` | Unsupported | Pre-release and development snapshots |
+| `v1.0.x` | Supported | First stable release line |
+| `v0.0.x` | Unsupported | Pre-stable builds; upgrade to v1.0.0 or later |
 
 ---
 

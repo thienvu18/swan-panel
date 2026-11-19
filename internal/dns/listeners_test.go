@@ -69,7 +69,7 @@ func TestDNSSyncPreservesExistingListenerOnBindFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer occupied.Close()
+	defer func() { _ = occupied.Close() }()
 	if err := server.SyncListeners([]string{addr, occupied.Addr().String()}); err == nil {
 		t.Fatal("expected a bind failure for new occupied listener")
 	}
@@ -99,12 +99,12 @@ func TestDNSHostVIPCoexistsWithOtherLoopbackResolver(t *testing.T) {
 	if err != nil {
 		t.Skipf("host cannot assign second loopback address: %v", err)
 	}
-	defer otherTCP.Close()
+	defer func() { _ = otherTCP.Close() }()
 	otherUDP, err := net.ListenPacket("udp", otherAddr)
 	if err != nil {
 		t.Skipf("host cannot bind UDP on second loopback address: %v", err)
 	}
-	defer otherUDP.Close()
+	defer func() { _ = otherUDP.Close() }()
 
 	server := swanDNS.NewServer(portAddr, setupTestDB(t))
 	defer server.Stop()

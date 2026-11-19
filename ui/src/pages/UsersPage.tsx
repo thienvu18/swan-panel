@@ -1,3 +1,4 @@
+import { useToast } from '../components/ToastProvider';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -27,6 +28,7 @@ interface UserGroupItem {
 
 export const UsersPage: React.FC = () => {
   const { t } = useTranslation();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const [activeSubView, setActiveSubView] = useState<'directory' | 'usergroups'>('directory');
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
@@ -46,7 +48,7 @@ export const UsersPage: React.FC = () => {
   const [grpDesc, setGrpDesc] = useState('');
 
   // 1. Query Users
-  const { data: usersData } = useQuery<{ users: UserItem[] }>({
+  const { data: usersData, isError: usersError, refetch: refetchUsers } = useQuery<{ users: UserItem[] }>({
     queryKey: ['users'],
     queryFn: async () => {
       const res = await fetch('/api/users', {
@@ -58,7 +60,7 @@ export const UsersPage: React.FC = () => {
   });
 
   // 2. Query Groups
-  const { data: groupsData } = useQuery<{ user_groups: UserGroupItem[] }>({
+  const { data: groupsData, isError: groupsError, refetch: refetchGroups } = useQuery<{ user_groups: UserGroupItem[] }>({
     queryKey: ['user_groups'],
     queryFn: async () => {
       const res = await fetch('/api/user-groups', {
@@ -106,7 +108,10 @@ export const UsersPage: React.FC = () => {
       if (!res.ok) throw new Error('Failed to approve');
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (result: { runtime_status?: string }) => {
+      result.runtime_status === 'pending'
+        ? toast.info(t('server.enforcement_pending_notice'))
+        : toast.success(t('common.operation_saved'));
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
     },
@@ -123,6 +128,7 @@ export const UsersPage: React.FC = () => {
       return res.json();
     },
     onSuccess: () => {
+      toast.success(t('common.operation_saved'));
       queryClient.invalidateQueries({ queryKey: ['users'] });
     },
   });
@@ -138,6 +144,7 @@ export const UsersPage: React.FC = () => {
       return res.json();
     },
     onSuccess: () => {
+      toast.success(t('common.operation_saved'));
       queryClient.invalidateQueries({ queryKey: ['users'] });
     },
   });
@@ -165,6 +172,7 @@ export const UsersPage: React.FC = () => {
       return res.json();
     },
     onSuccess: () => {
+      toast.success(t('common.operation_created'));
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setIsAddUserOpen(false);
       createUserMutation.reset();
@@ -193,6 +201,7 @@ export const UsersPage: React.FC = () => {
       return res.json();
     },
     onSuccess: () => {
+      toast.success(t('common.operation_created'));
       queryClient.invalidateQueries({ queryKey: ['user_groups'] });
       setIsAddGroupOpen(false);
       createGroupMutation.reset();
@@ -211,7 +220,10 @@ export const UsersPage: React.FC = () => {
       if (!res.ok) throw new Error('Failed to delete user group');
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (result: { runtime_status?: string }) => {
+      result.runtime_status === 'pending'
+        ? toast.info(t('server.enforcement_pending_notice'))
+        : toast.success(t('common.operation_deleted'));
       queryClient.invalidateQueries({ queryKey: ['user_groups'] });
     },
   });
@@ -228,7 +240,10 @@ export const UsersPage: React.FC = () => {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (result: { runtime_status?: string }) => {
+      result.runtime_status === 'pending'
+        ? toast.info(t('server.enforcement_pending_notice'))
+        : toast.success(t('common.operation_deleted'));
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
       queryClient.invalidateQueries({ queryKey: ['devices'] });
@@ -237,6 +252,14 @@ export const UsersPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      {(usersError || groupsError) && (
+        <div role="alert" className="border border-rose-500/30 rounded-lg bg-rose-500/5 text-status-danger p-3 text-xs flex items-center justify-between gap-3">
+          <span>{t('common.load_failed')}</span>
+          <button type="button" onClick={() => { void refetchUsers(); void refetchGroups(); }} className="underline font-medium">
+            {t('common.retry')}
+          </button>
+        </div>
+      )}
       {/* Subnav & Action */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex border subtle-border rounded-lg p-0.5 surface-header text-xs">
@@ -265,7 +288,7 @@ export const UsersPage: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={activeSubView === 'directory' ? "Search users by name, email..." : "Search user groups..."}
+              placeholder={activeSubView === 'directory' ? t('users.search_placeholder') : t('users.group_search_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg pl-8 pr-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -291,7 +314,7 @@ export const UsersPage: React.FC = () => {
           {/* OIDC Approval Queue */}
           {pendingUsers.length > 0 && (
             <div className="space-y-2">
-              <span className="font-semibold text-xs text-amber-500 flex items-center gap-1.5">
+              <span className="font-semibold text-xs text-status-warning flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                 {t('users.approval_queue')} ({pendingUsers.length})
               </span>
@@ -343,7 +366,7 @@ export const UsersPage: React.FC = () => {
                               confirmLabel: t('common.reject'),
                               onConfirm: () => rejectMutation.mutateAsync(u.id),
                             })}
-                            className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors inline-block"
+                            className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors inline-block"
                             title={t('users.reject')}
                           >
                             <X className="w-4 h-4" />
@@ -359,7 +382,7 @@ export const UsersPage: React.FC = () => {
                                 groupIDs: pendingMemberships[u.id] ?? u.user_groups?.map(group => group.id) ?? [],
                               }),
                             })}
-                            className="p-1.5 hover:bg-emerald-500/10 rounded-md text-emerald-500 transition-colors inline-block"
+                            className="p-1.5 hover:bg-emerald-500/10 rounded-md text-status-success transition-colors inline-block"
                             title={t('users.approve')}
                           >
                             <Check className="w-4 h-4" />
@@ -396,9 +419,9 @@ export const UsersPage: React.FC = () => {
                         <td colSpan={5} className="py-8">
                           <EmptyState
                             icon={UsersIcon}
-                            title={searchQuery ? 'No matching users' : 'No active users found'}
-                            description={searchQuery ? `No users match '${searchQuery}'.` : "Invite team members or enable Single Sign-On to onboard users."}
-                            actionLabel={searchQuery ? 'Clear Search' : t('users.add_user')}
+                            title={searchQuery ? t('users.no_matching_users') : t('users.no_active_users')}
+                            description={searchQuery ? t('users.no_matching_users_description', { query: searchQuery }) : t('users.no_active_users_description')}
+                            actionLabel={searchQuery ? t('common.clear_search') : t('users.add_user')}
                             actionIcon={searchQuery ? X : Plus}
                             onAction={searchQuery ? () => setSearchQuery('') : () => setIsAddUserOpen(true)}
                             className="border-none shadow-none bg-transparent"
@@ -417,7 +440,7 @@ export const UsersPage: React.FC = () => {
                         </td>
                         <td className="py-2.5 px-3.5">
                           {u.auth_type === 'local' ? (
-                            <span className="border border-zinc-700 bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                            <span className="border subtle-border bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded text-[10px] font-mono">
                               {t('users.local_auth')}
                             </span>
                           ) : (
@@ -426,7 +449,7 @@ export const UsersPage: React.FC = () => {
                         </td>
                         <td className="py-2.5 px-3.5">
                           {u.is_admin ? (
-                            <span className="bg-blue-500/10 text-blue-500 border border-blue-500/20 px-2 py-0.5 rounded-md text-[10px] font-semibold">
+                            <span className="bg-blue-500/10 text-accent border border-blue-500/20 px-2 py-0.5 rounded-md text-[10px] font-semibold">
                               {t('users.admin')}
                             </span>
                           ) : (
@@ -438,7 +461,7 @@ export const UsersPage: React.FC = () => {
                         <td className="py-2.5 px-3.5 text-subtle">
                           {u.user_groups && u.user_groups.length > 0
                             ? u.user_groups.map((g) => g.name).join(', ')
-                            : 'None'}
+                            : t('common.none')}
                         </td>
                         <td className="py-2.5 px-3.5 text-right space-x-1">
                           <button
@@ -451,7 +474,7 @@ export const UsersPage: React.FC = () => {
                               onConfirm: () => toggleRoleMutation.mutateAsync(u.id),
                             })}
                             className={`p-1.5 rounded-md transition-colors inline-block ${
-                              u.is_admin ? 'text-blue-500 hover:bg-blue-500/10' : 'text-subtle hover:text-blue-500 hover:bg-slate-500/10'
+                              u.is_admin ? 'text-accent hover:bg-blue-500/10' : 'text-subtle hover:text-blue-700 dark:hover:text-blue-400 hover:bg-slate-500/10'
                             }`}
                             title={t(u.is_admin ? 'common.remove_admin' : 'common.grant_admin')}
                             aria-label={t(u.is_admin ? 'common.remove_admin' : 'common.grant_admin') + ' ' + u.name}
@@ -465,7 +488,7 @@ export const UsersPage: React.FC = () => {
                               confirmLabel: t('common.delete'),
                               onConfirm: () => deleteUserMutation.mutateAsync(u.id),
                             })}
-                            className="p-1.5 rounded-md text-rose-500 hover:bg-rose-500/10"
+                            className="p-1.5 rounded-md text-status-danger hover:bg-rose-500/10"
                             title={t('common.delete')}
                             aria-label={t('common.delete') + ' ' + u.name}
                           >
@@ -500,19 +523,19 @@ export const UsersPage: React.FC = () => {
                 <tr>
                   <td colSpan={4} className="py-8 text-center text-subtle font-sans text-xs">
                     {searchQuery
-                      ? `No user groups match '${searchQuery}'`
-                      : "No user groups configured yet. Click '+ Add Group' to create a team."}
+                      ? t('users.no_matching_groups', { query: searchQuery })
+                      : t('users.no_groups_created')}
                   </td>
                 </tr>
               ) : (
                 filteredGroups.map((g) => (
                   <tr key={g.id} className="hover-row">
-                    <td className="py-2.5 px-3.5 font-medium text-blue-400 flex items-center gap-2">
-                      <UsersIcon className="w-3.5 h-3.5 text-blue-400" />
+                    <td className="py-2.5 px-3.5 font-medium text-accent flex items-center gap-2">
+                      <UsersIcon className="w-3.5 h-3.5 text-accent" />
                       {g.name}
                     </td>
                     <td className="py-2.5 px-3.5 text-subtle">{g.description || '-'}</td>
-                    <td className="py-2.5 px-3.5 text-dim font-mono">{g.member_count || 0} members</td>
+                    <td className="py-2.5 px-3.5 text-dim font-mono">{t('users.member_count', { count: g.member_count ?? 0 })}</td>
                     <td className="py-2.5 px-3.5 text-right">
                       <button
                         onClick={() => requestConfirmation({
@@ -521,9 +544,9 @@ export const UsersPage: React.FC = () => {
                           confirmLabel: t('common.delete'),
                           onConfirm: () => deleteGroupMutation.mutateAsync(g.id),
                         })}
-                        className="p-1.5 hover:bg-rose-500/10 rounded-md text-subtle hover:text-rose-500 transition-colors"
-                        title="Delete Group"
-                        aria-label="Delete Group"
+                        className="p-1.5 hover:bg-rose-500/10 rounded-md text-subtle hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
+                        title={t('confirm.delete_group_title')}
+                        aria-label={t('confirm.delete_group_title')}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -554,7 +577,7 @@ export const UsersPage: React.FC = () => {
               type="text"
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
-              placeholder="e.g. Alex Contractor"
+              placeholder={t('users.name_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -565,7 +588,7 @@ export const UsersPage: React.FC = () => {
               type="email"
               value={userEmail}
               onChange={(e) => setUserEmail(e.target.value)}
-              placeholder="e.g. alex@partner.io"
+              placeholder={t('users.email_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -576,7 +599,7 @@ export const UsersPage: React.FC = () => {
               type="password"
               value={userPassword}
               onChange={(e) => setUserPassword(e.target.value)}
-              placeholder="Strong password"
+              placeholder={t('users.password_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -590,7 +613,7 @@ export const UsersPage: React.FC = () => {
               className="rounded border-slate-600"
             />
             <label htmlFor="chk-admin" className="text-subtle cursor-pointer">
-              Grant System Administrator privilege
+              {t('users.admin_privilege_label')}
             </label>
           </div>
         </div>
@@ -612,7 +635,7 @@ export const UsersPage: React.FC = () => {
             disabled={!userName || !userEmail || !userPassword || createUserMutation.isPending}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
-            {createUserMutation.isPending ? 'Saving...' : t('common.save')}
+            {createUserMutation.isPending ? t('common.saving') : t('common.save')}
           </button>
           <button
             onClick={() => {
@@ -639,23 +662,23 @@ export const UsersPage: React.FC = () => {
       >
         <div className="space-y-3 text-xs">
           <div>
-            <label className="text-subtle block mb-1">Group Name</label>
+            <label className="text-subtle block mb-1">{t('users.group_name_label')}</label>
             <input
               type="text"
               value={grpName}
               onChange={(e) => setGrpName(e.target.value)}
-              placeholder="e.g. Security Auditors"
+              placeholder={t('users.group_name_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
 
           <div>
-            <label className="text-subtle block mb-1">Description</label>
+            <label className="text-subtle block mb-1">{t('common.description')}</label>
             <input
               type="text"
               value={grpDesc}
               onChange={(e) => setGrpDesc(e.target.value)}
-              placeholder="e.g. External auditors with read-only access"
+              placeholder={t('users.group_description_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -667,7 +690,7 @@ export const UsersPage: React.FC = () => {
             disabled={!grpName || createGroupMutation.isPending}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
-            {createGroupMutation.isPending ? 'Saving...' : t('common.save')}
+            {createGroupMutation.isPending ? t('common.saving') : t('common.save')}
           </button>
           <button
             onClick={() => {

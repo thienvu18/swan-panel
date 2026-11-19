@@ -195,23 +195,36 @@ sudo swanctl --terminate --ike swanpanel-ikev2
 
 ## 6. ANDROID CONNECTION GUIDE
 
-* **Supported Versions:** Android 12, 13, 14, 15  
-* **Client App:** Official strongSwan VPN Client (Free & Open Source, available on Google Play)
+**No additional application, ADB, USB cable, or MDM is required.** Native
+IKEv2/IPsec RSA availability depends on Android version and manufacturer; not
+every Android device exposes this VPN type.
 
-### Step 1: Install strongSwan VPN Client
-1. Open **Google Play Store** on your Android device.
-2. Search for **strongSwan VPN Client** (by strongSwan Project) and install.
+### Step 1: Download your native certificate
+1. On the Android device, sign in to the SwanPanel dashboard or Resources page.
+2. Select your Android device and tap **Set up Android VPN**.
+3. Tap **Download client certificate (.p12)**. Keep the setup dialog open:
+   its displayed import password belongs to this exact download.
+4. In Android Settings, locate **Security > Install certificate > VPN & app
+   user certificate** (path varies by vendor). Import the .p12 and paste the
+   password from the SwanPanel dialog.
 
-### Step 2: Import Profile
-1. On your Android phone, download your configuration bundle from SwanPanel.
-2. Open the strongSwan app.
-3. Tap the three dots menu (top-right) > **Import VPN profile**.
-4. Select the downloaded file and confirm certificate import.
+### Step 2: Create the built-in VPN connection
+1. Open **Settings > Network & Internet > VPN > Add VPN**.
+2. Choose **IKEv2/IPsec RSA**. Copy the server address and client/IPsec
+   identifier from the SwanPanel dialog; verify the server identity matches.
+3. Select the imported client certificate. If Android requires a trusted CA,
+   download **swanpanel-ca.cer** from the same dialog, import it through the
+   OS certificate settings, and select it for the VPN server.
+4. Save and connect. Accept trust only for the CA issued by your own operator.
 
-### Step 3: Connect
-1. Tap the imported **SwanPanel** profile.
-2. Tap **Connect**.
-3. A key icon will appear in the notification drawer when connected.
+### Step 3: Confirm and clean up
+1. Verify that Android reports Connected and the dashboard shows the expected
+   Virtual IP. Test an allowed internal resource and a denied destination.
+2. Delete the downloaded .p12 from Downloads after the OS keystore imports it.
+   Never share the private key, .p12 password, or setup response.
+3. If the built-in VPN menu has no IKEv2/IPsec RSA option, mark this device
+   **unsupported for app-free setup**. Do not silently switch to a third-party
+   VPN application.
 
 ---
 

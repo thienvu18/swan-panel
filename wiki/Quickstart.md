@@ -1,50 +1,54 @@
 # Quickstart & Installation
 
-SwanPanel can be deployed in under 60 seconds on any supported Linux server.
+SwanPanel and strongSwan run together in the recommended Docker Compose deployment. Your users connect with the VPN built into their supported devices.
 
 ---
 
-## 1. Automated 1-Line Installer
+## 1. Docker Compose (Recommended)
 
-The recommended installation method uses the official automated installer script:
+On a Linux server with Docker and the Compose plugin:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/thienvu18/swan-panel/main/install.sh | sudo bash
+git clone https://github.com/thienvu18/swan-panel.git
+cd swan-panel
+umask 077
+printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > .env
+docker compose up -d
+docker compose ps
 ```
 
-### What the installer does:
-1. Detects OS distribution (Ubuntu, Debian, CentOS, Rocky Linux, AlmaLinux, Fedora).
-2. Installs required system packages: `strongswan`, `strongswan-charon-plugin-vici` / `strongswan-swanctl`, and `iptables`.
-3. Enables Linux kernel IPv4/IPv6 packet forwarding (`/etc/sysctl.d/99-swanpanel.conf`).
-4. Downloads the matching static binary from GitHub Releases to `/usr/local/bin/swan-panel`.
-5. Creates configuration file `/etc/swan-panel/config.env` with a cryptographically secure random `JWT_SECRET`.
-6. Installs and starts the systemd service (`swan-panel.service`).
+The container includes strongSwan and persistent data; no host VICI socket mount is required. Open UDP 500/4500 for IKEv2 and TCP 8080 for the web UI, or put the UI behind HTTPS.
+
+For logs:
+
+```bash
+docker compose logs -f
+```
+
+**Advanced host installation:** If you manage strongSwan with systemd on the server, see [deploy/README.md](https://github.com/thienvu18/swan-panel/blob/main/deploy/README.md) for the native installer and host-socket deployment.
 
 ---
 
 ## 2. Accessing the Web Control Plane
 
-Once the installer finishes, navigate to:
+When the container is running, navigate to:
 
 ```text
 http://<YOUR_SERVER_IP>:8080
 ```
 
-SwanPanel has no default login. Retrieve the one-time setup token using `sudo cat /var/lib/swan-panel/swanpanel.db.setup-token`, enter it in the web setup form, and create your first administrator. Then configure the external server IP/hostname in **Server Settings**.
+SwanPanel has no default login. In the repository directory, run `docker compose exec swan-panel cat /var/lib/swan-panel/swanpanel.db.setup-token`. Enter the one-time token in the web setup form, create your first administrator, and set the public server address in **Server Settings**.
 
 ---
 
 ## 3. Service Management
 
-Manage the background daemon using standard systemd commands:
+From the repository directory, check, inspect and restart the Docker service:
 
 ```bash
-# Check status
-sudo systemctl status swan-panel
-
-# View live application logs
-sudo journalctl -u swan-panel -f
-
-# Restart service
-sudo systemctl restart swan-panel
+docker compose ps
+docker compose logs -f
+docker compose restart swan-panel
 ```
+
+For the optional host installation, use `sudo systemctl status swan-panel` and `sudo journalctl -u swan-panel -f`.

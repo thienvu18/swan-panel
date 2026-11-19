@@ -15,7 +15,11 @@ tokens:
       border-focus: "#3b82f6"
       text-primary: "#f8fafc"
       text-subtle: "#94a3b8"
-      text-dim: "#64748b"
+      text-dim: "#8292a8"
+      text-accent: "#60a5fa"
+      text-success: "#34d399"
+      text-warning: "#fbbf24"
+      text-danger: "#fb7185"
       primary: "#2563eb"
       primary-hover: "#3b82f6"
       primary-subtle: "rgba(37, 99, 235, 0.1)"
@@ -35,8 +39,12 @@ tokens:
       border-subtle: "#e2e8f0"
       border-focus: "#2563eb"
       text-primary: "#0f172a"
-      text-subtle: "#64748b"
-      text-dim: "#94a3b8"
+      text-subtle: "#475569"
+      text-dim: "#64748b"
+      text-accent: "#1d4ed8"
+      text-success: "#047857"
+      text-warning: "#92400e"
+      text-danger: "#be123c"
       primary: "#2563eb"
       primary-hover: "#1d4ed8"
       primary-subtle: "rgba(37, 99, 235, 0.08)"
@@ -137,7 +145,9 @@ Colors represent network state and user actions, never decoration:
 * **Section Titles:** `14px` (`text-sm`), font-weight 700, tracking tight.
 * **Card Titles:** `12px` (`text-xs`), font-weight 600.
 * **Body / Form Labels:** `12px` (`text-xs`), font-weight 500.
-* **Help Hints / Subtitles:** `11px` (`text-xs`), font-color `text-dim` (`#64748b` dark / `#94a3b8` light), italic or standard.
+* **Help Hints / Subtitles:** `11px` (`text-xs`), font-color `text-dim` (`#8292a8` dark / `#64748b` light), italic or standard.
+* **Accent Text / Links:** Use semantic `text-accent` (`#60a5fa` dark / `#1d4ed8` light) for link-like names and IPs.
+* **Status Text:** Use `text-status-success`, `text-status-warning`, or `text-status-danger` for small readable labels. Their colors are distinct from bright status dots and button backgrounds, especially on white surfaces.
 * **Badges & Tooltips:** `10px` / `11px`, font-weight 500, uppercase or monospace.
 
 ---

@@ -2,6 +2,7 @@ package policy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"sort"
@@ -11,12 +12,24 @@ import (
 	"gorm.io/gorm"
 )
 
+// ErrDeviceRevoked indicates that a revoked device cannot receive compiled access grants.
+var ErrDeviceRevoked = errors.New("device is revoked")
+
+// RuleSource explains which configured access rule contributed a compiled selector.
+// It is diagnostic metadata only and never changes gateway enforcement.
+type RuleSource struct {
+	ID          string `json:"id"`
+	SubjectType string `json:"subject_type"`
+	RuleNature  string `json:"rule_nature"`
+}
+
 type CompilationResult struct {
-	DeviceID         string   `json:"device_id"`
-	VirtualIP        string   `json:"virtual_ip"`
-	AllowedSelectors []string `json:"allowed_selectors"`
-	DeniedSelectors  []string `json:"denied_selectors"`
-	DenyFilters      []string `json:"deny_filters"` // Legacy diagnostics; never execute these strings.
+	DeviceID         string                  `json:"device_id"`
+	VirtualIP        string                  `json:"virtual_ip"`
+	AllowedSelectors []string                `json:"allowed_selectors"`
+	DeniedSelectors  []string                `json:"denied_selectors"`
+	DenyFilters      []string                `json:"deny_filters"` // Legacy diagnostics; never execute these strings.
+	RuleSources      map[string][]RuleSource `json:"-"`            // Never exposed in the general compiled-policy response.
 }
 
 type Compiler struct{ database *gorm.DB }
@@ -30,13 +43,13 @@ func (c *Compiler) CompileForDevice(ctx context.Context, deviceID string) (*Comp
 		return nil, err
 	}
 	if dev.IsRevoked {
-		return nil, fmt.Errorf("device %s revoked", deviceID)
+		return nil, fmt.Errorf("%w: %s", ErrDeviceRevoked, deviceID)
 	}
 	addr, err := netip.ParseAddr(dev.VirtualIP)
 	if err != nil || !addr.Is4() {
 		return nil, fmt.Errorf("invalid IPv4 device address: %s", dev.VirtualIP)
 	}
-	result := &CompilationResult{DeviceID: dev.ID, VirtualIP: addr.String()}
+	result := &CompilationResult{DeviceID: dev.ID, VirtualIP: addr.String(), RuleSources: make(map[string][]RuleSource)}
 	allow := map[string]bool{}
 	deny := map[string]bool{}
 	subjectIDs := map[string]map[string]bool{"device": {dev.ID: true}}
@@ -62,6 +75,7 @@ func (c *Compiler) CompileForDevice(ctx context.Context, deviceID string) (*Comp
 		if err != nil {
 			return nil, fmt.Errorf("rule %s: %w", rule.ID, err)
 		}
+		source := RuleSource{ID: rule.ID, SubjectType: rule.SubjectType, RuleNature: rule.RuleNature}
 		switch rule.Action {
 		case "ALLOW":
 			allow[cidr] = true
@@ -70,6 +84,7 @@ func (c *Compiler) CompileForDevice(ctx context.Context, deviceID string) (*Comp
 		default:
 			return nil, fmt.Errorf("invalid policy action for %s", rule.ID)
 		}
+		result.RuleSources[rule.Action+":"+cidr] = append(result.RuleSources[rule.Action+":"+cidr], source)
 	}
 	for cidr := range allow {
 		result.AllowedSelectors = append(result.AllowedSelectors, cidr)
@@ -81,6 +96,11 @@ func (c *Compiler) CompileForDevice(ctx context.Context, deviceID string) (*Comp
 	sort.Strings(result.AllowedSelectors)
 	sort.Strings(result.DeniedSelectors)
 	sort.Strings(result.DenyFilters)
+	for key := range result.RuleSources {
+		sort.Slice(result.RuleSources[key], func(i, j int) bool {
+			return result.RuleSources[key][i].ID < result.RuleSources[key][j].ID
+		})
+	}
 	return result, nil
 }
 

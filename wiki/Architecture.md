@@ -28,7 +28,7 @@ SwanPanel integrates five primary subsystem modules into a single self-contained
 
 ## 1. Zero-SSH VICI Control Plane
 - SwanPanel communicates directly with strongSwan's `charon` daemon via UNIX domain socket `/var/run/charon.vici` using the binary `govici` protocol.
-- Connection configurations (`load-conn`), termination commands (`terminate`), and security association queries (`list-sas`) execute in RAM without writing to static files or restarting the daemon. Active tunnels experience zero downtime.
+- SwanPanel persists managed connection configuration and reconciles it through VICI (`load-conn`); it queries associations with `list-sas` and can terminate sessions. Ordinary policy updates aim to preserve existing tunnels, while a daemon restart disconnects them. Saved and active gateway generations are tracked separately.
 
 ## 2. Embedded PKI (Public Key Infrastructure)
 - SwanPanel acts as an autonomous internal X.509 Certificate Authority.

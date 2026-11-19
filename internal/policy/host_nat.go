@@ -68,8 +68,9 @@ func validateHostInterface(iface string) (string, error) {
 		return "", fmt.Errorf("invalid NAT egress interface %q", iface)
 	}
 	for _, ch := range iface {
-		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-			(ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.' || ch == ':') {
+		allowed := (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.' || ch == ':'
+		if !allowed {
 			return "", fmt.Errorf("invalid NAT egress interface %q", iface)
 		}
 	}

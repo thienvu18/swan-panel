@@ -28,6 +28,59 @@ func NewAccessHandler() *AccessHandler {
 	return &AccessHandler{}
 }
 
+// EffectiveDeviceAccess returns an explanatory view of compiled policy.
+// It does not claim to probe the live network or override the runtime apply state.
+func (h *AccessHandler) EffectiveDeviceAccess(c *gin.Context) {
+	deviceID := c.Param("id")
+	rawID := strings.TrimPrefix(deviceID, "dev_")
+	if _, err := uuid.Parse(rawID); err != nil {
+		slog.Warn("Rejected effective policy lookup: malformed device ID")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid device ID"})
+		return
+	}
+
+	compiled, err := policy.NewCompiler(db.DB).CompileForDevice(c.Request.Context(), deviceID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+			return
+		}
+		if errors.Is(err, policy.ErrDeviceRevoked) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Device is revoked"})
+			return
+		}
+		slog.Warn("Unable to compile effective device policy", "device_id", deviceID, "error", err)
+		c.JSON(http.StatusConflict, gin.H{"error": "Device policy is unavailable"})
+		return
+	}
+
+	runtimeState, err := policy.GetApplyState(c.Request.Context(), db.DB)
+	if err != nil {
+		slog.Warn("Effective policy runtime state unavailable", "device_id", deviceID, "error", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Gateway apply state is unavailable"})
+		return
+	}
+
+	response := gin.H{
+		"policy": compiled,
+		"runtime": gin.H{
+			"status":             runtimeState.Status,
+			"desired_generation": runtimeState.DesiredGeneration,
+			"applied_generation": runtimeState.AppliedGeneration,
+		},
+	}
+	if destination := strings.TrimSpace(c.Query("destination")); destination != "" {
+		decision, evalErr := policy.EvaluateDestination(compiled, destination)
+		if evalErr != nil {
+			slog.Warn("Rejected effective policy destination", "device_id", deviceID, "error", evalErr)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Destination must be an IPv4 address"})
+			return
+		}
+		response["decision"] = decision
+	}
+	c.JSON(http.StatusOK, response)
+}
+
 // RuleDTO represents an enriched access rule for client consumption
 type RuleDTO struct {
 	ID          string `json:"id"`
@@ -41,59 +94,16 @@ type RuleDTO struct {
 	RuleNature  string `json:"rule_nature"` // 'group_policy', 'direct_grant', 'user_exclusion'
 }
 
-// ListAccessRules returns all access policies
+// ListAccessRules returns enriched access rules using batched reference lookups.
 func (h *AccessHandler) ListAccessRules(c *gin.Context) {
 	slog.Debug("Listing access rules")
-	var rules []db.AccessRule
-	if err := db.DB.Order("created_at asc").Find(&rules).Error; err != nil {
+	rules, err := listAccessRuleDTOs(c.Request.Context(), db.DB)
+	if err != nil {
 		slog.Error("Failed to query access rules", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch access rules"})
 		return
 	}
-
-	var dtos []RuleDTO
-	for _, r := range rules {
-		subjName := r.SubjectID
-		switch r.SubjectType {
-		case "user_group":
-			var g db.UserGroup
-			if err := db.DB.Where("id = ?", r.SubjectID).First(&g).Error; err == nil {
-				subjName = g.Name
-			}
-		case "user":
-			var u db.User
-			if err := db.DB.Where("id = ?", r.SubjectID).First(&u).Error; err == nil {
-				subjName = u.Name
-			}
-		case "device":
-			var d db.Device
-			if err := db.DB.Where("id = ?", r.SubjectID).First(&d).Error; err == nil {
-				subjName = d.Hostname
-			}
-		}
-
-		targetName := r.TargetValue
-		if r.TargetType == "resource_group" {
-			var rg db.ResourceGroup
-			if err := db.DB.Where("id = ?", r.TargetValue).First(&rg).Error; err == nil {
-				targetName = rg.Name + " (" + rg.CIDRBlock + ")"
-			}
-		}
-
-		dtos = append(dtos, RuleDTO{
-			ID:          r.ID,
-			SubjectType: r.SubjectType,
-			SubjectID:   r.SubjectID,
-			SubjectName: subjName,
-			Action:      r.Action,
-			TargetType:  r.TargetType,
-			TargetValue: r.TargetValue,
-			TargetName:  targetName,
-			RuleNature:  r.RuleNature,
-		})
-	}
-
-	c.JSON(http.StatusOK, gin.H{"access_rules": dtos})
+	c.JSON(http.StatusOK, gin.H{"access_rules": rules})
 }
 
 // CreateAccessRule creates a new rule

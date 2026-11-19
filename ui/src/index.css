@@ -33,7 +33,7 @@ html.dark .surface-input { background-color: #0b0f17; border-color: #374151; col
 html.dark .subtle-border { border-color: #1f2937; }
 html.dark .hover-row:hover { background-color: rgba(31, 41, 55, 0.4); }
 html.dark .text-subtle { color: #94a3b8; }
-html.dark .text-dim { color: #64748b; }
+html.dark .text-dim { color: #8292a8; }
 html.dark .text-heading { color: #f8fafc; }
 
 /* Light Mode Tokens */
@@ -44,9 +44,25 @@ html:not(.dark) .surface-nav { background-color: #ffffff; border-color: #e2e8f0;
 html:not(.dark) .surface-input { background-color: #ffffff; border-color: #cbd5e1; color: #0f172a; }
 html:not(.dark) .subtle-border { border-color: #e2e8f0; }
 html:not(.dark) .hover-row:hover { background-color: #f8fafc; }
-html:not(.dark) .text-subtle { color: #64748b; }
-html:not(.dark) .text-dim { color: #94a3b8; }
+html:not(.dark) .text-subtle { color: #475569; }
+html:not(.dark) .text-dim { color: #64748b; }
 html:not(.dark) .text-heading { color: #0f172a; }
+
+/* Semantic text and form affordances must remain readable on both surfaces. */
+html.dark .text-accent { color: #60a5fa; }
+html:not(.dark) .text-accent { color: #1d4ed8; }
+html.dark .text-status-success { color: #34d399; }
+html:not(.dark) .text-status-success { color: #047857; }
+html.dark .text-status-warning { color: #fbbf24; }
+html:not(.dark) .text-status-warning { color: #92400e; }
+html.dark .text-status-danger { color: #fb7185; }
+html:not(.dark) .text-status-danger { color: #be123c; }
+html.dark .surface-input::placeholder { color: #94a3b8; opacity: 1; }
+html:not(.dark) .surface-input::placeholder { color: #64748b; opacity: 1; }
+
+/* Tailwind's divide-y applies borders to child rows, not to their tbody parent. */
+html.dark .divide-y.subtle-border > :not(:last-child) { border-color: #1f2937; }
+html:not(.dark) .divide-y.subtle-border > :not(:last-child) { border-color: #e2e8f0; }
 
 /* Tooltip */
 [data-tooltip] { position: relative; }
@@ -90,12 +106,34 @@ select.surface-input:focus-visible {
   outline-offset: 2px;
 }
 select.surface-input:disabled { cursor: not-allowed; opacity: 0.6; }
-html.dark select.surface-input {
+html.dark select {
   color-scheme: dark;
+}
+html:not(.dark) select {
+  color-scheme: light;
+}
+html.dark select.surface-input {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
-html:not(.dark) select.surface-input { color-scheme: light; }
-html.dark select.surface-input option,
-html.dark select.surface-input optgroup { background: #111827; color: #f8fafc; }
-html:not(.dark) select.surface-input option,
-html:not(.dark) select.surface-input optgroup { background: #fff; color: #0f172a; }
+html.dark select option,
+html.dark select optgroup { background: #111827; color: #f8fafc; }
+html:not(.dark) select option,
+html:not(.dark) select optgroup { background: #fff; color: #0f172a; }
+/* Visible keyboard focus for all controls, including icon-only actions. */
+:where(button, a, input, textarea, select, [role="button"]):focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+:where(button, input, textarea, select):disabled {
+  cursor: not-allowed;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

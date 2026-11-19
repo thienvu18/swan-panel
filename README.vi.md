@@ -9,7 +9,7 @@
 # SwanPanel
 
 **Bảng điều khiển Web hiện đại, gọn nhẹ cho strongSwan IPsec VPN.**<br>
-**Cấu hình 100% native client trên hệ điều hành. Không cần cài bất kỳ ứng dụng bên thứ ba nào.**
+**Kết nối bằng VPN tích hợp trên thiết bị tương thích. Không cần ứng dụng SwanPanel riêng.**
 
 [![GitHub Stars](https://img.shields.io/github/stars/thienvu18/swan-panel?style=flat-square&color=eab308)](https://github.com/thienvu18/swan-panel/stargazers)
 [![GitHub Release](https://img.shields.io/github/v/release/thienvu18/swan-panel?style=flat-square)](https://github.com/thienvu18/swan-panel/releases)
@@ -19,7 +19,7 @@
 [![strongSwan](https://img.shields.io/badge/strongSwan-VICI_IPC-crimson?style=flat-square)](https://github.com/strongswan/strongswan)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-gray?style=flat-square)](LICENSE)
 
-[Website & Tài liệu](https://thienvu18.github.io/swan-panel/) • [English](README.md) • [Tiếng Việt](README.vi.md) • [Thảo luận](https://github.com/thienvu18/swan-panel/discussions) • [Wiki](https://github.com/thienvu18/swan-panel/wiki)
+[Website & Tài liệu](https://thienvu18.github.io/swan-panel/) • [English](README.md) • [Tiếng Việt](README.vi.md) • [Bản phát hành v1.0.0](CHANGELOG.md) • [Thảo luận](https://github.com/thienvu18/swan-panel/discussions) • [Wiki](https://github.com/thienvu18/swan-panel/wiki)
 
 <br>
 
@@ -45,11 +45,11 @@ Dù bạn đang quản lý một cụm Homelab cá nhân hay vận hành hạ t�
 
 * **Kiến trúc cồng kềnh, ngốn tài nguyên:**
   Nhiều hệ thống quản trị VPN nguồn mở hiện nay yêu cầu các cụm Docker Compose phức tạp gồm nhiều container riêng biệt: Node.js, Python, cơ sở dữ liệu PostgreSQL, Redis, Nginx... ngốn hàng trăm megabyte RAM trước khi có người dùng đầu tiên kết nối.
-  * **Giải pháp của SwanPanel:** Được biên dịch thành **một file thực thi duy nhất (Single Binary)**. Go backend, giao diện React 19 SPA nhúng sẵn, cơ sở dữ liệu SQLite thuần Go (chế độ WAL hiệu năng cao), PKI tự động và máy chủ Split-DNS tích hợp. Chiếm chưa tới 30MB RAM ở trạng thái nghỉ, hoạt động mượt mà trên VPS 5$/tháng hoặc Raspberry Pi.
+  * **Giải pháp của SwanPanel:** Được biên dịch thành **một file thực thi duy nhất (Single Binary)**. Go backend, giao diện React 19 SPA nhúng sẵn, cơ sở dữ liệu SQLite (CGO liên kết tĩnh khi build Linux, chế độ WAL), PKI tự động và máy chủ Split-DNS tích hợp. Chiếm chưa tới 30MB RAM ở trạng thái nghỉ, hoạt động mượt mà trên VPS 5$/tháng hoặc Raspberry Pi.
 
 ---
 
-## Ma trận Hỗ trợ Thiết bị Native 100%
+## Ma trận Hỗ trợ VPN Tích hợp
 
 SwanPanel xuất cấu hình kết nối chuẩn hệ điều hành kèm chứng chỉ mã hóa chỉ với một cú click chuột:
 
@@ -86,11 +86,12 @@ So sánh SwanPanel với các giải pháp VPN tự host và mesh VPN phổ bi�
 ### 1. Điều khiển strongSwan Động qua VICI IPC (Zero-SSH)
 * **Hot-Reload trực tiếp trên RAM:** Giao tiếp trực tiếp với tiến trình `charon` qua UNIX domain socket chính thức (`/var/run/charon.vici`) bằng giao thức `govici`. Nạp lại cấu hình trên bộ nhớ RAM mà không làm ngắt các kết nối đang hoạt động.
 * **Quản trị Phiên Thời gian Thực:** Ngắt kết nối tức thì (`terminate`), ép xác thực lại định kỳ và theo dõi trạng thái đường truyền trực tiếp từ giao diện web.
-* **Tối ưu hóa Tham số Data Plane:** Bật/tắt chuyển vùng mạng (MOBIKE), ép đóng gói UDP NAT-Traversal, điều chỉnh tần suất DPD keepalive, phân mảnh gói tin và kẹp TCP MSS clamping.
+* **Tối ưu hóa Data Plane:** Bật/tắt MOBIKE, NAT-Traversal, keepalive, phân mảnh và TCP MSS.
+* **Biết rõ Gateway đang dùng cấu hình nào:** Lưu cấu hình trên Web, đối chiếu bản đã lưu với bản đang chạy và áp dụng lại nếu chưa đồng bộ.
 
 ### 2. Tự động hóa Internal PKI (X.509)
 * **Khởi tạo CA Tự động:** Tự động tạo và quản lý Certificate Authority (CA) gốc, chứng chỉ máy chủ gateway và chứng chỉ riêng cho từng thiết bị/người dùng.
-* **Đóng gói PKCS#12 Tự động:** Xuất gói chứng chỉ bảo vệ bằng mật khẩu (.p12) tải về dùng ngay, không cần gõ lệnh OpenSSL hay CFSSL qua terminal.
+* **Đóng gói PKCS#12 Tự động:** Xuất chứng chỉ .p12 có mật khẩu, không cần tự chạy OpenSSL. Android được hướng dẫn bằng bốn thao tác, mật khẩu ẩn sẵn và nhắc xóa file sau khi nhập trên thiết bị hỗ trợ.
 
 ### 3. Split-DNS Tùy biến Linh hoạt & Ghi đè Tên miền (DNS Overrides)
 * **MagicDNS Tùy biến Đuôi Tên miền:** Tích hợp máy chủ DNS nội bộ hiệu năng cao (`github.com/miekg/dns`). Đuôi tên miền nội bộ hoàn toàn tùy chỉnh theo ý muốn (ví dụ: `.internal`, `.corp`, `.home`, `.vpn`), tự động phân giải về IP ảo của từng thiết bị.
@@ -103,10 +104,10 @@ So sánh SwanPanel với các giải pháp VPN tự host và mesh VPN phổ bi�
 
 ### 5. Phân quyền Truy cập Zero-Trust & Thư mục Danh tính
 * **Đa nhà cung cấp OIDC SSO & Local Directory:** Đăng nhập qua các IdP chuẩn OIDC (Google, Microsoft Azure AD, Okta, Keycloak) hoặc tài khoản quản trị nội bộ.
-* **Luật Truy cập Phân cấp:** Thiết lập nhóm người dùng (DevOps, Sales) và phân bổ quyền truy cập theo dải mạng CIDR (Production VPC, Staging, Internal Subnets).
+* **Luật Truy cập Rõ ràng:** Cấp quyền theo người dùng, nhóm hoặc thiết bị. Xem trước CHO PHÉP/CHẶN, mạng và luật khớp với IP đích; đây không phải phép thử kết nối thực tế.
 
 ### 6. Kiến trúc Single-Binary Gọn nhẹ, Không Phụ thuộc
-* **Một Tệp Thực thi Duy nhất:** Go backend, cơ sở dữ liệu SQLite thuần Go (chế độ WAL hiệu năng cao), giao diện React 19 SPA nhúng sẵn, PKI và máy chủ DNS được biên dịch thành 1 file nhị phân duy nhất.
+* **Một Tệp Thực thi Duy nhất:** Go backend, SQLite (liên kết tĩnh với CGO khi build Linux), giao diện React 19, PKI và DNS nằm trong một file nhị phân điều khiển; Docker Compose đóng gói thêm strongSwan.
 * **Không Cần Cài Database Ngoài:** Hoạt động độc lập không phụ thuộc vào PostgreSQL, MySQL, Redis hay cụm container phức tạp.
 
 ---
@@ -250,13 +251,16 @@ Cấu hình SwanPanel qua biến môi trường hoặc tệp `/etc/swan-panel/sw
 
 SwanPanel được duy trì và phát triển liên tục. Dưới đây là lộ trình kỹ thuật ưu tiên:
 
-* **Phiên bản Hiện tại (v0.0.2 - Đã phát hành):**
-  * Đóng gói single-binary với giao diện nhúng React 19 và SQLite thuần Go WAL.
+* **Bản ổn định v1.0.0:**
+  * Đóng gói single-binary với giao diện React 19 và SQLite WAL (CGO liên kết tĩnh).
   * Cấu hình 1-click cho Apple iOS/macOS, Windows, Linux và Android.
   * Điều khiển VICI IPC hot-reload RAM không gián đoạn kết nối.
   * Tự động hóa hoàn toàn CA nội bộ và xuất gói chứng chỉ PKCS#12.
   * Tích hợp máy chủ Split-DNS với tính năng ghi đè tên miền nội bộ.
   * Bảng điều khiển thời gian thực SSE và xem log hệ thống trực tiếp.
+  * Xem trước quyền truy cập, mạng và quy tắc áp dụng trước khi kết nối.
+  * Biết cấu hình gateway đã có hiệu lực hay chưa và áp dụng lại khi cần.
+  * Cài VPN Android theo hướng dẫn có sẵn, mật khẩu chứng chỉ được che mặc định.
 
 * **Các Mốc Phát triển Tiếp theo:**
   * **Cụm Sẵn Sàng Cao & Dự Phòng (High Availability & Clustering):** Cơ chế chuyển đổi dự phòng Active-Passive và đồng bộ trạng thái kết nối giữa nhiều gateway SwanPanel để chịu lỗi phần cứng.
@@ -325,6 +329,5 @@ Xin chân thành cảm ơn tất cả các thành viên đã và đang đóng g�
 
 SwanPanel được phân phối dưới giấy phép **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
-* **Sử dụng Tự do & Tự host:** Bạn hoàn toàn được tự do sử dụng SwanPanel cho homelab cá nhân, các tổ chức phi lợi nhuận và hạ tầng mạng nội bộ của doanh nghiệp.
-* **Bản quyền Kế thừa Nghiêm ngặt (Strong Copyleft):** Mọi sửa đổi trên mã nguồn của SwanPanel khi được cung cấp qua mạng internet đều phải được mở mã nguồn công khai dưới cùng giấy phép AGPL-3.0.
-* **Điều khoản Chống SaaS Thương mại (Anti-SaaS Clause):** Các bên thứ ba và các nhà cung cấp cloud thương mại không được phép đóng gói SwanPanel thành dịch vụ SaaS thương mại có thu phí mà không mở mã nguồn toàn bộ hệ thống quản trị của họ theo AGPL-3.0 hoặc ký thỏa thuận cấp phép thương mại riêng biệt.
+* **Dùng cá nhân hoặc thương mại:** Bạn có thể tự vận hành SwanPanel cho mạng riêng hoặc dịch vụ thương mại theo giấy phép AGPL-3.0.
+* **Cung cấp mã nguồn:** Nếu sửa đổi SwanPanel rồi cho người khác tương tác với bản sửa đổi qua mạng, bạn phải cung cấp mã nguồn tương ứng theo yêu cầu của AGPL-3.0. Xem [LICENSE](LICENSE) để biết đầy đủ điều khoản.

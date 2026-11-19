@@ -27,6 +27,21 @@ export function parseSSEFrame(frame: string): SSEEvent | null {
   }
 }
 
+/** Extract complete LF or CRLF SSE frames while retaining the unfinished tail. */
+export function extractSSEFrames(buffer: string): { frames: string[]; rest: string } {
+  const frames: string[] = [];
+  let rest = buffer;
+  let match: RegExpExecArray | null;
+  const delimiter = /\r?\n\r?\n/;
+  while ((match = delimiter.exec(rest)) !== null) {
+    frames.push(rest.slice(0, match.index));
+    rest = rest.slice(match.index + match[0].length);
+  }
+  // Never allow malformed upstream frames to exhaust the browser.
+  if (rest.length > 1024 * 1024) rest = '';
+  return { frames, rest };
+}
+
 export function oidcStartPath(id: string): string {
   return '/api/auth/oidc/' + encodeURIComponent(id) + '/start';
 }

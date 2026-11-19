@@ -3,6 +3,7 @@ package realtime
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -84,7 +85,7 @@ func TestSSEStreamFiltersPrivilegedEventsAndStopsAfterRevocation(t *testing.T) {
 	broker.Broadcast("session_terminated", map[string]any{"ike_name": "private-session"})
 	// The stream must close on next event without leaking its payload.
 	_, err = io.ReadAll(reader)
-	if err != nil && err != context.Canceled && !strings.Contains(err.Error(), "context canceled") {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("SSE stream did not close after suspension: %v", err)
 	}
 	cancel()

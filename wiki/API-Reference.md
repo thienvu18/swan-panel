@@ -55,7 +55,7 @@ Registers a new device and issues client certificates.
 
 ### `GET /api/devices/:id/config/:platform`
 Downloads native configuration profile for the device.
-- `:platform`: `apple`, `windows`, `linux`, `android`.
+- `:platform`: `apple`, `windows`, `linux`; use `android-native` for the Android setup JSON (encrypted `.p12`, matching import password, CA and server/client identities). Treat the response as sensitive and do not log it.
 
 ### `POST /api/devices/:id/revoke`
 Revokes device certificate and terminates active tunnels.
@@ -77,5 +77,27 @@ Server-Sent Events (SSE) stream streaming live events:
 ### `GET /api/system/daemon/status`
 Queries strongSwan `charon` daemon status via VICI IPC.
 
-### `POST /api/system/daemon/restart`
-Initiates controlled reload of strongSwan connection parameters.
+### `POST /api/system/daemon`
+Controls the strongSwan daemon with `{"action":"restart"}` (or `start` / `stop`). This is a daemon lifecycle operation; existing tunnels may disconnect.
+
+### `GET /api/system/apply-status` (Administrator)
+Returns `status`, `desired_generation`, `applied_generation`, `last_error` and `last_applied_at`. Saved settings are not necessarily active until the generations agree and status is `applied`.
+
+### `POST /api/system/apply` (Administrator)
+Retries synchronization of the saved gateway configuration. No request body is required.
+
+### `GET /api/access-rules/effective/:id?destination=IPv4` (Administrator)
+Returns compiled ALLOW/DENY policy, runtime apply state and, when a destination IPv4 is provided, a predicted decision with rule provenance. This is a policy preview, **not** a connectivity test.
+
+Example with an existing administrator token and enrolled device ID:
+
+```bash
+export SWANPANEL_URL='https://vpn.example.com'
+export SWANPANEL_TOKEN='<YOUR_SESSION_TOKEN>'
+export SWANPANEL_DEVICE_ID='<DEVICE_ID>'
+curl -fsS -H "Authorization: Bearer $SWANPANEL_TOKEN" \
+  "$SWANPANEL_URL/api/access-rules/effective/$SWANPANEL_DEVICE_ID?destination=10.99.1.2"
+```
+
+### `GET /api/settings/strongswan` / `PUT /api/settings/strongswan` (Administrator)
+Reads or saves gateway settings. After saving, check `/api/system/apply-status` for active enforcement.

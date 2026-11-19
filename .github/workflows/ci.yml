@@ -43,6 +43,9 @@ jobs:
       - name: Frontend regression tests
         run: cd ui && npm test
 
+      - name: Validate English and Vietnamese translations
+        run: cd ui && npm run check:i18n
+
       - name: Build embedded frontend
         run: cd ui && npm run build
 

@@ -94,7 +94,7 @@ func managedDockerForwardVIPs(ctx context.Context, database *gorm.DB) ([]string,
 // exclusively on IPsec traffic that passed SwanPanel's per-device nft policy.
 func syncHostDockerForward(ctx context.Context, vips []string, run iptablesCommand) error {
 	if dockerNftBackendDetected(ctx) {
-		return fmt.Errorf("Docker nftables backend has no supported DOCKER-USER integration; host VPN forwarding needs a dedicated firewall adapter")
+		return fmt.Errorf("docker nftables backend has no supported DOCKER-USER integration; host VPN forwarding needs a dedicated firewall adapter")
 	}
 	if _, err := run(ctx, "-S", "DOCKER-USER"); err != nil {
 		forward, forwardErr := run(ctx, "-S", "FORWARD")

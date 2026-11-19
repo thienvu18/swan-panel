@@ -13,14 +13,17 @@ import { OIDCPage } from './pages/OIDCPage';
 import { ServerSettingsPage } from './pages/ServerSettingsPage';
 import { SystemLogsPage } from './pages/SystemLogsPage';
 import { useRealtime } from './hooks/useRealtime';
+import { ToastProvider } from './components/ToastProvider';
 import { CurrentUser } from './types';
 
 const VALID_TABS = ['dashboard', 'resources', 'access', 'users', 'dns', 'oidc', 'server', 'logs'] as const;
 
-export const App: React.FC = () => {
+const AppShell: React.FC = () => {
   const { t } = useTranslation();
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
   const [userVerified, setUserVerified] = useState(false);
+  const [authError, setAuthError] = useState(false);
+  const [authRetry, setAuthRetry] = useState(0);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(() => {
     try {
       const stored = localStorage.getItem('user');
@@ -84,6 +87,7 @@ export const App: React.FC = () => {
     setToken(null);
     setCurrentUser(null);
     setUserVerified(false);
+    setAuthError(false);
     setContextualBtn(null);
     window.location.hash = '';
   };
@@ -92,11 +96,14 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!token) return;
     let canceled = false;
+    setAuthError(false);
+    setUserVerified(false);
     fetch("/api/auth/me", { headers: { Authorization: "Bearer " + token }, cache: "no-store" })
       .then(async response => {
         if (canceled) return;
         if (!response.ok) {
           if (response.status === 401 || response.status === 403) { handleLogout(); }
+          else { setAuthError(true); }
           return;
         }
         const data = await response.json();
@@ -104,14 +111,17 @@ export const App: React.FC = () => {
           setCurrentUser(data.user);
           localStorage.setItem("user", JSON.stringify(data.user));
           setUserVerified(true);
+          setAuthError(false);
           if (!data.user.is_admin && !["dashboard", "resources"].includes(currentTab)) {
             setCurrentTab("dashboard"); window.location.hash = "#/dashboard";
           }
+        } else if (!canceled) {
+          setAuthError(true);
         }
-      }).catch(() => { if (!canceled) setUserVerified(false); });
+      }).catch(() => { if (!canceled) setAuthError(true); });
     return () => { canceled = true; };
   // Revalidate whenever the token changes; the backend still authorizes every request.
-  }, [token]);
+  }, [token, authRetry]);
 
   const handleSelectTab = (tab: string) => {
     if (!currentUser?.is_admin && !["dashboard", "resources"].includes(tab)) return;
@@ -128,7 +138,19 @@ export const App: React.FC = () => {
   }
 
   if (!userVerified) {
-    return <div role="status" className="p-6 text-xs text-subtle">Verifying current account permissions…</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        {authError ? (
+          <div role="alert" className="max-w-sm space-y-3 text-center">
+            <p className="text-sm text-rose-500">{t('common.load_failed')}</p>
+            <button type="button" onClick={() => setAuthRetry(retry => retry + 1)}
+              className="rounded-lg bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 text-xs font-medium">
+              {t('common.retry')}
+            </button>
+          </div>
+        ) : <div role="status" className="text-xs text-subtle">{t('auth.verifying_permissions')}</div>}
+      </div>
+    );
   }
 
   const titles: Record<string, string> = {
@@ -145,7 +167,7 @@ export const App: React.FC = () => {
   const renderContent = () => {
     switch (currentTab) {
       case 'dashboard':
-        return <DashboardPage isAdmin={Boolean(currentUser?.is_admin)} />;
+        return <DashboardPage isAdmin={Boolean(currentUser?.is_admin)} currentUserID={currentUser?.id ?? ''} />;
       case 'resources':
         return <ResourcesPage isAdmin={Boolean(currentUser?.is_admin)} />;
       case 'access':
@@ -159,9 +181,9 @@ export const App: React.FC = () => {
       case 'server':
         return <ServerSettingsPage onRegisterSaveButton={setContextualBtn} />;
       case 'logs':
-        return <SystemLogsPage />;
+        return <SystemLogsPage isRealtimeConnected={isConnected} />;
       default:
-        return <DashboardPage isAdmin={Boolean(currentUser?.is_admin)} />;
+        return <DashboardPage isAdmin={Boolean(currentUser?.is_admin)} currentUserID={currentUser?.id ?? ''} />;
     }
   };
 
@@ -195,5 +217,7 @@ export const App: React.FC = () => {
     </ErrorBoundary>
   );
 };
+
+export const App: React.FC = () => <ToastProvider><AppShell /></ToastProvider>;
 
 export default App;

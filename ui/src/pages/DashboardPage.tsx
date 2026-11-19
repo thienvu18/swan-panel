@@ -1,3 +1,4 @@
+import { useToast } from '../components/ToastProvider';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -7,6 +8,7 @@ import { AndroidNativeSetupDialog } from '../components/AndroidNativeSetupDialog
 import { EmptyState } from '../components/EmptyState';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { downloadDeviceProfile } from '../lib/profileDownload';
+import type { Device } from '../types';
 
 interface SessionInfo {
   ike_name: string;
@@ -27,8 +29,9 @@ interface DashboardStats {
   uptime_seconds?: number;
 }
 
-export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
+export const DashboardPage: React.FC<{ isAdmin: boolean; currentUserID: string }> = ({ isAdmin, currentUserID }) => {
   const { t } = useTranslation();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const { requestConfirmation, confirmationDialog } = useConfirmAction();
   const [role, setRole] = useState<'admin' | 'user'>(isAdmin ? 'admin' : 'user');
@@ -70,16 +73,21 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
   const liveSessions = sessionsData?.sessions || [];
 
   // 3. Fetch user enrolled devices (when in user view)
-  const { data: userDevicesData } = useQuery<{ devices: any[] }>({
-    queryKey: ['devices'],
+  const { data: userDevicesData } = useQuery<{ devices: Device[] }>({
+    queryKey: ['devices', 'mine', currentUserID],
     queryFn: async () => {
-      const res = await fetch('/api/devices', {
+      // Admins may switch the presentation, but must not see every device as "My Personal Devices".
+      // The backend already supports admin-only user_id filtering; regular users are owner-scoped there.
+      const path = isAdmin
+        ? `/api/devices?user_id=${encodeURIComponent(currentUserID)}`
+        : '/api/devices';
+      const res = await fetch(path, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
       });
-      if (!res.ok) throw new Error('Failed to fetch devices');
+      if (!res.ok) throw new Error('Failed to fetch personal devices');
       return res.json();
     },
-    enabled: role === 'user',
+    enabled: role === 'user' && (!isAdmin || Boolean(currentUserID)),
   });
 
   const userDevices = userDevicesData?.devices || [];
@@ -99,6 +107,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
       return res.json();
     },
     onSuccess: () => {
+      toast.success(t('common.operation_saved'));
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
     },
@@ -131,7 +140,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
     try {
       await downloadDeviceProfile(deviceId, platform, hostname);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'VPN profile download failed');
+      toast.error(error instanceof Error ? error.message : t('resources.profile_download_failed'));
     }
   };
 
@@ -140,8 +149,8 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
       {confirmationDialog}
       <AndroidNativeSetupDialog isOpen={androidDevice !== null} onClose={() => setAndroidDevice(null)}
         deviceId={androidDevice?.id || ''} hostname={androidDevice?.hostname || ''} />
-      {isStatsError && <div role="alert" className="border border-rose-500/40 rounded-lg p-3 text-xs text-rose-500">
-        Dashboard metrics are unavailable. Values are not being reported as live.
+      {isStatsError && <div role="alert" className="border border-rose-500/40 rounded-lg p-3 text-xs text-status-danger">
+        {t('dashboard.metrics_unavailable')}
       </div>}
       {/* Role Toggle Switcher */}
       {isAdmin && <div className="flex items-center justify-between">
@@ -150,7 +159,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
           <button
             onClick={() => setRole('admin')}
             className={`font-semibold transition-colors ${
-              role === 'admin' ? 'text-blue-500 underline' : 'text-subtle hover:text-current'
+              role === 'admin' ? 'text-accent underline' : 'text-subtle hover:text-current'
             }`}
           >
             {t('dashboard.admin_view')}
@@ -159,7 +168,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
           <button
             onClick={() => setRole('user')}
             className={`font-semibold transition-colors ${
-              role === 'user' ? 'text-blue-500 underline' : 'text-subtle hover:text-current'
+              role === 'user' ? 'text-accent underline' : 'text-subtle hover:text-current'
             }`}
           >
             {t('dashboard.user_view')}
@@ -173,10 +182,10 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
           <div className="border subtle-border rounded-xl p-4 surface-card flex flex-col justify-between shadow-xs">
             <span className="text-subtle font-medium text-xs">{t('dashboard.active_sessions')}</span>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-emerald-500">
+              <span className="text-2xl font-bold font-mono text-status-success">
                 {isStatsLoading ? '...' : stats.active_sessions}
               </span>
-              <span className="text-[10px] text-emerald-500 font-mono">Live IPC</span>
+              <span className="text-[10px] text-status-success font-mono">Live IPC</span>
             </div>
           </div>
 
@@ -196,17 +205,17 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
               <span className="text-2xl font-bold font-mono text-slate-900 dark:text-white">
                 {isStatsLoading ? '...' : stats.total_users}
               </span>
-              <span className="text-[10px] text-blue-400 font-mono">SSO + Local</span>
+              <span className="text-[10px] text-accent font-mono">SSO + Local</span>
             </div>
           </div>
 
           <div className="border subtle-border rounded-xl p-4 surface-card flex flex-col justify-between shadow-xs">
             <span className="text-subtle font-medium text-xs">{t('dashboard.pending_approvals')}</span>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-amber-500">
+              <span className="text-2xl font-bold font-mono text-status-warning">
                 {isStatsLoading ? '...' : stats.pending_users}
               </span>
-              <span className="text-[10px] text-amber-500 font-mono">{t('dashboard.requires_review')}</span>
+              <span className="text-[10px] text-status-warning font-mono">{t('dashboard.requires_review')}</span>
             </div>
           </div>
         </div>
@@ -215,7 +224,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
       {/* ADMIN VIEW: LIVE SESSIONS TABLE */}
       {role === 'admin' ? (
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-1.5">
             <span className="font-semibold text-xs tracking-tight">
               {t('dashboard.live_sessions')}
             </span>
@@ -223,9 +232,12 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
               {t('dashboard.auto_refresh_hint')}
             </span>
           </div>
+          <p id="dashboard-session-scroll-hint" className="lg:hidden text-[10px] text-subtle">
+            {t('dashboard.scroll_table_hint')}
+          </p>
 
           <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 focus-visible:outline-offset-[-2px]" role="region" aria-label={t('dashboard.live_sessions')} aria-describedby="dashboard-session-scroll-hint" tabIndex={0}>
               <table className="w-full text-left font-mono text-xs min-w-[650px]">
                 <thead className="border-b subtle-border surface-header text-subtle font-sans font-semibold text-[11px]">
                   <tr>
@@ -245,7 +257,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
                       </td>
                     </tr>
                   ) : isSessionsError ? (
-                    <tr><td colSpan={6} role="alert" className="py-8 px-4 text-center text-red-500 font-sans">
+                    <tr><td colSpan={6} role="alert" className="py-8 px-4 text-center text-status-danger font-sans">
                       Cannot reach strongSwan session data. Connection status is unknown.
                     </td></tr>
                   ) : liveSessions.length === 0 ? (
@@ -266,7 +278,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
                           <Laptop className="w-3.5 h-3.5 text-subtle" />
                           <span>{sess.peer_identity || sess.ike_name}</span>
                         </td>
-                        <td className="py-2.5 px-3.5 text-blue-400">
+                        <td className="py-2.5 px-3.5 text-accent">
                           <div className="flex items-center gap-1.5">
                             <span>{sess.virtual_ip || 'N/A'}</span>
                             {sess.virtual_ip && (
@@ -277,7 +289,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
                         <td className="py-2.5 px-3.5 font-sans text-subtle">{sess.remote_wan || 'N/A'}</td>
                         <td className="py-2.5 px-3.5 font-sans text-subtle">{sess.uptime || 'Just now'}</td>
                         <td className="py-2.5 px-3.5">
-                          <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono">
+                          <span className="bg-blue-500/10 text-accent border border-blue-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono">
                             {sess.cipher_suite || 'AES-GCM'}
                           </span>
                         </td>
@@ -286,7 +298,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
                             type="button"
                             onClick={() => handleDisconnect(sess.ike_name)}
                             disabled={disconnectMutation.isPending}
-                            className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors disabled:opacity-50"
+                            className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none"
                             title={t('dashboard.disconnect')}
                             aria-label={t('dashboard.disconnect')}
                           >
@@ -328,24 +340,24 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
                       </td>
                     </tr>
                   ) : (
-                    userDevices.map((dev: any) => (
+                    userDevices.map((dev: Device) => (
                       <tr key={dev.id} className="hover-row">
                         <td className="py-2.5 px-3.5 font-sans font-medium text-slate-900 dark:text-white flex items-center gap-2">
                           <Laptop className="w-3.5 h-3.5 text-subtle" />
                           <span>{dev.hostname}</span>
                         </td>
-                        <td className="py-2.5 px-3.5 text-blue-400">{dev.virtual_ip || 'Dynamic Pool'}</td>
+                        <td className="py-2.5 px-3.5 text-accent">{dev.virtual_ip || t('resources.dynamic_pool')}</td>
                         <td className="py-2.5 px-3.5 font-sans text-subtle uppercase text-[10px]">
                           {dev.platform}
                         </td>
                         <td className="py-2.5 px-3.5">
                           {dev.is_revoked ? (
-                            <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded-md text-[10px] font-sans">
-                              Revoked
+                            <span className="bg-rose-500/10 text-status-danger border border-rose-500/20 px-2 py-0.5 rounded-md text-[10px] font-sans">
+                              {t('common.revoked')}
                             </span>
                           ) : (
-                            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-sans">
-                              Active
+                            <span className="bg-emerald-500/10 text-status-success border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-sans">
+                              {t('common.active')}
                             </span>
                           )}
                         </td>
@@ -356,7 +368,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
                                 <>
                                   <button
                                     onClick={() => setAndroidDevice({ id: dev.id, hostname: dev.hostname })}
-                                    className="p-1.5 hover:bg-emerald-500/10 rounded-md text-emerald-400 transition-colors"
+                                    className="p-1.5 hover:bg-emerald-500/10 rounded-md text-status-success transition-colors"
                                     title={t('resources.download_android_native')}
                                     aria-label={t('resources.download_android_native')}
                                   >
@@ -366,7 +378,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
                               ) : (
                                 <button
                                   onClick={() => handleDownloadProfile(dev.id, dev.platform || 'macos', dev.hostname)}
-                                  className="p-1.5 hover:bg-blue-500/10 rounded-md text-blue-400 transition-colors"
+                                  className="p-1.5 hover:bg-blue-500/10 rounded-md text-accent transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
                                   title={t('dashboard.download_profile')}
                                   aria-label={t('dashboard.download_profile')}
                                 >
@@ -380,7 +392,7 @@ export const DashboardPage: React.FC<{isAdmin: boolean}> = ({ isAdmin }) => {
                                   confirmLabel: t('common.revoke'),
                                   onConfirm: () => revokeDeviceMutation.mutateAsync(dev.id),
                                 })}
-                                className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-400 transition-colors"
+                                className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:outline-none"
                                 title={t('dashboard.self_revoke')}
                                 aria-label={t('dashboard.self_revoke')}
                               >

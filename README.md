@@ -9,7 +9,7 @@
 # SwanPanel
 
 **Modern, lightweight zero-trust web control plane for strongSwan IPsec VPN.**<br>
-**100% native client provisioning. Zero third-party apps to install.**
+**Built-in VPN on supported devices. No separate SwanPanel client app.**
 
 [![GitHub Stars](https://img.shields.io/github/stars/thienvu18/swan-panel?style=flat-square&color=eab308)](https://github.com/thienvu18/swan-panel/stargazers)
 [![GitHub Release](https://img.shields.io/github/v/release/thienvu18/swan-panel?style=flat-square)](https://github.com/thienvu18/swan-panel/releases)
@@ -19,7 +19,7 @@
 [![strongSwan](https://img.shields.io/badge/strongSwan-VICI_IPC-crimson?style=flat-square)](https://github.com/strongswan/strongswan)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-gray?style=flat-square)](LICENSE)
 
-[Website & Docs](https://thienvu18.github.io/swan-panel/) • [English](README.md) • [Tiếng Việt](README.vi.md) • [Discussions](https://github.com/thienvu18/swan-panel/discussions) • [Wiki](https://github.com/thienvu18/swan-panel/wiki)
+[Website & Docs](https://thienvu18.github.io/swan-panel/) • [English](README.md) • [Tiếng Việt](README.vi.md) • [v1.0.0 Release Notes](CHANGELOG.md) • [Discussions](https://github.com/thienvu18/swan-panel/discussions) • [Wiki](https://github.com/thienvu18/swan-panel/wiki)
 
 <br>
 
@@ -49,7 +49,7 @@ Whether you are hosting a private homelab or managing corporate remote access fo
 
 ---
 
-## 100% Native Client Support Matrix
+## Native VPN Client Support Matrix
 
 SwanPanel provisions native OS connection profiles with embedded cryptographic credentials in one click:
 
@@ -86,11 +86,12 @@ How SwanPanel compares to other self-hosted and mesh VPN solutions:
 ### 1. Zero-SSH strongSwan Control via VICI IPC
 * **Live In-Memory Hot-Reloads:** Communicates directly with the `charon` daemon via strongSwan's UNIX socket (`/var/run/charon.vici`) using the `govici` protocol. Reloads connections dynamically in RAM without interrupting existing active tunnels.
 * **Real-Time Session Teardown:** Terminate active sessions immediately, enforce re-authentication lifetimes, and monitor real-time tunnel status.
-* **Data Plane Optimization:** Configure MOBIKE client roaming, force UDP NAT-Traversal encapsulation, dead peer detection (DPD) keepalives, fragmentation, and TCP MSS clamping.
+* **Data Plane Optimization:** Configure MOBIKE client roaming, NAT traversal, keepalives, fragmentation, and TCP MSS clamping.
+* **Visible Gateway Apply State:** Save desired settings in the web UI, compare saved and active revisions, and retry a pending update without guessing whether it is enforced.
 
 ### 2. Automated Internal PKI (X.509)
 * **Zero-Touch Certificate Authority:** Automatically initializes and manages the root CA, server certificates, and individual client certificates.
-* **PKCS#12 Bundling:** Generates password-protected PKCS#12 (`.p12`) bundles on the fly for native client import without requiring command-line OpenSSL or CFSSL utilities.
+* **PKCS#12 Bundling:** Generates password-protected PKCS#12 (`.p12`) bundles without manual OpenSSL commands. Android setup provides four guided actions, a hidden import password, and cleanup guidance on supported devices.
 
 ### 3. Configurable Split-DNS & Custom Domain Overrides
 * **Built-in High-Concurrency DNS Server:** Embedded DNS engine (`github.com/miekg/dns`). Suffixes are fully customizable (e.g. `.internal`, `.corp`, `.home`, `.vpn`) and resolve automatically to assigned virtual device IPs.
@@ -103,7 +104,7 @@ How SwanPanel compares to other self-hosted and mesh VPN solutions:
 
 ### 5. Zero-Trust Access Policies & Identity Directory
 * **Multi-IdP SSO & Local Directory:** Authenticate admins and users via OIDC providers (Google, Microsoft Azure AD, Okta, Keycloak) or local credentials.
-* **Granular Access Control:** Define user groups and isolate access by CIDR subnet destinations (e.g. Production VPC, Staging, Internal Subnets).
+* **Granular Access Control:** Define access by user, group or device to private subnets, then preview the configured ALLOW/DENY verdict, matched network and rule source for a destination IP. The preview is not a live connectivity test.
 
 ### 6. Single-Binary, Zero-Dependency Architecture
 * **Single Executable:** Go backend, embedded SQLite database (in high-performance WAL mode), embedded React 19 SPA, PKI, and DNS engine compile into one self-contained binary.
@@ -256,13 +257,16 @@ Configure SwanPanel via environment variables or an `/etc/swan-panel/swan-panel.
 
 SwanPanel is actively maintained. Here is our prioritized engineering roadmap:
 
-* **Current Stable Release (v0.0.2):**
+* **Stable v1.0.0:**
   * Single-binary Linux delivery with embedded React 19 UI and native SQLite WAL (CGO compiled, statically linked).
   * 1-click native client provisioning for Apple iOS/macOS, Windows, Linux, and Android.
   * strongSwan VICI IPC hot-reload without tunnel disruption.
   * Automated internal PKI and PKCS#12 bundle export.
   * Built-in Split-DNS server with custom domain overrides.
   * Real-time SSE dashboard and live system logging.
+  * Preview access decisions by destination, matching network and rule source before connecting.
+  * Track saved versus active gateway configuration and retry pending apply safely.
+  * Guided Android native VPN setup with masked certificate import password.
 
 * **Upcoming Milestones:**
   * **High Availability (HA) & Clustering:** Active-Passive failover and state synchronization across multiple SwanPanel gateways for hardware redundancy.
@@ -329,6 +333,5 @@ We thank all contributors who help improve SwanPanel!
 
 SwanPanel is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
-* **Free & Self-Hosted Use:** You are completely free to run SwanPanel for personal homelabs, non-profit organizations, and internal corporate infrastructure to manage private VPN networks.
-* **Strong Copyleft:** Any modifications made to SwanPanel that are served over a network must be open-sourced under the same AGPL-3.0 license terms.
-* **Anti-SaaS Clause:** Third parties and commercial cloud providers may not offer SwanPanel as a hosted multi-tenant SaaS product to customers without releasing their entire management stack under AGPL-3.0 or obtaining an explicit commercial license.
+* **Personal and Commercial Use:** You may use and host SwanPanel for private networks or commercial services under AGPL-3.0.
+* **Source Availability:** If you modify SwanPanel and let users interact with that modified version over a network, you must offer them its corresponding source code as required by AGPL-3.0. See [LICENSE](LICENSE) for the complete terms.

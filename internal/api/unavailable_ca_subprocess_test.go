@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,7 +48,7 @@ func TestUnavailableRootCAFailsClosedAcrossControlPlaneOperations(t *testing.T) 
 		t.Fatalf("gateway settings hid PKI failure: %s", result)
 	}
 	if err := policy.ReconcileGateway(context.Background(), db.DB); err == nil ||
-		!strings.Contains(err.Error(), "initialize gateway CA") {
+		!errors.Is(err, policy.ErrGatewayCAUnavailable) {
 		t.Fatalf("reconciler accepted unavailable CA: %v", err)
 	}
 	group := db.ResourceGroup{ID: "unavailable-ca-net", Name: "Unavailable CA net", CIDRBlock: "10.242.0.0/24"}

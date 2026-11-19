@@ -1,3 +1,4 @@
+import { useToast } from '../components/ToastProvider';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -6,6 +7,7 @@ import { Modal } from '../components/Modal';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
+import { QueryErrorBanner } from '../components/QueryErrorBanner';
 
 interface OIDCProviderItem {
   id: string;
@@ -23,10 +25,12 @@ interface OIDCProviderItem {
 
 export const OIDCPage: React.FC = () => {
   const { t } = useTranslation();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const { requestConfirmation, confirmationDialog } = useConfirmAction();
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [testStatus, setTestStatus] = useState<'success' | 'warning' | 'error'>('success');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSecret, setShowSecret] = useState(false);
   const [editProvider, setEditProvider] = useState<string | null>(null);
@@ -62,7 +66,7 @@ export const OIDCPage: React.FC = () => {
   };
   const redirectURI = `${window.location.origin}/api/auth/oidc/callback`;
 
-  const { data } = useQuery<{ providers: OIDCProviderItem[] }>({
+  const { data, isError: providersError, refetch: refetchProviders } = useQuery<{ providers: OIDCProviderItem[] }>({
     queryKey: ['oidc_providers'],
     queryFn: async () => {
       const res = await fetch('/api/oidc/providers', {
@@ -111,6 +115,7 @@ export const OIDCPage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['oidc_providers'] });
+      toast.success(t('common.operation_saved'));
       setIsAddOpen(false);
       createProviderMutation.reset();
       clearForm();
@@ -128,6 +133,7 @@ export const OIDCPage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['oidc_providers'] });
+      toast.success(t('common.operation_deleted'));
     },
   });
 
@@ -138,38 +144,44 @@ export const OIDCPage: React.FC = () => {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
       });
       const resData = await res.json();
-      if (resData.success) {
-        setTestResult(`Connection handshake verified successfully with ${resData.authorization_endpoint}`);
+      if (res.ok && resData.success) {
+        setTestStatus('success');
+        setTestResult(t('oidc.discovery_verified', { endpoint: resData.authorization_endpoint || '' }));
       } else {
-        setTestResult(`Discovery test warning: ${resData.message}`);
+        setTestStatus('warning');
+        setTestResult(t('oidc.discovery_warning', { message: resData.message || res.statusText }));
       }
-    } catch (err: any) {
-      setTestResult(`Discovery test failed: ${err.message}`);
+    } catch (error: unknown) {
+      setTestStatus('error');
+      setTestResult(t('oidc.discovery_failed', { message: error instanceof Error ? error.message : t('common.error_occurred') }));
     }
-    setTimeout(() => setTestResult(null), 5000);
   };
 
   return (
     <div className="space-y-4">
+      {providersError && <QueryErrorBanner onRetry={() => void refetchProviders()} />}
       {/* Redirect URI Guidance & Copy Box */}
       <div className="border subtle-border rounded-xl p-3.5 surface-card flex flex-wrap items-center justify-between gap-3 shadow-xs">
         <div>
           <div className="font-semibold text-xs text-slate-900 dark:text-white">{t('oidc.redirect_uri')}</div>
           <div className="text-[11px] text-dim">
-            Register this callback URL inside your Google Cloud Console or Microsoft Azure App Registration.
+            {t('oidc.redirect_uri_hint')}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <code className="bg-slate-500/10 border subtle-border px-2.5 py-1 rounded text-xs font-mono text-blue-400">
+          <code className="bg-slate-500/10 border subtle-border px-2.5 py-1 rounded text-xs font-mono text-accent">
             {redirectURI}
           </code>
-          <CopyButton value={redirectURI} label="OIDC Redirect URI" />
+          <CopyButton value={redirectURI} label={t('oidc.redirect_uri_copy_label')} />
         </div>
       </div>
 
       {testResult && (
-        <div className="border border-blue-500/30 bg-blue-500/10 text-blue-300 p-2.5 rounded-lg text-xs flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 shrink-0 text-blue-400" />
+        <div role={testStatus === 'error' ? 'alert' : 'status'}
+          className={`border p-2.5 rounded-lg text-xs flex items-center gap-2 ${testStatus === 'success'
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-status-success'
+            : 'border-amber-500/30 bg-amber-500/10 text-status-warning'}`}>
+          <ShieldCheck className="w-4 h-4 shrink-0 text-accent" />
           {testResult}
         </div>
       )}
@@ -187,7 +199,7 @@ export const OIDCPage: React.FC = () => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search SSO providers..."
+                placeholder={t('oidc.search_placeholder')}
                 className="w-full surface-input border subtle-border rounded-lg pl-8 pr-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -221,7 +233,7 @@ export const OIDCPage: React.FC = () => {
                   <td colSpan={6} className="py-8">
                     <EmptyState
                       icon={Key}
-                      title={searchQuery ? 'No matching providers' : 'No OIDC identity providers configured'}
+                      title={searchQuery ? t('oidc.no_matching_providers') : t('oidc.no_providers')}
                       description={searchQuery ? `No SSO providers match '${searchQuery}'.` : 'Connect Google Workspace, Microsoft Entra ID, or Okta for federated zero-trust authentication.'}
                       actionLabel={searchQuery ? 'Clear Search' : t('oidc.add_provider')}
                       actionIcon={searchQuery ? X : Plus}
@@ -234,7 +246,7 @@ export const OIDCPage: React.FC = () => {
                 filteredProviders.map((p) => (
                   <tr key={p.id} className="hover-row transition-colors">
                     <td className="py-2.5 px-3.5 font-medium text-slate-900 dark:text-white flex items-center gap-2">
-                      <Key className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <Key className="w-3.5 h-3.5 text-accent shrink-0" />
                       <span>{p.name}</span>
                     </td>
                     <td className="py-2.5 px-3.5 text-subtle">OpenID Connect</td>
@@ -251,20 +263,20 @@ export const OIDCPage: React.FC = () => {
                       </div>
                     </td>
                     <td className="py-2.5 px-3.5">
-                      <span className={p.is_active ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium' : 'bg-slate-500/10 text-subtle px-2 py-0.5 rounded-md text-[10px] font-mono font-medium'}>
-                        {p.is_active ? 'Active' : 'Disabled'}
+                      <span className={p.is_active ? 'bg-emerald-500/10 text-status-success border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium' : 'bg-slate-500/10 text-subtle px-2 py-0.5 rounded-md text-[10px] font-mono font-medium'}>
+                        {t(p.is_active ? 'common.active' : 'common.disabled')}
                       </span>
                     </td>
                     <td className="py-2.5 px-3.5 text-right space-x-1">
                       <button
                         type="button"
                         onClick={() => handleTestConnection(p.id)}
-                        className="p-1.5 hover:bg-blue-500/10 rounded-md text-blue-500 transition-colors inline-block"
+                        className="p-1.5 hover:bg-blue-500/10 rounded-md text-accent transition-colors inline-block"
                         title={t('oidc.test_handshake')}
                       >
                         <Zap className="w-3.5 h-3.5" />
                       </button>
-                      <button type="button" onClick={() => editForm(p)} className="p-1.5 hover:bg-blue-500/10 rounded-md text-blue-500 transition-colors inline-block" title="Edit provider" aria-label={`Edit ${p.name}`}>
+                      <button type="button" onClick={() => editForm(p)} className="p-1.5 hover:bg-blue-500/10 rounded-md text-accent transition-colors inline-block" title={t('common.edit')} aria-label={`Edit ${p.name}`}>
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button
@@ -275,7 +287,7 @@ export const OIDCPage: React.FC = () => {
                           confirmLabel: t('common.delete'),
                           onConfirm: () => deleteProviderMutation.mutateAsync(p.id),
                         })}
-                        className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors inline-block"
+                        className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors inline-block"
                         title={t('common.delete')}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -297,12 +309,12 @@ export const OIDCPage: React.FC = () => {
           createProviderMutation.reset();
           clearForm();
         }}
-        title={editProvider ? 'Edit OIDC Provider' : t('oidc.add_provider')}
+        title={editProvider ? t('oidc.edit_provider') : t('oidc.add_provider')}
         error={(createProviderMutation.error as Error)?.message}
       >
         <div className="space-y-3 text-xs">
           <div>
-            <label className="text-subtle block mb-1">Provider Type</label>
+            <label className="text-subtle block mb-1">{t('oidc.provider_type')}</label>
             <select
               value={providerType}
               onChange={(e) => {
@@ -317,7 +329,7 @@ export const OIDCPage: React.FC = () => {
               <option value="google">Google Workspace</option>
               <option value="microsoft">Microsoft Entra ID (Azure AD)</option>
               <option value="keycloak">Keycloak</option>
-              <option value="custom">Custom OIDC Provider</option>
+              <option value="custom">{t('oidc.custom_provider')}</option>
             </select>
           </div>
 
@@ -327,7 +339,7 @@ export const OIDCPage: React.FC = () => {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Corporate Google SSO"
+              placeholder={t('oidc.provider_name_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -349,7 +361,7 @@ export const OIDCPage: React.FC = () => {
               type="text"
               value={clientID}
               onChange={(e) => setClientID(e.target.value)}
-              placeholder="Client ID from IdP console"
+              placeholder={t('oidc.client_id_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -368,20 +380,20 @@ export const OIDCPage: React.FC = () => {
                 type="button"
                 onClick={() => setShowSecret(!showSecret)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-subtle hover:text-current p-1 rounded"
-                title={showSecret ? 'Hide secret' : 'Show secret'}
-                aria-label={showSecret ? 'Hide secret' : 'Show secret'}
+                title={showSecret ? t('oidc.hide_secret') : t('oidc.show_secret')}
+                aria-label={showSecret ? t('oidc.hide_secret') : t('oidc.show_secret')}
               >
                 {showSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
             </div>
           </div>
           {providerType === 'custom' && <>
-            <p className="text-[11px] text-subtle">Leave endpoints empty for standard OIDC Discovery. For a provider without Discovery, enter all three mandatory endpoints.</p>
+            <p className="text-[11px] text-subtle">{t('oidc.discovery_endpoints_hint')}</p>
             {[
-              ['Authorization endpoint', authorizationURL, setAuthorizationURL, 'https://id.example.com/oauth/authorize'],
-              ['Token endpoint', tokenURL, setTokenURL, 'https://id.example.com/oauth/token'],
-              ['JWKS endpoint', jwksURL, setJWKSURL, 'https://id.example.com/.well-known/jwks.json'],
-              ['UserInfo endpoint (optional)', userinfoURL, setUserinfoURL, 'https://id.example.com/userinfo'],
+              [t('oidc.authorization_endpoint'), authorizationURL, setAuthorizationURL, 'https://id.example.com/oauth/authorize'],
+              [t('oidc.token_endpoint'), tokenURL, setTokenURL, 'https://id.example.com/oauth/token'],
+              [t('oidc.jwks_endpoint'), jwksURL, setJWKSURL, 'https://id.example.com/.well-known/jwks.json'],
+              [t('oidc.userinfo_endpoint'), userinfoURL, setUserinfoURL, 'https://id.example.com/userinfo'],
             ].map(([label, value, setter, placeholder]) => (
               <div key={label as string}>
                 <label className="text-subtle block mb-1">{label as string}</label>
@@ -390,15 +402,15 @@ export const OIDCPage: React.FC = () => {
               </div>
             ))}
             <div>
-              <label className="text-subtle block mb-1">Claim mapping (JSON)</label>
+              <label className="text-subtle block mb-1">{t('oidc.claim_mapping_label')}</label>
               <textarea rows={3} value={claimMapping} onChange={e => setClaimMapping(e.target.value)}
                 placeholder={'{"email":"email","name":"name","email_verified":"email_verified"}'}
                 className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs" />
-              <p className="text-[10px] text-subtle">The verified sub claim always remains the immutable identity. Mapping only affects profile fields.</p>
+              <p className="text-[10px] text-subtle">{t('oidc.immutable_subject_hint')}</p>
             </div>
           </>}
           <label className="flex gap-2 items-center text-subtle">
-            <input type="checkbox" checked={providerActive} onChange={e => setProviderActive(e.target.checked)} /> Enabled
+            <input type="checkbox" checked={providerActive} onChange={e => setProviderActive(e.target.checked)} /> {t('oidc.enabled')}
           </label>
         </div>
 
@@ -409,7 +421,7 @@ export const OIDCPage: React.FC = () => {
             disabled={!name.trim() || !issuerURL.trim() || !clientID.trim() || (!editProvider && !clientSecret.trim()) || createProviderMutation.isPending}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
-            {createProviderMutation.isPending ? 'Saving...' : t('common.save')}
+            {createProviderMutation.isPending ? t('common.saving') : t('common.save')}
           </button>
           <button
             type="button"

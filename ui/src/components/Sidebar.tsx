@@ -59,6 +59,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   });
 
   const stats = statsData?.stats;
+  const gatewayStatusText = stats?.gateway_status === 'online'
+    ? t('nav.gateway_online')
+    : stats?.gateway_status === 'offline'
+      ? t('nav.gateway_offline')
+      : t('nav.gateway_unknown');
 
   const navItems = [
     { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
@@ -74,12 +79,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: t('nav.users'),
       icon: Users,
       badge: stats?.pending_users > 0 ? String(stats.pending_users) : undefined,
-      badgeColor: 'bg-amber-500/15 text-amber-500',
+      badgeColor: 'bg-amber-500/15 text-status-warning',
     },
-    { id: 'dns', label: t('nav.dns_engine'), icon: Globe, badgeText: '.strongnet' },
+    { id: 'dns', label: t('nav.dns_engine'), icon: Globe },
     { id: 'oidc', label: t('nav.oidc_providers'), icon: KeyRound },
     { id: 'server', label: t('nav.server_settings'), icon: Settings },
-    { id: 'logs', label: t('nav.system_logs'), icon: Terminal, dot: true },
+    { id: 'logs', label: t('nav.system_logs'), icon: Terminal },
   ].filter(item => currentUser?.is_admin || item.id === "dashboard" || item.id === "resources");
 
   return (
@@ -94,49 +99,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-60 surface-nav border-r subtle-border flex flex-col shrink-0 select-none transition-transform duration-200 ease-in-out ${
+        className={`fixed md:static inset-y-0 left-0 z-50 w-56 surface-nav border-r subtle-border flex flex-col shrink-0 select-none transition-transform duration-200 ease-in-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
         {/* Header & Controls */}
-        <div className="h-14 flex items-center justify-between px-3.5 border-b subtle-border shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg surface-header border subtle-border flex items-center justify-center p-1 shadow-xs shrink-0">
-              <SwanLogo className="w-6 h-6" />
-            </div>
-            <div>
-              <span className="font-bold text-sm tracking-tight">SwanPanel</span>
-              <div className="text-[10px] font-medium flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span> {stats?.gateway_status === 'online' ? t('nav.gateway_online') : (stats?.gateway_status === 'offline' ? 'Gateway offline' : 'Gateway unknown')}
+        <div className="px-3 py-2 border-b subtle-border shrink-0">
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center min-w-0 gap-2">
+              <div className="w-8 h-8 rounded-lg surface-header border subtle-border flex items-center justify-center p-1 shadow-xs shrink-0">
+                <SwanLogo className="w-6 h-6" />
               </div>
+              <span className="font-bold text-sm tracking-tight truncate">SwanPanel</span>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Language Switcher */}
+              <button
+                onClick={toggleLanguage}
+                className="px-2 py-1 text-[11px] font-mono font-medium rounded-md border subtle-border hover:bg-slate-500/10 text-subtle hover:text-current transition-colors flex items-center gap-1"
+                title={t('nav.switch_language')}
+                aria-label={t('nav.switch_language')}
+              >
+                <Globe className="w-3 h-3" />
+                <span>{i18n.language.startsWith('vi') ? 'VI' : 'EN'}</span>
+              </button>
+
+              {/* Theme Toggle */}
+              <button
+                onClick={onToggleTheme}
+                aria-label={t('nav.toggle_theme')}
+                className="p-1.5 rounded-md hover:bg-slate-500/10 text-subtle hover:text-current transition-colors"
+                title={t('nav.toggle_theme')}
+              >
+                {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
-            {/* Language Switcher */}
-            <button
-              onClick={toggleLanguage}
-              className="px-2 py-1 text-[11px] font-mono font-medium rounded-md border subtle-border hover:bg-slate-500/10 text-subtle hover:text-current transition-colors flex items-center gap-1"
-              title={i18n.language.startsWith('vi') ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
-              aria-label="Switch language"
-            >
-              <Globe className="w-3 h-3" />
-              <span>{i18n.language.startsWith('vi') ? 'VI' : 'EN'}</span>
-            </button>
-
-            {/* Theme Toggle */}
-            <button
-              onClick={onToggleTheme}
-              className="p-1.5 rounded-md hover:bg-slate-500/10 text-subtle hover:text-current transition-colors"
-              title="Toggle Theme"
-            >
-              {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-            </button>
-
-            {/* Mobile Close Button */}
+          {/* Keep translated gateway status on a separate row from the language/theme controls. */}
+          <div className="mt-1.5 pl-10 flex items-center justify-between gap-1.5">
+            <div className="min-w-0 flex items-center gap-1 text-[10px] font-medium text-subtle" title={gatewayStatusText}>
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                stats?.gateway_status === 'online' ? 'bg-emerald-500' : stats?.gateway_status === 'offline' ? 'bg-rose-500' : 'bg-slate-500'
+              }`}></span>
+              <span className="truncate">{gatewayStatusText}</span>
+            </div>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-md hover:bg-slate-500/10 text-subtle hover:text-current md:hidden"
+              aria-label={t('common.close')}
+              className="p-1.5 rounded-md hover:bg-slate-500/10 text-subtle hover:text-current md:hidden shrink-0"
             >
               <X className="w-4 h-4" />
             </button>
@@ -159,7 +171,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium transition-colors ${
                   isActive
-                    ? 'bg-blue-600/10 text-blue-500 font-semibold'
+                    ? 'bg-blue-600/10 text-accent font-semibold'
                     : 'text-subtle hover:text-current hover:bg-slate-500/10'
                 }`}
               >
@@ -177,12 +189,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {item.badge}
                   </span>
                 )}
-                {item.badgeText && (
-                  <span className="font-mono text-[10px] text-blue-500 font-medium">
-                    {item.badgeText}
-                  </span>
-                )}
-                {item.dot && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>}
               </button>
             );
           })}
@@ -200,7 +206,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {onLogout && (
                   <button
                     onClick={onLogout}
-                    className="p-1.5 rounded-lg border subtle-border hover:bg-red-500/10 text-subtle hover:text-red-400 transition-colors shrink-0"
+                    className="p-1.5 rounded-lg border subtle-border hover:bg-red-500/10 text-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors shrink-0"
                     title={t('auth.sign_out')}
                     aria-label={t('auth.sign_out')}
                   >
@@ -214,9 +220,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Footer Status */}
           <div className="p-2.5 text-[10px] text-subtle flex items-center justify-between font-mono">
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 10.0.0.1
+              <span className={`w-1.5 h-1.5 rounded-full ${stats?.gateway_status === 'online' ? 'bg-emerald-500' : stats?.gateway_status === 'offline' ? 'bg-rose-500' : 'bg-slate-500'}`}></span>
+              {stats?.gateway_status === 'online' ? t('common.online') : stats?.gateway_status === 'offline' ? t('common.offline') : t('server.status_unknown')}
             </span>
-            <span className="text-dim">Native IKEv2</span>
+            <span className="text-dim">IKEv2</span>
           </div>
         </div>
       </aside>

@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import { useToast } from '../components/ToastProvider';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Globe, Plus, Trash2, CheckCircle, Search, Filter, X } from 'lucide-react';
+import { Globe, Plus, Trash2, Search, Filter, X } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
+import { QueryErrorBanner } from '../components/QueryErrorBanner';
+import { isValidDNSOverrideTarget, type DNSOverrideRecordType } from '../lib/dnsRecordTargets';
 
 interface DNSSettingsDTO {
   id: number;
@@ -23,42 +26,46 @@ interface DNSOverrideItem {
 
 export const DNSEnginePage: React.FC = () => {
   const { t } = useTranslation();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const [isAddOverrideOpen, setIsAddOverrideOpen] = useState(false);
   const { requestConfirmation, confirmationDialog } = useConfirmAction();
-  const [toastMessage, setToastMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
   // Form states for settings
   const [magicSuffix, setMagicSuffix] = useState('.strongnet');
   const [upstreams, setUpstreams] = useState('1.1.1.1, 8.8.8.8');
+  const [settingsDirty, setSettingsDirty] = useState({ suffix: false, upstreams: false });
 
   // Form states for Add Override
   const [overrideHost, setOverrideHost] = useState('');
-  const [overrideType, setOverrideType] = useState('A');
+  const [overrideType, setOverrideType] = useState<DNSOverrideRecordType>('A');
   const [overrideTarget, setOverrideTarget] = useState('');
+  const isTargetValid = isValidDNSOverrideTarget(overrideType, overrideTarget);
+  const showTargetError = overrideTarget.trim().length > 0 && !isTargetValid;
 
   // Query DNS Settings
-  useQuery<{ dns_settings: DNSSettingsDTO }>({
+  const { data: dnsSettingsData, isError: dnsSettingsError, refetch: refetchDNSSettings } = useQuery<{ settings?: DNSSettingsDTO; dns_settings?: DNSSettingsDTO }>({
     queryKey: ['dns_settings'],
     queryFn: async () => {
       const res = await fetch('/api/settings/dns', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
       });
       if (!res.ok) throw new Error('Failed to fetch DNS settings');
-      const data = await res.json();
-      const s = data.settings || data.dns_settings;
-      if (s) {
-        setMagicSuffix(s.magic_dns_suffix || '.internal');
-        setUpstreams(s.upstream_resolvers || '1.1.1.1, 8.8.8.8');
-      }
-      return data;
+      return res.json();
     },
   });
 
+  useEffect(() => {
+    const current = dnsSettingsData?.settings || dnsSettingsData?.dns_settings;
+    if (!current) return;
+    if (!settingsDirty.suffix) setMagicSuffix(current.magic_dns_suffix || '.internal');
+    if (!settingsDirty.upstreams) setUpstreams(current.upstream_resolvers || '1.1.1.1, 8.8.8.8');
+  }, [dnsSettingsData, settingsDirty.suffix, settingsDirty.upstreams]);
+
   // Query DNS Overrides
-  const { data: overridesData } = useQuery<{ dns_overrides: DNSOverrideItem[] }>({
+  const { data: overridesData, isError: dnsOverridesError, refetch: refetchOverrides } = useQuery<{ dns_overrides: DNSOverrideItem[] }>({
     queryKey: ['dns_overrides'],
     queryFn: async () => {
       const res = await fetch('/api/dns/overrides', {
@@ -92,10 +99,13 @@ export const DNSEnginePage: React.FC = () => {
       if (!res.ok) throw new Error('Failed to update DNS settings');
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      setSettingsDirty(previous => ({
+        suffix: variables.magic_dns_suffix === undefined ? previous.suffix : false,
+        upstreams: variables.upstream_resolvers === undefined ? previous.upstreams : false,
+      }));
       queryClient.invalidateQueries({ queryKey: ['dns_settings'] });
-      setToastMessage('DNS configuration updated successfully');
-      setTimeout(() => setToastMessage(''), 3000);
+      toast.success(t('common.operation_saved'));
     },
   });
 
@@ -111,7 +121,7 @@ export const DNSEnginePage: React.FC = () => {
         body: JSON.stringify({
           hostname: overrideHost,
           record_type: overrideType,
-          target_address: overrideTarget,
+          target_address: overrideTarget.trim(),
         }),
       });
       if (!res.ok) {
@@ -122,6 +132,7 @@ export const DNSEnginePage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dns_overrides'] });
+      toast.success(t('common.operation_created'));
       setIsAddOverrideOpen(false);
       createOverrideMutation.reset();
       setOverrideHost('');
@@ -141,19 +152,15 @@ export const DNSEnginePage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dns_overrides'] });
+      toast.success(t('common.operation_deleted'));
     },
   });
 
   return (
     <div className="space-y-5">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 p-2.5 rounded-lg flex items-center gap-2 text-xs">
-          <CheckCircle className="w-4 h-4 shrink-0" />
-          {toastMessage}
-        </div>
+      {(dnsSettingsError || dnsOverridesError) && (
+        <QueryErrorBanner onRetry={() => { void refetchDNSSettings(); void refetchOverrides(); }} />
       )}
-
       {/* Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* MagicDNS Base Domain */}
@@ -170,7 +177,7 @@ export const DNSEnginePage: React.FC = () => {
                 <input
                   type="text"
                   value={magicSuffix}
-                  onChange={(e) => setMagicSuffix(e.target.value)}
+                  onChange={(e) => { setMagicSuffix(e.target.value); setSettingsDirty(previous => ({ ...previous, suffix: true })); }}
                   placeholder="e.g. .strongnet or .corp.internal"
                   className="flex-1 surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
                 />
@@ -185,7 +192,7 @@ export const DNSEnginePage: React.FC = () => {
             </div>
             <div className="text-[11px] text-subtle">
               {t('dns.reachable_at')}:{' '}
-              <code className="font-mono text-blue-400">[device-name]{magicSuffix}</code>
+              <code className="font-mono text-accent">[device-name]{magicSuffix}</code>
             </div>
           </div>
         </div>
@@ -204,7 +211,7 @@ export const DNSEnginePage: React.FC = () => {
                 <input
                   type="text"
                   value={upstreams}
-                  onChange={(e) => setUpstreams(e.target.value)}
+                  onChange={(e) => { setUpstreams(e.target.value); setSettingsDirty(previous => ({ ...previous, upstreams: true })); }}
                   placeholder="e.g. 1.1.1.1, 8.8.8.8, 9.9.9.9"
                   className="flex-1 surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
                 />
@@ -242,7 +249,7 @@ export const DNSEnginePage: React.FC = () => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search DNS records by host or IP..."
+                placeholder={t('dns.search_placeholder')}
                 className="w-full surface-input border subtle-border rounded-lg pl-8 pr-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-sans"
               />
             </div>
@@ -261,7 +268,7 @@ export const DNSEnginePage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-1.5 text-[11px] px-1">
           <span className="text-subtle font-medium flex items-center gap-1 mr-1">
             <Filter className="w-3 h-3" />
-            Type:
+            {t('dns.record_type_filter')}:
           </span>
           {(['all', 'A', 'AAAA', 'CNAME', 'TXT'] as const).map((rType) => {
             const count = rType === 'all' ? overrides.length : overrides.filter((o) => o.record_type?.toUpperCase() === rType).length;
@@ -273,7 +280,7 @@ export const DNSEnginePage: React.FC = () => {
                 onClick={() => setTypeFilter(rType)}
                 className={`px-2 py-0.5 rounded-md border subtle-border transition-colors uppercase font-mono text-[10px] ${
                   isSelected
-                    ? 'bg-blue-600/15 border-blue-500/40 text-blue-500 font-semibold'
+                    ? 'bg-blue-600/15 border-blue-500/40 text-accent font-semibold'
                     : 'text-subtle hover:text-current hover:bg-slate-500/10'
                 }`}
               >
@@ -289,9 +296,9 @@ export const DNSEnginePage: React.FC = () => {
                 setTypeFilter('all');
                 setSearchQuery('');
               }}
-              className="ml-auto text-rose-500 hover:text-rose-400 flex items-center gap-1 text-[11px] font-medium"
+              className="ml-auto text-status-danger hover:text-rose-700 dark:hover:text-rose-400 flex items-center gap-1 text-[11px] font-medium"
             >
-              <X className="w-3 h-3" /> Reset filters
+              <X className="w-3 h-3" /> {t('common.reset_filters')}
             </button>
           )}
         </div>
@@ -313,9 +320,9 @@ export const DNSEnginePage: React.FC = () => {
                     <td colSpan={4} className="py-8">
                       <EmptyState
                         icon={Globe}
-                        title={searchQuery || typeFilter !== 'all' ? 'No matching DNS records' : 'No custom DNS overrides'}
-                        description={searchQuery || typeFilter !== 'all' ? `No DNS records match the filter criteria.` : "Define custom authoritative local DNS overrides mapping names to specific internal IPs."}
-                        actionLabel={searchQuery || typeFilter !== 'all' ? 'Clear Filters' : t('dns.add_override')}
+                        title={searchQuery || typeFilter !== 'all' ? t('dns.no_matching_records') : t('dns.no_custom_records')}
+                        description={searchQuery || typeFilter !== 'all' ? t('dns.no_matching_records_description') : t('dns.no_custom_records_description')}
+                        actionLabel={searchQuery || typeFilter !== 'all' ? t('common.clear_filters') : t('dns.add_override')}
                         actionIcon={searchQuery || typeFilter !== 'all' ? X : Plus}
                         onAction={searchQuery || typeFilter !== 'all' ? () => { setSearchQuery(''); setTypeFilter('all'); } : () => setIsAddOverrideOpen(true)}
                         className="border-none shadow-none bg-transparent"
@@ -325,7 +332,7 @@ export const DNSEnginePage: React.FC = () => {
                 ) : (
                   filteredOverrides.map((rec) => (
                     <tr key={rec.id} className="hover-row transition-colors">
-                      <td className="py-2.5 px-3.5 font-sans font-medium text-blue-400">
+                      <td className="py-2.5 px-3.5 font-sans font-medium text-accent">
                         <div className="flex items-center gap-2">
                           <Globe className="w-3.5 h-3.5 text-subtle shrink-0" />
                           <span>{rec.hostname}</span>
@@ -352,7 +359,7 @@ export const DNSEnginePage: React.FC = () => {
                             confirmLabel: t('common.delete'),
                             onConfirm: () => deleteOverrideMutation.mutateAsync(rec.id),
                           })}
-                          className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors"
+                          className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors"
                           title={t('common.delete')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -379,8 +386,9 @@ export const DNSEnginePage: React.FC = () => {
       >
         <div className="space-y-3 text-xs">
           <div>
-            <label className="text-subtle block mb-1">{t('dns.hostname')}</label>
+            <label htmlFor="dns-override-hostname" className="text-subtle block mb-1">{t('dns.hostname')}</label>
             <input
+              id="dns-override-hostname"
               type="text"
               value={overrideHost}
               onChange={(e) => setOverrideHost(e.target.value)}
@@ -393,36 +401,41 @@ export const DNSEnginePage: React.FC = () => {
           </div>
 
           <div>
-            <label className="text-subtle block mb-1">{t('dns.record_type')}</label>
+            <label htmlFor="dns-override-type" className="text-subtle block mb-1">{t('dns.record_type')}</label>
             <select
+              id="dns-override-type"
               value={overrideType}
-              onChange={(e) => setOverrideType(e.target.value)}
+              onChange={(e) => { setOverrideType(e.target.value as DNSOverrideRecordType); setOverrideTarget(''); }}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
             >
-              <option value="A">A (IPv4 Address)</option>
-              <option value="CNAME">CNAME (Alias)</option>
+              <option value="A">{t('dns.a_record_option')}</option>
+              <option value="CNAME">{t('dns.cname_record_option')}</option>
             </select>
           </div>
 
           <div>
-            <label className="text-subtle block mb-1">{t('dns.points_to')}</label>
+            <label htmlFor="dns-override-target" className="text-subtle block mb-1">{t(overrideType === 'A' ? 'dns.a_target_label' : 'dns.cname_target_label')}</label>
             <input
               type="text"
+              id="dns-override-target"
               value={overrideTarget}
               onChange={(e) => setOverrideTarget(e.target.value)}
-              placeholder="e.g. 192.168.1.100"
+              placeholder={t(overrideType === 'A' ? 'dns.a_target_example' : 'dns.cname_target_example')}
+              aria-invalid={showTargetError}
+              aria-describedby={showTargetError ? 'dns-override-target-error' : undefined}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
             />
+            {showTargetError && <p id="dns-override-target-error" role="alert" className="mt-1 text-[11px] text-status-danger">{t(overrideType === 'A' ? 'dns.invalid_target_a' : 'dns.invalid_target_cname')}</p>}
           </div>
         </div>
 
         <div className="flex gap-2 pt-2 border-t subtle-border">
           <button
             onClick={() => createOverrideMutation.mutate()}
-            disabled={!overrideHost || !overrideTarget || createOverrideMutation.isPending}
-            className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
+            disabled={!overrideHost.trim() || !isTargetValid || createOverrideMutation.isPending}
+            className="flex-1 bg-blue-600 enabled:hover:bg-blue-500 disabled:bg-slate-200 disabled:text-slate-600 dark:disabled:bg-slate-800 dark:disabled:text-slate-400 disabled:shadow-none text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
-            {createOverrideMutation.isPending ? 'Saving...' : t('common.save')}
+            {createOverrideMutation.isPending ? t('common.saving') : t('common.save')}
           </button>
           <button
             onClick={() => {

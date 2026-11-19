@@ -1,3 +1,4 @@
+import { useToast } from '../components/ToastProvider';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -7,6 +8,7 @@ import { AndroidNativeSetupDialog } from '../components/AndroidNativeSetupDialog
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
+import { QueryErrorBanner } from '../components/QueryErrorBanner';
 import { downloadDeviceProfile } from '../lib/profileDownload';
 import { buildDeviceProvisioningPayload, requiresDeviceOwnerSelection } from '../lib/deviceProvisioning';
 
@@ -44,6 +46,7 @@ interface DeviceOwnerOption {
 
 export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
   const { t } = useTranslation();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const [activeSubView, setActiveSubView] = useState<'devices' | 'groups'>('devices');
   const [isAddDeviceOpen, setIsAddDeviceOpen] = useState(false);
@@ -69,7 +72,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
   const [groupDesc, setGroupDesc] = useState('');
 
   // 1. Query Devices
-  const { data: devicesData } = useQuery<{ devices: DeviceItem[] }>({
+  const { data: devicesData, isError: devicesError, refetch: refetchDevices } = useQuery<{ devices: DeviceItem[] }>({
     queryKey: ['devices'],
     queryFn: async () => {
       const res = await fetch('/api/devices', {
@@ -81,7 +84,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
   });
 
   // 2. Query Resource Groups
-  const { data: groupsData } = useQuery<{ resource_groups: ResourceGroupItem[] }>({
+  const { data: groupsData, isError: groupsError, refetch: refetchGroups } = useQuery<{ resource_groups: ResourceGroupItem[] }>({
     queryKey: ['resource_groups'],
     queryFn: async () => {
       const res = await fetch('/api/resource-groups', {
@@ -142,8 +145,11 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (result: { runtime_status?: string }) => {
       queryClient.invalidateQueries({ queryKey: ['devices'] });
+      result.runtime_status === 'pending'
+        ? toast.info(t('server.enforcement_pending_notice'))
+        : toast.success(t('common.operation_created'));
       setIsAddDeviceOpen(false);
       createDeviceMutation.reset();
       setHostname('');
@@ -171,6 +177,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['resource_groups'] });
+      toast.success(t('common.operation_created'));
       setIsAddGroupOpen(false);
       createGroupMutation.reset();
       setGroupName('');
@@ -210,7 +217,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
     try {
       await downloadDeviceProfile(dev.id, os, dev.hostname);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'VPN profile download failed');
+      toast.error(error instanceof Error ? error.message : t('resources.profile_download_failed'));
     }
   };
 
@@ -245,11 +252,13 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['resource_groups'] });
+      toast.success(t('common.operation_deleted'));
     },
   });
 
   return (
     <div className="space-y-4">
+      {(devicesError || groupsError) && <QueryErrorBanner onRetry={() => { void refetchDevices(); void refetchGroups(); }} />}
       <AndroidNativeSetupDialog isOpen={androidDevice !== null} onClose={() => setAndroidDevice(null)}
         deviceId={androidDevice?.id || ''} hostname={androidDevice?.hostname || ''} />
       {/* Subnav & Action */}
@@ -280,7 +289,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={activeSubView === 'devices' ? "Search devices by host, IP, platform..." : "Search subnets by name, CIDR..."}
+              placeholder={t(activeSubView === 'devices' ? 'resources.device_search_placeholder' : 'resources.subnet_search_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg pl-8 pr-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -301,7 +310,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
           <div className="flex flex-wrap items-center gap-1.5 text-[11px] px-1">
             <span className="text-subtle font-medium flex items-center gap-1 mr-1">
               <Filter className="w-3 h-3" />
-              OS:
+              {t('resources.os_filter')}:
             </span>
             {(['all', 'macos', 'windows', 'linux', 'ios', 'android'] as const).map((p) => {
               const count = p === 'all' ? devices.length : devices.filter((d) => d.platform?.toLowerCase() === p).length;
@@ -314,7 +323,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                   onClick={() => setPlatformFilter(p)}
                   className={`px-2 py-0.5 rounded-md border subtle-border transition-colors uppercase font-mono text-[10px] ${
                     isSelected
-                      ? 'bg-blue-600/15 border-blue-500/40 text-blue-500 font-semibold'
+                      ? 'bg-blue-600/15 border-blue-500/40 text-accent font-semibold'
                       : 'text-subtle hover:text-current hover:bg-slate-500/10'
                   }`}
                 >
@@ -323,7 +332,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
               );
             })}
 
-            <span className="text-subtle font-medium ml-2 mr-1">Type:</span>
+            <span className="text-subtle font-medium ml-2 mr-1">{t('resources.type_filter')}:</span>
             {(['all', 'company', 'user'] as const).map((tType) => {
               const count = tType === 'all' ? devices.length : devices.filter((d) => d.device_type === tType).length;
               const isSelected = ownershipFilter === tType;
@@ -334,11 +343,11 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                   onClick={() => setOwnershipFilter(tType)}
                   className={`px-2 py-0.5 rounded-md border subtle-border transition-colors capitalize text-[10px] ${
                     isSelected
-                      ? 'bg-blue-600/15 border-blue-500/40 text-blue-500 font-semibold'
+                      ? 'bg-blue-600/15 border-blue-500/40 text-accent font-semibold'
                       : 'text-subtle hover:text-current hover:bg-slate-500/10'
                   }`}
                 >
-                  {tType === 'all' ? 'All' : tType === 'company' ? 'Company' : 'User'} ({count})
+                  {t(tType === 'all' ? 'common.all' : tType === 'company' ? 'resources.company_filter' : 'resources.user_filter')} ({count})
                 </button>
               );
             })}
@@ -351,9 +360,9 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                   setOwnershipFilter('all');
                   setSearchQuery('');
                 }}
-                className="ml-auto text-rose-500 hover:text-rose-400 flex items-center gap-1 text-[11px] font-medium"
+                className="ml-auto text-status-danger hover:text-rose-700 dark:hover:text-rose-400 flex items-center gap-1 text-[11px] font-medium"
               >
-                <X className="w-3 h-3" /> Reset filters
+                <X className="w-3 h-3" /> {t('common.reset_filters')}
               </button>
             )}
           </div>
@@ -377,9 +386,9 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                       <td colSpan={6} className="py-8">
                         <EmptyState
                           icon={Laptop}
-                          title={searchQuery || platformFilter !== 'all' || ownershipFilter !== 'all' ? 'No matching devices' : 'No devices enrolled yet'}
-                          description={searchQuery || platformFilter !== 'all' || ownershipFilter !== 'all' ? `No devices match the active filter criteria.` : "Click '+ Add Device' to provision a VPN profile."}
-                          actionLabel={searchQuery || platformFilter !== 'all' || ownershipFilter !== 'all' ? 'Clear Filters' : t('resources.add_device')}
+                          title={t(searchQuery || platformFilter !== 'all' || ownershipFilter !== 'all' ? 'resources.no_matching_devices' : 'resources.no_devices')}
+                          description={t(searchQuery || platformFilter !== 'all' || ownershipFilter !== 'all' ? 'resources.no_matching_devices_description' : 'resources.no_devices_description')}
+                          actionLabel={searchQuery || platformFilter !== 'all' || ownershipFilter !== 'all' ? t('common.clear_filters') : t('resources.add_device')}
                           actionIcon={searchQuery || platformFilter !== 'all' || ownershipFilter !== 'all' ? X : Plus}
                           onAction={searchQuery || platformFilter !== 'all' || ownershipFilter !== 'all' ? () => { setSearchQuery(''); setPlatformFilter('all'); setOwnershipFilter('all'); } : () => setIsAddDeviceOpen(true)}
                           className="border-none shadow-none bg-transparent"
@@ -394,7 +403,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                             {dev.device_type === 'company' ? (
                               <Server className="w-3.5 h-3.5 text-purple-400 shrink-0" />
                             ) : (
-                              <Laptop className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                              <Laptop className="w-3.5 h-3.5 text-accent shrink-0" />
                             )}
                             <span className="truncate">{dev.hostname}</span>
                             <CopyButton value={dev.hostname} label={`hostname ${dev.hostname}`} />
@@ -407,18 +416,18 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                             </span>
                           ) : (
                             <span className="text-subtle font-mono text-[11px]">
-                              {dev.user?.email || 'User Device'}
+                              {dev.user?.email || t('resources.user_device')}
                             </span>
                           )}
                         </td>
                         <td className="py-2.5 px-3.5 text-subtle font-mono">
-                          {dev.resource_group?.name || 'Default Subnet'}
+                          {dev.resource_group?.name || t('resources.default_subnet')}
                         </td>
-                        <td className="py-2.5 px-3.5 font-mono text-blue-400">
+                        <td className="py-2.5 px-3.5 font-mono text-accent">
                           <div className="flex items-center gap-1.5">
                             <span>{dev.virtual_ip}</span>
                             <CopyButton value={dev.virtual_ip} label={`Virtual IP ${dev.virtual_ip}`} />
-                            <span className="text-[10px] text-dim font-sans">({dev.ip_allocation_type})</span>
+                            <span className="text-[10px] text-dim font-sans">({t(dev.ip_allocation_type === 'static' ? 'resources.ip_static' : 'resources.ip_dynamic')})</span>
                           </div>
                         </td>
                         <td className="py-2.5 px-3.5 text-subtle uppercase font-mono text-[11px]">{dev.platform}</td>
@@ -427,7 +436,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                             <>
                               <button
                                 onClick={() => setAndroidDevice({ id: dev.id, hostname: dev.hostname })}
-                                className="p-1.5 hover:bg-emerald-500/10 rounded-md text-emerald-500 transition-colors inline-block"
+                                className="p-1.5 hover:bg-emerald-500/10 rounded-md text-status-success transition-colors inline-block"
                                 title={t('resources.download_android_native')}
                                 aria-label={t('resources.download_android_native')}
                               >
@@ -437,7 +446,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                           ) : (
                             <button
                               onClick={() => handleDownload(dev, dev.platform === 'linux' ? 'linux' : dev.platform === 'windows' ? 'windows' : 'apple')}
-                              className="p-1.5 hover:bg-blue-500/10 rounded-md text-blue-500 transition-colors inline-block"
+                              className="p-1.5 hover:bg-blue-500/10 rounded-md text-accent transition-colors inline-block"
                               title={getDownloadTooltip(dev.platform)}
                             >
                               <Download className="w-3.5 h-3.5" />
@@ -447,7 +456,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                             onClick={() => handleRevoke(dev)}
                             disabled={dev.is_revoked}
                             aria-label={t('common.revoke') + ' ' + dev.hostname}
-                            className="p-1.5 hover:bg-rose-500/10 rounded-md text-rose-500 transition-colors inline-block disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors inline-block disabled:opacity-40 disabled:cursor-not-allowed"
                             title={t('dashboard.self_revoke')}
                           >
                             <ShieldAlert className="w-3.5 h-3.5" />
@@ -472,7 +481,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                 <tr>
                   <th className="py-2.5 px-3.5">{t('resources.resource_group')}</th>
                   <th className="py-2.5 px-3.5">{t('resources.cidr_range')}</th>
-                  <th className="py-2.5 px-3.5">{t('resources.capacity')} &amp; Pool Usage</th>
+                  <th className="py-2.5 px-3.5">{t('resources.capacity')} &amp; {t('resources.pool_usage')}</th>
                   <th className="py-2.5 px-3.5">{t('resources.enrolled_nodes')}</th>
                   <th className="py-2.5 px-3.5 text-right font-sans">{t('common.actions')}</th>
                 </tr>
@@ -483,9 +492,9 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                     <td colSpan={5} className="py-8">
                       <EmptyState
                         icon={Network}
-                        title={searchQuery ? 'No matching subnets' : 'No resource subnets configured yet'}
-                        description={searchQuery ? `No subnets match '${searchQuery}'.` : "Create an IP pool to allocate client virtual IP addresses."}
-                        actionLabel={searchQuery ? 'Clear Search' : t('resources.add_group')}
+                        title={t(searchQuery ? 'resources.no_matching_subnets' : 'resources.no_subnets')}
+                        description={searchQuery ? t('resources.no_matching_subnets_description', { query: searchQuery }) : t('resources.no_subnets_description')}
+                        actionLabel={searchQuery ? t('common.clear_search') : t('resources.add_group')}
                         actionIcon={searchQuery ? X : Plus}
                         onAction={searchQuery ? () => setSearchQuery('') : () => setIsAddGroupOpen(true)}
                         className="border-none shadow-none bg-transparent"
@@ -496,8 +505,10 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                   filteredGroups.map((rg) => {
                     const totalCap = rg.capacity || 0;
                     const enrolled = rg.enrolled_node_count || 0;
-                    const pct = totalCap > 0 ? Math.min(100, Math.round((enrolled / totalCap) * 100)) : 0;
-                    const barColor = pct >= 90 ? 'bg-rose-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500';
+                    const actualPercent = totalCap > 0 ? Math.min(100, (enrolled / totalCap) * 100) : 0;
+                    const pct = Math.round(actualPercent);
+                    const displayedPercent = enrolled > 0 && actualPercent < 1 ? '<1%' : `${pct}%`;
+                    const barColor = actualPercent >= 90 ? 'bg-rose-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500';
 
                     return (
                       <tr key={rg.id} className="hover-row">
@@ -514,18 +525,18 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                         <td className="py-2.5 px-3.5">
                           <div className="w-36 font-sans">
                             <div className="flex items-center justify-between text-[10px] mb-1">
-                              <span className="font-mono font-medium text-slate-900 dark:text-white">{pct}% leased</span>
+                              <span className="font-mono font-medium text-slate-900 dark:text-white">{t('resources.leased_amount', { amount: displayedPercent })}</span>
                               <span className="text-dim">{enrolled} / {totalCap.toLocaleString()}</span>
                             </div>
                             <div className="w-full bg-slate-500/20 rounded-full h-1.5 overflow-hidden">
                               <div
                                 className={`h-full rounded-full transition-all duration-300 ${barColor}`}
-                                style={{ width: `${Math.max(4, pct)}%` }}
+                                style={{ width: `${enrolled > 0 ? Math.max(4, actualPercent) : 0}%` }}
                               />
                             </div>
                           </div>
                         </td>
-                        <td className="py-2.5 px-3.5 text-emerald-500 font-sans">{rg.enrolled_node_count || 0} nodes</td>
+                        <td className="py-2.5 px-3.5 text-status-success font-sans">{t('resources.node_count', { count: rg.enrolled_node_count ?? 0 })}</td>
                         <td className="py-2.5 px-3.5 text-right font-sans">
                           <button
                             onClick={() => requestConfirmation({
@@ -534,9 +545,9 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                               confirmLabel: t('common.delete'),
                               onConfirm: () => deleteGroupMutation.mutateAsync(rg.id),
                             })}
-                            className="p-1.5 hover:bg-rose-500/10 rounded-md text-subtle hover:text-rose-500 transition-colors"
-                            title="Delete Subnet"
-                            aria-label="Delete Subnet"
+                            className="p-1.5 hover:bg-rose-500/10 rounded-md text-subtle hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
+                            title={t('confirm.delete_subnet_title')}
+                            aria-label={t('confirm.delete_subnet_title')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -597,7 +608,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
           {ownerRequired && (
             <div>
               <label className="text-subtle block mb-1" htmlFor="device-owner">
-                {t('resources.assign_employee')} <span className="text-rose-500" aria-hidden="true">*</span>
+                {t('resources.assign_employee')} <span className="text-status-danger" aria-hidden="true">*</span>
               </label>
               <select
                 id="device-owner"
@@ -616,7 +627,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                 ))}
               </select>
               {isOwnersPending && <p className="text-dim mt-1">{t('resources.loading_users')}</p>}
-              {isOwnersError && <p role="alert" className="text-rose-500 mt-1">{t('resources.failed_to_load_users')}</p>}
+              {isOwnersError && <p role="alert" className="text-status-danger mt-1">{t('resources.failed_to_load_users')}</p>}
               {!isOwnersPending && !isOwnersError && activeOwners.length === 0 && (
                 <p className="text-dim mt-1">{t('resources.no_active_users')}</p>
               )}
@@ -629,7 +640,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
               type="text"
               value={hostname}
               onChange={(e) => setHostname(e.target.value)}
-              placeholder="e.g. k8s-worker-01 or thienvu-macbook"
+              placeholder={t('resources.device_name_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -674,7 +685,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                 type="text"
                 value={staticIP}
                 onChange={(e) => setStaticIP(e.target.value)}
-                placeholder="e.g. 10.100.1.20"
+                placeholder={t('resources.static_ip_placeholder')}
                 className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none"
               />
             )}
@@ -701,7 +712,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
             disabled={!canCreateDevice || createDeviceMutation.isPending}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
-            {createDeviceMutation.isPending ? 'Provisioning...' : t('resources.create_and_download')}
+            {createDeviceMutation.isPending ? t('resources.provisioning') : t('resources.create_and_download')}
           </button>
           <button
             onClick={() => {
@@ -733,7 +744,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
               type="text"
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
-              placeholder="e.g. Staging VPC"
+              placeholder={t('resources.subnet_name_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -744,7 +755,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
               type="text"
               value={groupCIDR}
               onChange={(e) => setGroupCIDR(e.target.value)}
-              placeholder="e.g. 10.50.0.0/16"
+              placeholder={t('resources.subnet_cidr_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -755,7 +766,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
               type="text"
               value={groupDesc}
               onChange={(e) => setGroupDesc(e.target.value)}
-              placeholder="e.g. Staging infrastructure subnet"
+              placeholder={t('resources.subnet_description_placeholder')}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -767,7 +778,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
             disabled={!groupName || !groupCIDR || createGroupMutation.isPending}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
-            {createGroupMutation.isPending ? 'Saving...' : t('common.save')}
+            {createGroupMutation.isPending ? t('common.saving') : t('common.save')}
           </button>
           <button
             onClick={() => {

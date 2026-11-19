@@ -2,9 +2,9 @@ package pki
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -22,8 +22,8 @@ func TestSignedRevocationListPublicationFailsClosedWhenStorageOrReloadIsUnavaila
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.Remove(invalid) })
-		if err := manager.PublishCRL(context.Background(), nil); err == nil {
-			t.Fatal("publishing over a directory must fail")
+		if err := manager.PublishCRL(context.Background(), nil); !errors.Is(err, ErrRevocationListStorageFailed) {
+			t.Fatalf("expected CRL storage error, got %v", err)
 		}
 		if err := os.Remove(invalid); err != nil {
 			t.Fatal(err)
@@ -37,7 +37,7 @@ func TestSignedRevocationListPublicationFailsClosedWhenStorageOrReloadIsUnavaila
 		}
 		t.Setenv("SWANPANEL_SWANCTL_CRL_DIR", invalid)
 		if err := manager.PublishCRL(context.Background(), nil); err == nil ||
-			!strings.Contains(err.Error(), "cannot install revocation list") {
+			!errors.Is(err, ErrRevocationListInstallFailed) {
 			t.Fatalf("deployment error not reported: %v", err)
 		}
 	})
@@ -51,7 +51,7 @@ func TestSignedRevocationListPublicationFailsClosedWhenStorageOrReloadIsUnavaila
 		t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
 		t.Setenv("VICI_SOCKET", filepath.Join(t.TempDir(), "charon.vici"))
 		if err := manager.PublishCRL(context.Background(), nil); err == nil ||
-			!strings.Contains(err.Error(), "CRL reload failed") {
+			!errors.Is(err, ErrRevocationListReloadFailed) {
 			t.Fatalf("reload failure not surfaced: %v", err)
 		}
 	})

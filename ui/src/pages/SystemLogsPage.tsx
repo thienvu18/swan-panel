@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useConfirmAction } from '../components/ConfirmDialog';
+import { QueryErrorBanner } from '../components/QueryErrorBanner';
 import { RotateCcw, Power, Play, Pause, Trash2, Download, Search, Terminal, ArrowDown } from 'lucide-react';
 
 interface LogEntry {
@@ -13,27 +14,31 @@ interface LogEntry {
   message: string;
 }
 
-export const SystemLogsPage: React.FC = () => {
+export const SystemLogsPage: React.FC<{isRealtimeConnected?: boolean}> = ({ isRealtimeConnected = false }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { requestConfirmation, confirmationDialog } = useConfirmAction();
   const [selectedScope, setSelectedScope] = useState('all');
   const [selectedLevel, setSelectedLevel] = useState('all');
   const [searchKeyword, setSearchKeyword] = useState('');
+  const [deferredSearch, setDeferredSearch] = useState('');
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDeferredSearch(searchKeyword.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchKeyword]);
   const [isPaused, setIsPaused] = useState(false);
   const [cleared, setCleared] = useState(false);
-  const [daemonStatus, setDaemonStatus] = useState<'active' | 'inactive' | 'unknown'>('unknown');
   const [isAutoScroll, setIsAutoScroll] = useState(true);
   const terminalRef = useRef<HTMLDivElement>(null);
 
   // Query logs
-  const { data } = useQuery<{ logs: LogEntry[] }>({
-    queryKey: ['system_logs', selectedScope, selectedLevel, searchKeyword],
+  const { data, refetch: refreshLogs, isError: logsError } = useQuery<{ logs: LogEntry[] }>({
+    queryKey: ['system_logs', selectedScope, selectedLevel, deferredSearch],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (selectedScope !== 'all') params.append('scope', selectedScope);
       if (selectedLevel !== 'all') params.append('level', selectedLevel);
-      if (searchKeyword) params.append('search', searchKeyword);
+      if (deferredSearch) params.append('search', deferredSearch);
 
       const res = await fetch(`/api/system/logs?${params.toString()}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
@@ -41,7 +46,7 @@ export const SystemLogsPage: React.FC = () => {
       if (!res.ok) throw new Error('Failed to fetch system logs');
       return res.json();
     },
-    refetchInterval: isPaused ? false : 3000,
+    enabled: !isPaused, // SSE log_event invalidates this query; paused views remain unchanged.
   });
 
   // Query real devices and users for scope filter options
@@ -71,18 +76,21 @@ export const SystemLogsPage: React.FC = () => {
   const registeredUsers = usersData?.users || [];
 
   // Query strongSwan daemon status
-  const { data: daemonData } = useQuery<{ service: string; status: string; pid: number; memory: string; uptime: string; control_supported?: boolean }>({
+  const { data: daemonData, isError: daemonError, refetch: refetchDaemon } = useQuery<{ service: string; status: string; pid: number; memory: string; uptime: string; control_supported?: boolean }>({
     queryKey: ['daemon_status'],
     queryFn: async () => {
       const res = await fetch('/api/system/daemon/status', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
       });
-      if (!res.ok) return res.json().catch(() => ({ service: 'strongswan', status: 'unknown', pid: 0, memory: 'N/A', uptime: 'N/A' }));
+      if (!res.ok) throw new Error('Failed to fetch gateway status');
       return res.json();
     },
   });
 
   const logs = cleared ? [] : data?.logs || [];
+
+  // Clearing only hides the current snapshot. A new SSE update restores incoming entries.
+  useEffect(() => { setCleared(false); }, [data]);
 
   useEffect(() => {
     if (isAutoScroll && terminalRef.current) {
@@ -120,7 +128,6 @@ export const SystemLogsPage: React.FC = () => {
           const body = await response.json().catch(() => ({}));
           throw new Error(body.error || t('common.error_occurred'));
         }
-        setDaemonStatus(action === 'stop' ? 'inactive' : 'active');
         await queryClient.invalidateQueries({ queryKey: ['daemon_status'] });
         await queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
       },
@@ -143,22 +150,23 @@ export const SystemLogsPage: React.FC = () => {
   return (
     <div className="space-y-4">
       {confirmationDialog}
+      {(logsError || daemonError) && <QueryErrorBanner onRetry={() => { void refreshLogs(); void refetchDaemon(); }} />}
       {/* DAEMON CONTROL CARD */}
       <div className="border subtle-border rounded-xl p-4 surface-card flex flex-wrap items-center justify-between gap-3 shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center justify-center font-mono">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-status-success border border-emerald-500/20 flex items-center justify-center font-mono">
             <Terminal className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <span className="font-bold text-xs text-slate-900 dark:text-white">{t('logs.service_status')}</span>
-              {(daemonData?.status || daemonStatus) === 'active' ? (
-                <span className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium">
-                  Active (Running)
+              {(daemonData?.status || 'unknown') === 'active' ? (
+                <span className="bg-emerald-500/10 text-status-success border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium">
+                  {t('server.status_running')}
                 </span>
               ) : (
-                <span className="bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium">
-                  {(daemonData?.status || daemonStatus) === 'unknown' ? 'Unknown' : 'Stopped'}
+                <span className="bg-rose-500/10 text-status-danger border border-rose-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium">
+                  {(daemonData?.status || 'unknown') === 'unknown' ? t('server.status_unknown') : t('server.status_stopped')}
                 </span>
               )}
             </div>
@@ -168,8 +176,10 @@ export const SystemLogsPage: React.FC = () => {
           </div>
         </div>
 
-        {daemonData?.control_supported === false ? (
-          <div role="note" className="max-w-sm text-xs text-amber-600 dark:text-amber-400">
+        {!daemonData || daemonError ? (
+          <span className="text-xs text-status-warning" role="status">{t('nav.gateway_unknown')}</span>
+        ) : daemonData.control_supported === false ? (
+          <div role="note" className="max-w-sm text-xs text-status-warning">
             {t('logs.host_control_unavailable')}
           </div>
         ) : (
@@ -183,7 +193,7 @@ export const SystemLogsPage: React.FC = () => {
           </button>
           <button
             onClick={() => handleDaemonControl('stop')}
-            className="border border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs"
+            className="border border-rose-500/30 text-status-danger bg-rose-500/10 hover:bg-rose-500/20 font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 text-xs"
           >
             <Power className="w-3.5 h-3.5" />
             {t('common.stop')}
@@ -205,19 +215,19 @@ export const SystemLogsPage: React.FC = () => {
             >
               <option value="all">{t('logs.all_logs')}</option>
               {enrolledDevices.length > 0 && (
-                <optgroup label="Filter by Device">
+                <optgroup label={t('logs.filter_by_device')}>
                   {enrolledDevices.map((d) => (
                     <option key={d.id} value={`dev:${d.hostname}`}>
-                      Device: {d.hostname}
+                      {t('resources.devices')}: {d.hostname}
                     </option>
                   ))}
                 </optgroup>
               )}
               {registeredUsers.length > 0 && (
-                <optgroup label="Filter by User">
+                <optgroup label={t('logs.filter_by_user')}>
                   {registeredUsers.map((u) => (
                     <option key={u.id} value={`user:${u.email}`}>
-                      User: {u.name || u.email} ({u.email})
+                      {t('users.title')}: {u.name || u.email} ({u.email})
                     </option>
                   ))}
                 </optgroup>
@@ -233,14 +243,15 @@ export const SystemLogsPage: React.FC = () => {
                 <button
                   key={lvl}
                   type="button"
+                  aria-pressed={isSelected}
                   onClick={() => setSelectedLevel(lvl)}
                   className={`px-2 py-0.5 rounded-md border subtle-border transition-colors uppercase font-mono text-[10px] ${
                     isSelected
                       ? lvl === 'error'
-                        ? 'bg-rose-500/20 border-rose-500/40 text-rose-400 font-semibold'
+                        ? 'bg-rose-500/20 border-rose-500/40 text-status-danger font-semibold'
                         : lvl === 'warn'
-                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 font-semibold'
-                        : 'bg-blue-600/20 border-blue-500/40 text-blue-400 font-semibold'
+                        ? 'bg-amber-500/20 border-amber-500/40 text-status-warning font-semibold'
+                        : 'bg-blue-600/20 border-blue-500/40 text-accent font-semibold'
                       : 'text-subtle hover:text-current hover:bg-slate-500/10'
                   }`}
                 >
@@ -275,11 +286,16 @@ export const SystemLogsPage: React.FC = () => {
           </button>
           <button
             type="button"
+            title={t('logs.clear_view')}
             onClick={() => setCleared(true)}
             className="border subtle-border hover:bg-slate-500/10 px-2.5 py-1 rounded-lg text-subtle hover:text-current transition-colors flex items-center gap-1"
           >
             <Trash2 className="w-3.5 h-3.5" />
             {t('common.clear')}
+          </button>
+          <button type="button" onClick={() => { setCleared(false); void refreshLogs(); }}
+            className="border subtle-border hover:bg-slate-500/10 px-2.5 py-1 rounded-lg text-subtle hover:text-current transition-colors flex items-center gap-1">
+            <RotateCcw className="w-3.5 h-3.5" />{t('common.refresh')}
           </button>
           <button
             type="button"
@@ -296,10 +312,10 @@ export const SystemLogsPage: React.FC = () => {
       <div className="relative border subtle-border rounded-xl overflow-hidden surface-card shadow-xs font-mono text-[11px]">
         <div className="surface-header border-b subtle-border px-4 py-2 flex items-center justify-between text-subtle">
           <span className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>{t('logs.live_events')}</span>
+            <span className={`w-2 h-2 rounded-full ${isPaused ? 'bg-slate-500' : isRealtimeConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+            <span>{isPaused ? t('logs.updates_paused') : isRealtimeConnected ? t('logs.live_events') : t('nav.reconnecting')}</span>
           </span>
-          <span className="text-dim">Showing {logs.length} events</span>
+          <span className="text-dim">{t('logs.event_count', { count: logs.length })}</span>
         </div>
 
         <div
@@ -308,14 +324,14 @@ export const SystemLogsPage: React.FC = () => {
           className="p-4 space-y-2 max-h-96 overflow-y-auto bg-[#070a0f] text-slate-200"
         >
           {logs.length === 0 ? (
-            <div className="text-dim italic">No events matching the current filter.</div>
+            <div className="text-dim italic">{t('logs.no_matching_logs')}</div>
           ) : (
             logs.map((l, idx) => (
               <div key={idx} className="flex items-start gap-2.5">
                 <span className="text-dim shrink-0">{l.timestamp}</span>
                 <span
                   className={`font-semibold shrink-0 uppercase ${
-                    l.level === 'warn' ? 'text-amber-400' : l.level === 'error' ? 'text-rose-400' : 'text-blue-400'
+                    l.level === 'warn' ? 'text-status-warning' : l.level === 'error' ? 'text-status-danger' : 'text-accent'
                   }`}
                 >
                   [{l.level}]
@@ -355,7 +371,7 @@ export const SystemLogsPage: React.FC = () => {
             className="absolute bottom-3 right-4 bg-blue-600 hover:bg-blue-500 text-white shadow-lg px-3 py-1 rounded-full text-xs font-sans flex items-center gap-1.5 transition-all animate-bounce z-10"
           >
             <ArrowDown className="w-3.5 h-3.5" />
-            Auto-scroll paused (Click to resume)
+            {t('logs.resume_auto_scroll')}
           </button>
         )}
       </div>

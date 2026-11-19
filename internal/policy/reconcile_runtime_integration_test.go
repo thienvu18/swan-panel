@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -383,7 +384,7 @@ func TestReconcileRuntimeDetectsDaemonIdentityChangedDuringPoolCleanup(t *testin
 	default:
 		t.Fatal("daemon identity mutation was not exercised")
 	}
-	if applyErr == nil || !strings.Contains(applyErr.Error(), "strongSwan restarted while applying") {
+	if !errors.Is(applyErr, policy.ErrDaemonRestartedDuringApply) {
 		t.Fatalf("daemon restart during apply incorrectly accepted: %v", applyErr)
 	}
 }
@@ -484,7 +485,7 @@ func TestReconcileRechecksDesiredConfigurationAfterRuntimeApply(t *testing.T) {
 			if applyErr == nil {
 				t.Fatal("runtime was declared applied after desired state changed")
 			}
-			if scenario.name == "desired config changed" && !strings.Contains(applyErr.Error(), "desired state changed") {
+			if scenario.name == "desired config changed" && !errors.Is(applyErr, policy.ErrDesiredStateChangedDuringApply) {
 				t.Fatalf("unexpected stale state error: %v", applyErr)
 			}
 			if scenario.name == "desired config cannot be read" {

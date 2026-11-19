@@ -137,6 +137,7 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 
 				// Access Rules (Zero-Trust Policies)
 				adminOnly.GET("/access-rules", accessH.ListAccessRules)
+				adminOnly.GET("/access-rules/effective/:id", accessH.EffectiveDeviceAccess)
 				adminOnly.POST("/access-rules", accessH.CreateAccessRule)
 				adminOnly.DELETE("/access-rules/:id", accessH.DeleteAccessRule)
 

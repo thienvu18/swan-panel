@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 // Only the topmost dialog handles Escape when confirmation overlays a form.
 let nextModalId = 0;
@@ -28,6 +29,7 @@ export const Modal: React.FC<ModalProps> = ({
   descriptionId,
   closeDisabled = false,
 }) => {
+  const { t } = useTranslation();
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const modalId = useRef(0);
@@ -52,6 +54,8 @@ export const Modal: React.FC<ModalProps> = ({
     initial?.focus();
 
     openModalStack.push(id);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const handleKeyDown = (e: KeyboardEvent) => {
       if (openModalStack[openModalStack.length - 1] !== id) return;
       if (e.key === 'Escape' && !closeDisabledRef.current) {
@@ -82,6 +86,7 @@ export const Modal: React.FC<ModalProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       const index = openModalStack.lastIndexOf(id);
       if (index >= 0) openModalStack.splice(index, 1);
+      if (openModalStack.length === 0) document.body.style.overflow = previousOverflow;
       if (opener?.isConnected) opener.focus();
     };
   }, [isOpen]);
@@ -104,7 +109,7 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         ref={modalContainerRef}
         tabIndex={-1}
-        className={`surface-card border subtle-border rounded-xl ${maxWidth} w-full p-5 space-y-4 shadow-2xl transition-all`}
+        className={`surface-card border subtle-border rounded-xl ${maxWidth} w-full max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 space-y-4 shadow-2xl transition-all`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b subtle-border pb-2.5">
@@ -116,14 +121,14 @@ export const Modal: React.FC<ModalProps> = ({
             disabled={closeDisabled}
             onClick={onClose}
             className="text-subtle hover:text-current p-1 rounded-md hover:bg-slate-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {error && (
-          <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-xs flex items-center gap-2">
+          <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-status-danger text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span className="font-medium">{error}</span>
           </div>

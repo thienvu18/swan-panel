@@ -5,7 +5,7 @@ const translations = {
   en: {
     meta: {
       title_landing: "SwanPanel - Modern Zero-Trust Control Plane for strongSwan VPN",
-      desc_landing: "Enterprise-grade, zero-trust web control plane for strongSwan IKEv2/IPsec VPNs with 100% native client provisioning, automated PKI, Split-DNS, and zero-downtime RAM reloads."
+      desc_landing: "Self-hosted SwanPanel VPN management with built-in client provisioning, access rules, automated certificates and clear gateway apply status."
     },
     nav: {
       why: "Why SwanPanel",
@@ -22,12 +22,12 @@ const translations = {
     hero: {
       badge: "Open Source & Non-Profit • Free under AGPL-3.0",
       title_start: "Enterprise Zero-Trust Remote Access.",
-      title_accent: "100% Native Clients. Zero 3rd-Party Apps.",
+      title_accent: "Native VPN on supported devices. No extra SwanPanel app.",
       desc: "Stop forcing employees to install bulky, battery-draining VPN apps. SwanPanel brings zero-trust control, automated PKI, Split-DNS, and dynamic RAM reloads to strongSwan IPsec in a single self-contained binary.",
-      install_title: "1-Line Production Quickstart (Ubuntu, Debian, RHEL, Rocky, Fedora)",
-      install_hint_1: "Auto-detects OS & tunes kernel forwarding",
-      install_hint_2: "Zero config required • Ready in under 60s",
-      install_hint_3: "Single pure Go binary + embedded React SPA",
+      install_title: "Optional Linux host installer (advanced)",
+      install_hint_1: "Configures strongSwan and host networking",
+      install_hint_2: "Review host changes before running",
+      install_hint_3: "Recommended Docker Compose setup is in the guide",
       copied: "Copied!",
       copy: "Copy",
       btn_get_started: "Get Started & Docs",
@@ -40,7 +40,7 @@ const translations = {
       p1_title: "The Old Way: Heavy Client Apps",
       p1_pain: "Employees hate installing clunky 3rd-party apps (OpenVPN, WireGuard client, Cisco AnyConnect) that drain laptop batteries, consume memory, and conflict with OS network settings.",
       p1_sol_badge: "SwanPanel Solution",
-      p1_sol: "100% Native Connectivity: Connect directly from macOS, iOS, Windows, Linux, and Android system settings with native hardware-accelerated IPsec encryption. Zero apps to install or maintain.",
+      p1_sol: "Built-in VPN on supported Apple, Windows, Linux and Android devices means less software for employees to manage. Android IKEv2/IPsec RSA support varies by model.",
       p2_title: "The Old Way: Fragile SSH Config Files",
       p2_pain: "Editing raw swanctl.conf or ipsec.conf over SSH is dangerous. A single typo crashes the daemon, and reloading static files drops active tunnels for all connected remote engineers.",
       p2_sol_badge: "SwanPanel Solution",
@@ -61,11 +61,11 @@ const translations = {
       f3_title: "Split-DNS & MagicDNS Engine",
       f3_desc: "Embedded high-performance DNS server (miekg/dns) auto-resolves internal devices (.strongnet) and custom overrides while keeping personal web traffic private.",
       f4_title: "Micro-Segmented Access Policies",
-      f4_desc: "Granular zero-trust access control mapping User Groups to Resource Groups, compiled dynamically into kernel traffic selectors and DROP filters.",
-      f5_title: "Dynamic RAM Control via VICI",
-      f5_desc: "Direct strongSwan charon daemon management over UNIX socket /var/run/charon.vici. Dynamic RAM reloads without dropping live engineer tunnels.",
+      f4_desc: "Grant access by user, group or device. Preview ALLOW/DENY decisions, matching networks and contributing rules before troubleshooting connectivity.",
+      f5_title: "Controlled Gateway Updates",
+      f5_desc: "Save settings centrally, see what is active on the VPN gateway, and retry pending updates without SSH.",
       f6_title: "Single Self-Contained Binary",
-      f6_desc: "Go backend, SQLite database with auto-migration, embedded React 19 SPA, and DNS engine compile into one pure Go executable with zero CGO dependencies."
+      f6_desc: "Go, SQLite, the web dashboard and DNS in one Linux control-plane binary; Docker Compose also bundles the strongSwan VPN gateway."
     },
     comparison: {
       tag: "Comparison Matrix",
@@ -77,7 +77,7 @@ const translations = {
       col_wire: "WireGuard / OpenVPN",
       col_saas: "Commercial SaaS (Tailscale)",
       r1_title: "3rd-Party Client App Required",
-      r1_swan: "No (100% Native OS)",
+      r1_swan: "No extra SwanPanel app on supported devices",
       r1_raw: "No (Native OS)",
       r1_wire: "Yes (Always Required)",
       r1_saas: "Yes (Proprietary Agent)",
@@ -110,9 +110,9 @@ const translations = {
     deploy: {
       tag: "Get Started Today",
       title: "Ready to Modernize Your Remote Access?",
-      desc: "Deploy SwanPanel in under 60 seconds with our automated production script, or read our comprehensive guide with visual walkthroughs for administrators and end-users.",
-      tab_script: "1-Line Production Script",
-      tab_docker: "Docker Compose",
+      desc: "Protect private services and manage access in one place. Start with Docker Compose, then get users connected using the short setup guide.",
+      tab_script: "Advanced Host Installer",
+      tab_docker: "Docker Compose (Recommended)",
       btn_guide: "Explore Documentation & Visual Setup Guides"
     },
     user_guide: {
@@ -159,12 +159,12 @@ const translations = {
       ports_title: "Network Firewall & Port Mapping",
       ports_desc: "Open the following inbound ports on your cloud firewall (AWS Security Group, GCP Firewall, Cloudflare, or local iptables):",
 
-      quick_title: "1-Line Automated Production Installer",
-      quick_desc: "The recommended deployment method for Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, and Fedora. The installer automatically detects your distribution, installs strongSwan with the VICI plugin, tunes Linux kernel packet forwarding, generates an initial PKI CA, and registers a systemd service:",
+      quick_title: "Native Linux installer (advanced)",
+      quick_desc: "For administrators who prefer a host-managed Linux service. This installer changes host networking and strongSwan configuration; Docker Compose below is the recommended default.",
       quick_post: "Once complete, access your control plane at http://<SERVER_IP>:8080.",
 
       docker_title: "Production Docker Compose Deployment",
-      docker_desc: "If you prefer containerized workloads, run SwanPanel via Docker Compose. Ensure the host has the strongSwan VICI UNIX socket mapped at /var/run/charon.vici:",
+      docker_desc: "Recommended: one container with SwanPanel, strongSwan and persistent data. No host strongSwan or VICI socket mount is needed. Create a permanent signing secret before starting.",
 
       config_title: "Configuration & Environment Variables",
       config_desc: "Configure SwanPanel via environment variables or /etc/swan-panel/config.env:",
@@ -172,14 +172,16 @@ const translations = {
       proxy_title: "TLS Termination & Reverse Proxy",
       proxy_desc: "For production security, terminate HTTPS via Caddy or Nginx:",
 
-      admin_login_title: "Initial Administrator Sign In",
-      admin_login_desc: "Navigate to http://<SERVER_IP>:8080. Log in using the default administrative credentials:",
-      admin_login_warn: "You will be prompted to replace this default secret immediately upon your first sign in to ensure zero-trust compliance.",
-      caption_login: "Figure 2.1: SwanPanel administrative authentication interface with brute-force rate-limiting.",
+      admin_login_title: "Initial Administrator Setup & Sign In",
+      admin_login_desc: "On first launch, SwanPanel generates a 256-bit one-time setup token stored in the database directory. Retrieve the token locally on the gateway host via sudo cat /var/lib/swan-panel/swanpanel.db.setup-token and enter it into the setup form:",
+      admin_login_warn: "Set the initial administrator name, email, and a secure password (12–72 characters). The setup token is permanently consumed upon creation.",
+      caption_setup_token: "Figure 2.1b: Initial administrator setup using the one-time 256-bit setup token.",
+      caption_login: "Figure 2.1: SwanPanel administrative authentication interface with brute-force rate-limiting and setup token flow.",
 
       admin_dash_title: "Dashboard & Gateway Live Status",
       admin_dash_desc: "The Dashboard provides instantaneous visibility into your strongSwan daemon: VICI UNIX socket connection health, active Security Associations (IKE_SA / CHILD_SA), connected client devices, and realtime RX/TX throughput metrics.",
       caption_dash: "Figure 2.2: Live Gateway Dashboard showing connected native clients and VICI memory socket status.",
+      caption_dash_user_view: "Figure 2.2b: Dashboard User View displaying personal enrolled devices and native profile download links.",
 
       admin_subnets_title: "Subnets & IP Pool Allocation",
       admin_subnets_desc: "In Resources -> Subnets, configure virtual VPN client address pools (e.g. 10.50.0.0/16) and register protected private subnets (e.g. 10.60.10.0/24 for Production, 10.60.20.0/24 for Staging).",
@@ -187,9 +189,11 @@ const translations = {
       caption_add_subnet: "Figure 2.4: Modal dialog for allocating dedicated subnets and assigning resource groups.",
 
       admin_devices_title: "Device Inventory & Client Profile Provisioning",
-      admin_devices_desc: "Every endpoint connecting to SwanPanel is tracked under Resources -> Devices. When you register a new device, SwanPanel's internal PKI automatically generates an X.509 client certificate and prepares platform-specific configuration profiles (.mobileconfig for Apple, PowerShell for Windows, NetworkManager for Linux).",
+      admin_devices_desc: "Every endpoint connecting to SwanPanel is tracked under Resources -> Devices. When you register a new device, choose between Company Resource and User Device (with owner assignment). SwanPanel's internal PKI generates an X.509 client certificate and prepares native profiles (.mobileconfig for Apple, PowerShell for Windows, NetworkManager for Linux, and native IKEv2/IPsec setup for Android).",
       caption_devices: "Figure 2.5: Device inventory listing hostnames, assigned virtual IPs, and 1-click download actions.",
       caption_add_device: "Figure 2.6: Device provisioning modal supporting Apple, Windows, Linux, and Android presets.",
+      caption_modal_android_setup: "Android setup: four guided actions, a hidden import password and secure certificate handling.",
+      caption_confirm_dialog: "Figure 2.6c: High-impact confirmation dialog preventing accidental revocation or destructive actions.",
 
       admin_users_title: "User Directory & Role-Based User Groups",
       admin_users_desc: "Manage local users and organize them into functional groups (e.g. Engineering, DevOps, Contractors, Sales). Access rules are enforced at the group level to maintain zero-trust segmentation.",
@@ -197,7 +201,7 @@ const translations = {
       caption_groups: "Figure 2.8: User Group management for policy mapping and access scoping.",
 
       admin_rules_title: "Zero-Trust Access Rules Engine",
-      admin_rules_desc: "Under Access Rules, define explicit ALLOW and DENY policies mapping User Groups to Resource Groups. When you save a rule, SwanPanel dynamically recompiles Linux kernel traffic selectors and pushes the changes into RAM via the VICI socket without dropping any live tunnels.",
+      admin_rules_desc: "Define who can access each private network. Effective Access Preview shows the configured ALLOW/DENY verdict, matching network and contributing rule for an IPv4 address; it does not test live connectivity.",
       caption_rules: "Figure 2.9: Micro-segmentation matrix mapping User Groups to Resource Subnets with instant RAM reload.",
       caption_add_rule: "Figure 2.10: Rule modal dialog for selecting source user group, destination target, and action.",
 
@@ -212,15 +216,18 @@ const translations = {
       caption_add_oidc: "Figure 2.14: Connecting an enterprise identity provider via Issuer URL, Client ID, and Secret.",
 
       admin_settings_title: "Server Settings & VICI Socket Tuning",
-      admin_settings_desc: "Under Server Settings, set your gateway's public FQDN (e.g. vpn.company.com), configure default DNS search domains, and verify UNIX socket connectivity to /var/run/charon.vici.",
+      admin_settings_desc: "Edit Gateway settings, then use Save & apply in the page header. The status card separates saved configuration from what the VPN gateway is running, with Retry apply when synchronization is pending or failed.",
       caption_settings: "Figure 2.15: Server settings managing gateway public address, PKI certificate regeneration, and socket health.",
+      caption_settings_advanced: "Figure 2.15d: Advanced JSON configuration tab with real-time syntax validation and raw parameter controls.",
+      caption_settings_ca: "Figure 2.15b: Internal X.509 Root CA inspection tab showing validity dates, SHA-256 fingerprint, and rotation status.",
+      caption_ca_rotate_confirm: "Figure 2.15c: CA rotation safety confirmation dialog verifying zero active devices and revocations before key rollover.",
 
       admin_logs_title: "Real-Time System Audit & Kernel Logs",
       admin_logs_desc: "Stream structured system and charon daemon logs directly in the browser over Server-Sent Events (SSE). Filter by severity level (DEBUG, INFO, WARN, ERROR) or search by client IP address.",
       caption_logs: "Figure 2.16: Realtime streaming audit logs with scope filtering, search, and live pause controls.",
 
-      user_why_title: "Why SwanPanel Uses 100% Native OS Clients",
-      user_why_desc: "Unlike legacy VPN solutions that force employees to install bulky, battery-draining client applications, SwanPanel leverages the native IKEv2/IPsec engine built directly into every modern operating system.",
+      user_why_title: "Why Use Your Device's Built-In VPN?",
+      user_why_desc: "On supported devices, employees connect from system settings without managing an extra VPN app. Android IKEv2/IPsec RSA support varies by model.",
 
       user_apple_title: "Apple Ecosystem: macOS & iOS (.mobileconfig)",
       user_apple_desc: "SwanPanel packages your client certificate, private key, and Root CA trust chain into a single signed Apple configuration profile (.mobileconfig).",
@@ -232,7 +239,13 @@ const translations = {
       user_linux_desc: "On Ubuntu, Fedora, Debian, and Arch desktops, SwanPanel integrates with native NetworkManager:",
 
       user_android_title: "Google Android (Native IKEv2 RSA)",
-      user_android_desc: "Android connects via native IKEv2/IPSec RSA using standard system settings:",
+      user_android_desc: "Supported Android devices can use the built-in IKEv2/IPsec RSA connection. Menu names and availability vary by manufacturer:",
+      android_action_1: "Open Set up Android VPN for your device, then download the .p12 certificate. Copy the import password without revealing it.",
+      android_action_2: "In Android Settings, install the .p12 under VPN & app user certificates.",
+      android_action_3: "Add an IKEv2/IPsec RSA VPN and enter the server and identity values shown in SwanPanel. Import the Root CA from the dialog if Android requests it.",
+      android_action_4: "Save, connect, then delete the downloaded .p12 from Downloads. Never share the file or password.",
+      android_ca_title: "Your Gateway's Root CA",
+      android_ca_hint: "If Android requests a trusted CA, download it from your device's SwanPanel setup dialog. Do not install sample certificates.",
 
       user_samples_title: "Reference Configuration Profiles",
       user_samples_desc: "Explore reference configuration samples bundled with SwanPanel:"
@@ -240,7 +253,7 @@ const translations = {
     footer: {
       github: "GitHub Repository",
       wiki: "Wiki",
-      releases: "Release v0.0.2",
+      releases: "Release v1.0.0",
       guide: "Docs & Guide",
       home: "Home",
       admin_guide: "Admin Guide",
@@ -253,7 +266,7 @@ const translations = {
   vi: {
     meta: {
       title_landing: "SwanPanel - Bảng Điều Khiển Zero-Trust Hiện Đại cho strongSwan VPN",
-      desc_landing: "Hệ thống Web Control Plane Zero-Trust chuẩn doanh nghiệp cho strongSwan IKEv2/IPsec VPN. Cấu hình 100% native client, tích hợp PKI, Split-DNS và nạp cấu hình động qua RAM không downtime."
+      desc_landing: "SwanPanel giúp doanh nghiệp tự quản lý VPN, cấp cấu hình kết nối, kiểm soát quyền truy cập và biết chính xác cấu hình đã áp dụng lên Gateway."
     },
     nav: {
       why: "Vì sao chọn SwanPanel",
@@ -270,12 +283,12 @@ const translations = {
     hero: {
       badge: "Mã Nguồn Mở & Phi Lợi Nhuận • Giấy Phép AGPL-3.0",
       title_start: "VPN Doanh Nghiệp Zero-Trust.",
-      title_accent: "100% Native OS. Không Cài Thêm App.",
+      title_accent: "Kết nối VPN có sẵn trên thiết bị tương thích. Không cần app riêng.",
       desc: "Chấm dứt việc ép nhân viên phải cài đặt các app VPN cồng kềnh, tốn pin. SwanPanel mang đến nền tảng Zero-Trust hiện đại, tự động hóa PKI, tích hợp Split-DNS và nạp cấu hình động qua RAM cho strongSwan IPsec trong một file nhị phân duy nhất.",
-      install_title: "Lệnh Cài Đặt Nhanh 1 Dòng (Ubuntu, Debian, RHEL, Rocky, Fedora)",
-      install_hint_1: "Tự nhận diện OS & cấu hình chuyển tiếp kernel",
-      install_hint_2: "Không cần cấu hình phức tạp • Sẵn sàng dưới 60s",
-      install_hint_3: "Một file nhị phân Go duy nhất nhúng sẵn React SPA",
+      install_title: "Cài trực tiếp trên Linux (tùy chọn nâng cao)",
+      install_hint_1: "Cấu hình strongSwan và mạng trên máy chủ",
+      install_hint_2: "Đọc kỹ thay đổi trước khi chạy",
+      install_hint_3: "Docker Compose được khuyên dùng trong HDSD",
       copied: "Đã chép!",
       copy: "Sao chép",
       btn_get_started: "Bắt Đầu & Xem Tài Liệu",
@@ -288,7 +301,7 @@ const translations = {
       p1_title: "Cách Cũ: Cài Đặt App Nặng Nề",
       p1_pain: "Nhân viên rất ngại cài đặt các ứng dụng VPN của bên thứ ba (OpenVPN, WireGuard client, Cisco AnyConnect). Những ứng dụng này ngốn RAM, làm nóng máy, hao pin và dễ xung đột mạng.",
       p1_sol_badge: "Giải pháp SwanPanel",
-      p1_sol: "Kết nối 100% Native: Kết nối thẳng từ Cài đặt hệ thống trên macOS, iOS, Windows, Linux và Android với tốc độ tăng tốc phần cứng của IPsec. Hoàn toàn không cần cài app phụ.",
+      p1_sol: "Trên thiết bị Apple, Windows, Linux và Android tương thích, nhân viên dùng ngay VPN tích hợp, không phải quản lý thêm ứng dụng. Android hỗ trợ IKEv2/IPsec RSA tùy theo máy.",
       p2_title: "Cách Cũ: Sửa File Qua SSH Dễ Sập Hệ Thống",
       p2_pain: "Sửa file swanctl.conf hay ipsec.conf qua SSH rất dễ lỗi cú pháp. Mỗi lần khởi động lại daemon, toàn bộ kết nối VPN của các kỹ sư trong công ty đều bị ngắt quãng đột ngột.",
       p2_sol_badge: "Giải pháp SwanPanel",
@@ -309,11 +322,11 @@ const translations = {
       f3_title: "Máy Chủ Split-DNS & MagicDNS",
       f3_desc: "DNS engine nhúng hiệu năng cao (miekg/dns) tự phân giải tên miền nội bộ (.strongnet) và ghi đè tùy chỉnh mà không ảnh hưởng duyệt web cá nhân.",
       f4_title: "Chính Sách Phân Quyền Micro-Segmented",
-      f4_desc: "Phân quyền Zero-Trust chi tiết giữa Nhóm người dùng và Nhóm tài nguyên, tự động biên dịch thành bộ lọc DROP/ACCEPT ở tầng kernel Linux.",
-      f5_title: "Điều Khiển Động Qua Socket VICI",
-      f5_desc: "Quản trị trực tiếp daemon strongSwan qua UNIX socket /var/run/charon.vici. Nạp cấu hình tức thì vào RAM không làm gián đoạn đường hầm đang chạy.",
-      f6_title: "Một File Nhị Phân Go Tự Chứa Duy Nhất",
-      f6_desc: "Backend Go, cơ sở dữ liệu SQLite tự động migrate, giao diện React 19 SPA nhúng sẵn và DNS engine đóng gói thành 1 file duy nhất không phụ thuộc CGO."
+      f4_desc: "Phân quyền theo người dùng, nhóm hoặc thiết bị. Xem trước kết quả CHO PHÉP/CHẶN, mạng khớp và luật liên quan trước khi xử lý sự cố.",
+      f5_title: "Cập Nhật Gateway Có Kiểm Soát",
+      f5_desc: "Lưu cấu hình tập trung, biết chính xác bản nào đang chạy trên Gateway và thử đồng bộ lại ngay trên Web.",
+      f6_title: "Một File Nhị Phân Tích Hợp",
+      f6_desc: "Go, SQLite, giao diện Web và DNS trong một file điều khiển cho Linux; Docker Compose kèm luôn dịch vụ VPN strongSwan."
     },
     comparison: {
       tag: "Bảng So Sánh",
@@ -325,7 +338,7 @@ const translations = {
       col_wire: "WireGuard / OpenVPN",
       col_saas: "Commercial SaaS (Tailscale)",
       r1_title: "Yêu Cầu Cài App Bên Thứ Ba",
-      r1_swan: "Không (100% Native OS)",
+      r1_swan: "Không cần app SwanPanel riêng trên thiết bị tương thích",
       r1_raw: "Không (Native OS)",
       r1_wire: "Có (Bắt buộc phải cài)",
       r1_saas: "Có (Cài Agent độc quyền)",
@@ -358,9 +371,9 @@ const translations = {
     deploy: {
       tag: "Bắt Đầu Ngay",
       title: "Sẵn Sàng Hiện Đại Hóa Hệ Thống VPN?",
-      desc: "Triển khai SwanPanel trong chưa đầy 60 giây bằng lệnh tự động, hoặc khám phá tài liệu hướng dẫn trực quan đầy đủ cho quản trị viên và người dùng.",
-      tab_script: "Lệnh Cài Đặt Tự Động 1 Dòng",
-      tab_docker: "Cấu Hình Docker Compose",
+      desc: "Bảo vệ tài nguyên nội bộ và quản lý quyền truy cập tại một nơi. Bắt đầu với Docker Compose, sau đó làm theo hướng dẫn ngắn để kết nối nhân viên.",
+      tab_script: "Bộ cài trên máy chủ (nâng cao)",
+      tab_docker: "Docker Compose (Khuyên dùng)",
       btn_guide: "Khám Phá Tài Liệu & Hướng Dẫn Trực Quan"
     },
     user_guide: {
@@ -407,12 +420,12 @@ const translations = {
       ports_title: "Mở Cổng Tường Lửa Mạng (Port Mapping)",
       ports_desc: "Mở các cổng mạng sau trên tường lửa đám mây của bạn (AWS Security Group, GCP Firewall, Cloudflare hoặc iptables):",
 
-      quick_title: "Cài Đặt Tự Động 1 Dòng Lệnh",
-      quick_desc: "Phương pháp triển khai khuyến nghị cho Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux và Fedora. Script tự động cài strongSwan kèm plugin VICI, tối ưu kernel forwarding, khởi tạo Root CA và đăng ký service systemd:",
+      quick_title: "Cài trực tiếp trên Linux (nâng cao)",
+      quick_desc: "Dành cho quản trị viên muốn chạy dịch vụ trực tiếp trên Linux. Script thay đổi cấu hình mạng và strongSwan trên host; Docker Compose bên dưới là cách khuyên dùng.",
       quick_post: "Sau khi hoàn tất, mở trình duyệt truy cập http://<SERVER_IP>:8080.",
 
       docker_title: "Triển Khai Bằng Docker Compose",
-      docker_desc: "Nếu bạn ưu tiên chạy container, triển khai SwanPanel qua Docker Compose. Đảm bảo ánh xạ UNIX socket /var/run/charon.vici từ máy chủ:",
+      docker_desc: "Khuyên dùng: một container gồm SwanPanel, strongSwan và dữ liệu bền vững. Không cần cài strongSwan trên host hay ánh xạ VICI socket. Tạo khóa ký cố định trước khi chạy.",
 
       config_title: "Cấu Hình & Biến Môi Trường",
       config_desc: "Quản lý tham số cấu hình SwanPanel qua file /etc/swan-panel/config.env hoặc biến môi trường:",
@@ -420,14 +433,16 @@ const translations = {
       proxy_title: "Cấu Hình Reverse Proxy & Chứng Chỉ HTTPS",
       proxy_desc: "Để đảm bảo an toàn môi trường production, đặt SwanPanel phía sau reverse proxy hỗ trợ TLS như Caddy hoặc Nginx:",
 
-      admin_login_title: "Đăng Nhập Quản Trị Viên Ban Đầu",
-      admin_login_desc: "Mở http://<SERVER_IP>:8080. Đăng nhập bằng tài khoản quản trị mặc định ban đầu:",
-      admin_login_warn: "Hệ thống sẽ nhắc bạn đổi mật khẩu này ngay trong lần đầu đăng nhập để tuân thủ tiêu chuẩn Zero-Trust.",
-      caption_login: "Hình 2.1: Giao diện xác thực quản trị viên SwanPanel với cơ chế Rate-limit chống Brute-force.",
+      admin_login_title: "Thiết Lập Quản Trị Viên Ban Đầu & Đăng Nhập",
+      admin_login_desc: "Khi khởi động lần đầu, SwanPanel tạo mã thiết lập một lần (setup token 256-bit) lưu tại thư mục database trên gateway. Lấy token trực tiếp trên server bằng lệnh sudo cat /var/lib/swan-panel/swanpanel.db.setup-token và nhập vào biểu mẫu thiết lập:",
+      admin_login_warn: "Thiết lập tên, email và mật khẩu quản trị viên mạnh (12–72 ký tự). Mã token sẽ bị vô hiệu hóa vĩnh viễn ngay sau khi tạo tài khoản.",
+      caption_setup_token: "Hình 2.1b: Thiết lập quản trị viên ban đầu bằng mã thiết lập một lần (setup token 256-bit).",
+      caption_login: "Hình 2.1: Giao diện xác thực quản trị viên SwanPanel với cơ chế Rate-limit chống Brute-force và quy trình setup token.",
 
       admin_dash_title: "Bảng Điều Khiển & Trạng Thái Gateway",
       admin_dash_desc: "Dashboard cung cấp cái nhìn toàn diện tức thì: Trạng thái socket UNIX VICI, các phiên kết nối IKE_SA đang hoạt động, danh sách thiết bị online và băng thông RX/TX thời gian thực.",
       caption_dash: "Hình 2.2: Dashboard trực tiếp hiển thị danh sách thiết bị native đang kết nối và socket RAM VICI.",
+      caption_dash_user_view: "Hình 2.2b: Giao diện người dùng Dashboard hiển thị danh sách thiết bị cá nhân và các liên kết tải profile native.",
 
       admin_subnets_title: "Quản Lý Dải Mạng & Cấp Phát IP",
       admin_subnets_desc: "Tại Tài nguyên -> Subnets, cấu hình dải IP ảo cấp cho client VPN (ví dụ 10.50.0.0/16) và khai báo các dải mạng nội bộ cần bảo vệ (10.60.10.0/24 Production, 10.60.20.0/24 Staging).",
@@ -435,9 +450,11 @@ const translations = {
       caption_add_subnet: "Hình 2.4: Hộp thoại cấp phát dải mạng mới và gắn vào nhóm tài nguyên.",
 
       admin_devices_title: "Quản Lý Thiết Bị & Cấp Phát Profile",
-      admin_devices_desc: "Mỗi thiết bị kết nối được định danh tại Tài nguyên -> Thiết bị. Khi tạo mới, PKI nội bộ tự động ký chứng chỉ X.509 và tạo profile tương ứng (.mobileconfig cho Apple, PowerShell cho Windows, NetworkManager cho Linux).",
+      admin_devices_desc: "Mỗi thiết bị kết nối được định danh tại Tài nguyên -> Thiết bị. Khi tạo mới, phân loại Thiết bị Công ty hoặc Thiết bị Người dùng (chọn chủ sở hữu). PKI nội bộ tự động ký chứng chỉ X.509 và cấp profile native (.mobileconfig cho Apple, PowerShell cho Windows, NetworkManager cho Linux, và hướng dẫn native IKEv2/IPsec cho Android không cần app thứ ba).",
       caption_devices: "Hình 2.5: Danh bạ thiết bị hiển thị tên máy, IP ảo được cấp và nút tải cấu hình 1 click.",
       caption_add_device: "Hình 2.6: Hộp thoại tạo thiết bị hỗ trợ cấu hình nhanh cho Apple, Windows, Linux và Android.",
+      caption_modal_android_setup: "Cài VPN Android với bốn thao tác rõ ràng, mật khẩu nhập chứng chỉ được ẩn và hướng dẫn giữ an toàn tệp chứng chỉ.",
+      caption_confirm_dialog: "Hình 2.6c: Hộp thoại xác nhận thao tác quan trọng ngăn chặn việc thu hồi hoặc xóa nhầm dữ liệu.",
 
       admin_users_title: "Danh Bạ Người Dùng & Nhóm Phân Quyền",
       admin_users_desc: "Quản lý tài khoản người dùng và phân loại thành các nhóm chức năng (Engineering, DevOps, Contractors). Các chính sách Zero-Trust được gán ở cấp độ nhóm để quản lý dễ dàng.",
@@ -445,7 +462,7 @@ const translations = {
       caption_groups: "Hình 2.8: Quản lý nhóm người dùng phục vụ cho việc gán chính sách truy cập.",
 
       admin_rules_title: "Hệ Thống Luật Truy Cập Zero-Trust",
-      admin_rules_desc: "Tại Quy tắc truy cập, thiết lập các luật ALLOW và DENY giữa Nhóm người dùng và Nhóm tài nguyên. SwanPanel tự động biên dịch thành luật kernel và nạp thẳng vào RAM qua VICI không làm rớt kết nối.",
+      admin_rules_desc: "Quy định ai được vào mạng nội bộ nào. Xem trước quyền truy cập cho biết kết quả CHO PHÉP/CHẶN, mạng khớp và luật liên quan đối với một IP đích; đây không phải phép thử kết nối thực tế.",
       caption_rules: "Hình 2.9: Ma trận phân quyền Zero-Trust vi phân đoạn giữa Nhóm người dùng và Subnet tài nguyên.",
       caption_add_rule: "Hình 2.10: Hộp thoại tạo luật mới chọn nhóm nguồn, tài nguyên đích và hành động.",
 
@@ -460,15 +477,18 @@ const translations = {
       caption_add_oidc: "Hình 2.14: Kết nối nhà cung cấp định danh qua Issuer URL, Client ID và Client Secret.",
 
       admin_settings_title: "Cài Đặt Máy Chủ & Quản Trị Socket VICI",
-      admin_settings_desc: "Tại Cài đặt máy chủ, thiết lập FQDN công khai của gateway (vpn.company.com), cấu hình tên miền tìm kiếm và kiểm tra kết nối socket UNIX /var/run/charon.vici.",
+      admin_settings_desc: "Chỉnh cấu hình Gateway và chọn Lưu & áp dụng ở header. Thẻ trạng thái phân biệt bản đã lưu và bản Gateway đang chạy; có thể Áp dụng lại khi đồng bộ chưa thành công.",
       caption_settings: "Hình 2.15: Cài đặt máy chủ quản lý địa chỉ public, tạo lại chứng chỉ PKI và kiểm tra socket.",
+      caption_settings_advanced: "Hình 2.15d: Tab cấu hình JSON nâng cao với kiểm tra cú pháp thời gian thực và quản trị tham số trực tiếp.",
+      caption_settings_ca: "Hình 2.15b: Tab quản trị Root CA X.509 nội bộ hiển thị thời hạn, mã vân tay SHA-256 và trạng thái xoay vòng.",
+      caption_ca_rotate_confirm: "Hình 2.15c: Hộp thoại xác nhận an toàn khi xoay vòng CA, yêu cầu xác thực không còn thiết bị hoạt động trước khi sinh khóa mới.",
 
       admin_logs_title: "Nhật Ký Hệ Thống & Audit Stream Thời Gian Thực",
       admin_logs_desc: "Truyền phát trực tiếp log kernel và daemon charon qua Server-Sent Events (SSE). Lọc theo mức độ nghiêm trọng (DEBUG, INFO, WARN, ERROR) hoặc tìm kiếm theo IP.",
       caption_logs: "Hình 2.16: Bảng dòng lệnh realtime hiển thị log có bộ lọc scope, tìm kiếm và nút tạm dừng.",
 
-      user_why_title: "Vì Sao SwanPanel Sử Dụng 100% Native OS Client?",
-      user_why_desc: "Khác với các giải pháp VPN truyền thống bắt buộc cài app ngoài gây hao pin và chậm máy, SwanPanel tận dụng trực tiếp engine IKEv2/IPsec có sẵn trong mọi hệ điều hành hiện đại.",
+      user_why_title: "Vì Sao Dùng VPN Có Sẵn Trên Thiết Bị?",
+      user_why_desc: "Trên thiết bị tương thích, nhân viên kết nối ngay trong Cài đặt mà không phải quản lý thêm ứng dụng VPN. Khả năng hỗ trợ IKEv2/IPsec RSA trên Android tùy theo máy.",
 
       user_apple_title: "Hệ Sinh Thái Apple: macOS & iOS (.mobileconfig)",
       user_apple_desc: "SwanPanel đóng gói chứng chỉ client, khóa riêng tư và chuỗi Root CA vào 1 profile Apple (.mobileconfig) duy nhất.",
@@ -480,7 +500,13 @@ const translations = {
       user_linux_desc: "Trên các bản phân phối Ubuntu, Fedora, Debian và Arch, SwanPanel tích hợp trực tiếp với NetworkManager:",
 
       user_android_title: "Google Android (IKEv2 RSA Native)",
-      user_android_desc: "Android kết nối qua giao thức chuẩn IKEv2/IPSec RSA trong Cài đặt hệ thống:",
+      user_android_desc: "Thiết bị Android hỗ trợ IKEv2/IPsec RSA có thể kết nối ngay trong Cài đặt, không cần ứng dụng riêng. Tên mục có thể khác theo hãng:",
+      android_action_1: "Trên SwanPanel, mở Thiết lập VPN Android, tải chứng chỉ .p12 và sao chép mật khẩu nhập chứng chỉ.",
+      android_action_2: "Mở Cài đặt Android, nhập .p12 trong mục Cài đặt chứng chỉ VPN và ứng dụng.",
+      android_action_3: "Thêm VPN IKEv2/IPsec RSA, điền địa chỉ và danh tính từ SwanPanel. Nếu Android yêu cầu, nhập thêm chứng chỉ CA.",
+      android_action_4: "Lưu, kết nối và xóa file .p12 đã tải. Không chia sẻ file hoặc mật khẩu.",
+      android_ca_title: "Chứng chỉ CA của máy chủ",
+      android_ca_hint: "Nếu Android yêu cầu CA tin cậy, tải chứng chỉ từ mục Thiết lập VPN Android cho thiết bị của bạn. Không dùng chứng chỉ mẫu.",
 
       user_samples_title: "Tham Khảo Các File Cấu Hình Mẫu",
       user_samples_desc: "Tải và kiểm tra các file cấu hình mẫu đi kèm SwanPanel:"
@@ -488,7 +514,7 @@ const translations = {
     footer: {
       github: "GitHub Repository",
       wiki: "Tài liệu Wiki",
-      releases: "Bản phát hành v0.0.2",
+      releases: "Bản phát hành v1.0.0",
       guide: "Tài liệu & Hướng dẫn",
       home: "Trang chủ",
       admin_guide: "Cẩm Nang Quản Trị",

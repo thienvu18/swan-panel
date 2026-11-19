@@ -62,8 +62,8 @@ test('all native select fields use the same styled surface control', () => {
   assert.match(css, /appearance:\s*none/);
   assert.match(css, /background-image:\s*url/);
   assert.match(css, /select\.surface-input:focus-visible/);
-  assert.match(css, /html\.dark select\.surface-input option/);
-  assert.match(css, /html:not\(\.dark\) select\.surface-input option/);
+  assert.match(css, /html\.dark select option/);
+  assert.match(css, /html:not\(\.dark\) select option/);
 });
 
 test('confirmation translations are complete in Vietnamese and English', () => {

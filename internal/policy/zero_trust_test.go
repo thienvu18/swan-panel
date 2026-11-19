@@ -2,6 +2,7 @@ package policy_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -86,8 +87,8 @@ func TestRevokedDeviceCannotCompileGrants(t *testing.T) {
 	if err := database.Model(&db.Device{}).Where("id = ?", "dev_thienvu").Update("is_revoked", true).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := policy.NewCompiler(database).CompileForDevice(context.Background(), "dev_thienvu"); err == nil {
-		t.Fatal("Revoked device compiled into an active policy")
+	if _, err := policy.NewCompiler(database).CompileForDevice(context.Background(), "dev_thienvu"); !errors.Is(err, policy.ErrDeviceRevoked) {
+		t.Fatalf("Expected ErrDeviceRevoked, got %v", err)
 	}
 }
 

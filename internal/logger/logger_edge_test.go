@@ -99,3 +99,29 @@ func TestLoggerDynamicLevelAndDefaultTags(t *testing.T) {
 		t.Fatalf("empty metadata leaked another log's tags: %+v", entry)
 	}
 }
+
+func TestBufferedHandlerIncludesPersistentWithAttrsContext(t *testing.T) {
+	logMu.Lock()
+	previous := logBuffer
+	logBuffer = nil
+	logMu.Unlock()
+	t.Cleanup(func() {
+		logMu.Lock()
+		logBuffer = previous
+		logMu.Unlock()
+	})
+	var sink bytes.Buffer
+	handler := &BufferedHandler{inner: slog.NewTextHandler(&sink, nil)}
+	withContext := slog.New(handler).With("user_id", "viewer-1").With("path", "/api/logs")
+	withContext.Info("request inspected", "status", "allowed")
+	entries := GetRecentLogs()
+	if len(entries) != 1 {
+		t.Fatalf("expected one contextual log, got %d", len(entries))
+	}
+	if entries[0].Tag1 != "viewer-1" || entries[0].Tag2 != "allowed" {
+		t.Fatalf("persistent context was lost: %+v", entries[0])
+	}
+	if !strings.Contains(entries[0].Scope, "path=/api/logs") {
+		t.Fatalf("persistent path was missing from scope: %s", entries[0].Scope)
+	}
+}

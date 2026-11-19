@@ -1,5 +1,6 @@
 import React from 'react';
 import { Menu } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface HeaderProps {
   title: string;
@@ -14,6 +15,7 @@ export const Header: React.FC<HeaderProps> = ({
   isRealtimeConnected,
   actionButton,
 }) => {
+  const { t } = useTranslation();
   return (
     <header className="h-14 border-b subtle-border px-4 md:px-6 flex items-center justify-between shrink-0 sticky top-0 z-20 surface-nav backdrop-blur">
       <div className="flex items-center gap-3">
@@ -21,7 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={onOpenMobileMenu}
           className="p-1.5 rounded-lg border subtle-border hover:bg-slate-500/10 text-subtle hover:text-current md:hidden"
-          aria-label="Open navigation menu"
+          aria-label={t('nav.open_navigation')}
         >
           <Menu className="w-4 h-4" />
         </button>
@@ -35,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
               isRealtimeConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
             }`}
           />
-          <span>{isRealtimeConnected ? 'Live' : 'Connecting...'}</span>
+          <span>{isRealtimeConnected ? t('nav.live') : t('nav.reconnecting')}</span>
         </div>
       </div>
 

@@ -21,6 +21,12 @@ import (
 	pkcs12 "software.sslmate.com/src/go-pkcs12"
 )
 
+var (
+	ErrRevocationListStorageFailed = errors.New("cannot store revocation list")
+	ErrRevocationListInstallFailed = errors.New("cannot install revocation list")
+	ErrRevocationListReloadFailed  = errors.New("strongSwan CRL reload failed")
+)
+
 var validDeviceID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
 
 // RevokedCertificate is a permanent entry in the CA revocation ledger.
@@ -237,7 +243,7 @@ func (m *PKIManager) PublishCRL(ctx context.Context, revoked []RevokedCertificat
 	}
 	// Store in application data first (for restarts/backups).
 	if err := atomicPrivateFile(filepath.Join(m.dataDir, "ca.crl"), data); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrRevocationListStorageFailed, err)
 	}
 	// Device-side CRL must be loaded by charon for revocation to be effective.
 	if os.Getenv("APP_ENV") == "test" {
@@ -245,7 +251,7 @@ func (m *PKIManager) PublishCRL(ctx context.Context, revoked []RevokedCertificat
 	}
 	path := filepath.Join(swanctlCRLDirectory(), "swanpanel.crl")
 	if err := atomicPrivateFile(path, data); err != nil {
-		return fmt.Errorf("cannot install revocation list: %w", err)
+		return fmt.Errorf("%w: %w", ErrRevocationListInstallFailed, err)
 	}
 	args := []string{"--load-creds", "--noprompt"}
 	// In host-daemon Docker mode the VICI socket is exposed through a mounted
@@ -256,7 +262,7 @@ func (m *PKIManager) PublishCRL(ctx context.Context, revoked []RevokedCertificat
 	command := exec.CommandContext(ctx, "swanctl", args...)
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("strongSwan CRL reload failed: %w: %s", err, string(output))
+		return fmt.Errorf("%w: %w: %s", ErrRevocationListReloadFailed, err, string(output))
 	}
 	return nil
 }

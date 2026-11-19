@@ -2,9 +2,9 @@ package policy
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/swan-panel/swan-panel/internal/db"
@@ -81,7 +81,7 @@ func TestRuntimeReconciliationRejectsUnavailableModelsAndUnsafePersistedIdentiti
 			t.Fatal(err)
 		}
 		if err := reconcileRuntime(context.Background(), database); err == nil ||
-			!strings.Contains(err.Error(), "render persistent") {
+			!errors.Is(err, ErrGatewayConfigurationRenderFailed) {
 			t.Fatalf("unsafe config not rejected: %v", err)
 		}
 	})
@@ -90,7 +90,7 @@ func TestRuntimeReconciliationRejectsUnavailableModelsAndUnsafePersistedIdentiti
 		t.Setenv("SWANPANEL_SWANCTL_FILE", t.TempDir())
 		database := runtimeFailureFixture(t)
 		if err := reconcileRuntime(context.Background(), database); err == nil ||
-			!strings.Contains(err.Error(), "persist strongSwan") {
+			!errors.Is(err, ErrGatewayConfigurationPersistFailed) {
 			t.Fatalf("invalid persistent configuration path accepted: %v", err)
 		}
 	})
@@ -100,7 +100,7 @@ func TestRuntimeReconciliationRejectsUnavailableModelsAndUnsafePersistedIdentiti
 		t.Setenv("SWANPANEL_SWANCTL_FILE", filepath.Join(t.TempDir(), "managed.conf"))
 		database := runtimeFailureFixture(t)
 		if err := reconcileRuntime(context.Background(), database); err == nil ||
-			!strings.Contains(err.Error(), "fail-closed fallback") {
+			!errors.Is(err, ErrFirewallFailClosedFallbackFailed) {
 			t.Fatalf("failed firewall barrier not reported: %v", err)
 		}
 	})
@@ -119,7 +119,7 @@ func TestRuntimeReconciliationRejectsUnavailableModelsAndUnsafePersistedIdentiti
 		t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
 		database := runtimeFailureFixture(t)
 		if err := reconcileRuntime(context.Background(), database); err == nil ||
-			!strings.Contains(err.Error(), "fail-closed barrier active") {
+			!errors.Is(err, ErrFirewallFailClosedBarrierActive) {
 			t.Fatalf("firewall fallback result not preserved: %v", err)
 		}
 	})
@@ -130,7 +130,7 @@ func TestReconcileCannotClaimSuccessWithoutDurableStateAndDesiredDatabase(t *tes
 		t.Setenv("APP_ENV", "test")
 		database := runtimeFailureFixture(t)
 		if err := Reconcile(context.Background(), database); err == nil ||
-			!strings.Contains(err.Error(), "load runtime apply state") {
+			!errors.Is(err, ErrRuntimeApplyStateUnavailable) {
 			t.Fatalf("missing state ledger allowed reconciliation: %v", err)
 		}
 	})
@@ -144,7 +144,7 @@ func TestReconcileCannotClaimSuccessWithoutDurableStateAndDesiredDatabase(t *tes
 			t.Fatal(err)
 		}
 		if err := Reconcile(context.Background(), database); err == nil ||
-			!strings.Contains(err.Error(), "read desired configuration") {
+			!errors.Is(err, ErrDesiredConfigurationUnavailable) {
 			t.Fatalf("unreadable desired state was accepted: %v", err)
 		}
 	})
@@ -162,7 +162,7 @@ func TestReconcileCannotClaimSuccessWithoutDurableStateAndDesiredDatabase(t *tes
 			t.Fatal(err)
 		}
 		if err := Reconcile(context.Background(), database); err == nil ||
-			!strings.Contains(err.Error(), "no update") {
+			!errors.Is(err, ErrRuntimeApplyStatePersistenceFailed) {
 			t.Fatalf("state transition error ignored: %v", err)
 		}
 	})
@@ -180,7 +180,7 @@ func TestReconcileCannotClaimSuccessWithoutDurableStateAndDesiredDatabase(t *tes
 			t.Fatal(err)
 		}
 		if err := Reconcile(context.Background(), database); err == nil ||
-			!strings.Contains(err.Error(), "persist apply state") {
+			!errors.Is(err, ErrRuntimeApplyStatePersistenceFailed) {
 			t.Fatalf("missing durable commit accepted: %v", err)
 		}
 	})

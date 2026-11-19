@@ -20,20 +20,37 @@ type LogEntry struct {
 }
 
 var (
-	logMu     sync.RWMutex
-	logBuffer []LogEntry
-	maxLogs   = 1000
-	LevelVar  = new(slog.LevelVar)
+	logMu           sync.RWMutex
+	logBuffer       []LogEntry
+	maxLogs         = 1000
+	LevelVar        = new(slog.LevelVar)
+	publishMu       sync.RWMutex
+	publishLogEvent func()
 )
 
 // AddLogEntry records a log entry in the ring buffer
 func AddLogEntry(entry LogEntry) {
 	logMu.Lock()
-	defer logMu.Unlock()
 	if len(logBuffer) >= maxLogs {
 		logBuffer = logBuffer[1:]
 	}
 	logBuffer = append(logBuffer, entry)
+	logMu.Unlock()
+
+	publishMu.RLock()
+	publisher := publishLogEvent
+	publishMu.RUnlock()
+	if publisher != nil {
+		publisher()
+	}
+}
+
+// SetLogEventPublisher wires log-update notifications without coupling logging
+// to HTTP routing. The publisher must not call the logger recursively.
+func SetLogEventPublisher(publisher func()) {
+	publishMu.Lock()
+	publishLogEvent = publisher
+	publishMu.Unlock()
 }
 
 // GetRecentLogs retrieves a copy of recent logs
@@ -48,6 +65,7 @@ func GetRecentLogs() []LogEntry {
 // BufferedHandler wraps a slog.Handler and stores entries into the in-memory ring buffer
 type BufferedHandler struct {
 	inner slog.Handler
+	attrs []slog.Attr
 }
 
 func (h *BufferedHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -58,7 +76,7 @@ func (h *BufferedHandler) Handle(ctx context.Context, r slog.Record) error {
 	var tag1, tag2 string
 	attrs := make([]string, 0)
 
-	r.Attrs(func(a slog.Attr) bool {
+	collect := func(a slog.Attr) bool {
 		val := fmt.Sprintf("%v", a.Value.Any())
 		attrs = append(attrs, fmt.Sprintf("%s=%s", a.Key, val))
 		switch a.Key {
@@ -74,7 +92,11 @@ func (h *BufferedHandler) Handle(ctx context.Context, r slog.Record) error {
 			tag2 = val
 		}
 		return true
-	})
+	}
+	for _, attr := range h.attrs {
+		collect(attr)
+	}
+	r.Attrs(collect)
 
 	if tag1 == "" && len(attrs) > 0 {
 		tag1 = attrs[0]
@@ -99,11 +121,11 @@ func (h *BufferedHandler) Handle(ctx context.Context, r slog.Record) error {
 }
 
 func (h *BufferedHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &BufferedHandler{inner: h.inner.WithAttrs(attrs)}
+	return &BufferedHandler{inner: h.inner.WithAttrs(attrs), attrs: append(append([]slog.Attr(nil), h.attrs...), attrs...)}
 }
 
 func (h *BufferedHandler) WithGroup(name string) slog.Handler {
-	return &BufferedHandler{inner: h.inner.WithGroup(name)}
+	return &BufferedHandler{inner: h.inner.WithGroup(name), attrs: append([]slog.Attr(nil), h.attrs...)}
 }
 
 // InitLogger configures the global slog logger based on the configured log level and environment
