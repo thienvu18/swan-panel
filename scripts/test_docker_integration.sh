@@ -138,8 +138,8 @@ compose exec -T gateway ipsec restart >/dev/null ||
   fail "Independent strongSwan daemon restart failed"
 RESTORED=0
 for _ in $(seq 1 18); do
-  if compose exec -T gateway swanctl --list-conns 2>/dev/null | grep -Fq "swanpanel-$DEVICE_ID" &&
-     compose exec -T gateway swanctl --list-pools 2>/dev/null | grep -Fq "swanpanel-vip-$DEVICE_ID"; then
+  if compose exec -T gateway swanctl --list-conns 2>/dev/null | grep -F "swanpanel-$DEVICE_ID" >/dev/null &&
+     compose exec -T gateway swanctl --list-pools 2>/dev/null | grep -F "swanpanel-vip-$DEVICE_ID" >/dev/null; then
     RESTORED=1
     break
   fi
