@@ -389,6 +389,38 @@ func TestReconcileRuntimeDetectsDaemonIdentityChangedDuringPoolCleanup(t *testin
 	}
 }
 
+func TestReconcileRuntimeRejectsDaemonDisappearingDuringPoolCleanup(t *testing.T) {
+	stub, _ := prepareSimulatedGateway(t, "")
+	database := setupPolicyTestDB(t)
+	if err := database.AutoMigrate(&db.RuntimeApplyState{}); err != nil {
+		t.Fatal(err)
+	}
+	removed := make(chan error, 1)
+	stub.onCommand = func(command string) {
+		if command == "list-sas" {
+			removed <- os.Remove(stub.listener.Addr().String())
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	applyErr := policy.Reconcile(ctx, database)
+	select {
+	case err := <-removed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatal("daemon socket removal was not exercised")
+	}
+	if !errors.Is(applyErr, policy.ErrDaemonRestartedDuringApply) {
+		t.Fatalf("daemon disappearance during apply incorrectly accepted: %v", applyErr)
+	}
+	state, err := policy.GetApplyState(ctx, database)
+	if err != nil || state.Status != "failed" {
+		t.Fatalf("daemon disappearance must leave a failed state: %+v %v", state, err)
+	}
+}
+
 func TestReconcileProductionPathRejectsVICIAndKeepsRetryableState(t *testing.T) {
 	stub, _ := prepareSimulatedGateway(t, "load-pool")
 	database := setupPolicyTestDB(t)
