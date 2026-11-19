@@ -10,7 +10,7 @@ require (
 	github.com/miekg/dns v1.1.73
 	github.com/smallstep/pkcs7 v0.2.3
 	github.com/strongswan/govici v0.8.2
-	golang.org/x/crypto v0.58.0
+	golang.org/x/crypto v0.59.0
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/time v0.16.0
 	gorm.io/driver/sqlite v1.6.0
