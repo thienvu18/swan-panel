@@ -3,7 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Code2, FileJson2, RotateCcw, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useConfirmAction } from '../components/ConfirmDialog';
+import { CopyButton } from '../components/CopyButton';
+import { AdvancedJSONEditor } from '../components/AdvancedJSONEditor';
 import { apiJSON } from '../lib/api';
+import { checkGatewayJSON, diffGatewayJSON } from '../lib/gatewayJSON';
 
 interface ServerSettingsProps { onRegisterSaveButton?: (button: React.ReactNode) => void; }
 type SettingsTab = 'basic' | 'advanced' | 'ca';
@@ -135,11 +138,20 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return { error: t('server.json_object_required'), value: null };
       }
+      const issue = checkGatewayJSON(value as Record<string, unknown>);
+      if (issue) return { error: t(issue.expected === 'supported' ? 'server.settings.json_unknown_field' : 'server.settings.json_invalid_field', { field: issue.field, expected: issue.expected }), value: null };
       return { error: '', value: value as Record<string, unknown> };
     } catch (error) {
       return { error: error instanceof Error ? error.message : t('server.invalid_json'), value: null };
     }
   }, [advancedText, t]);
+  const savedAdvanced = useMemo(() => {
+    if (!settings.data) return null;
+    const { id: _id, updated_at: _updated, dpd_timeout: _unsupported, ...editable } = settings.data;
+    return { ...editable, advanced_connection: settings.data.advanced_connection || {}, advanced_child: settings.data.advanced_child || {} };
+  }, [settings.data]);
+  const advancedChanges = useMemo(() => savedAdvanced && advanced.value
+    ? diffGatewayJSON(savedAdvanced, advanced.value) : [], [savedAdvanced, advanced.value]);
   const gatewayStatus = runtimeStatus.data?.status;
   const gatewayApplied = gatewayStatus === 'applied' &&
     runtimeStatus.data?.desired_generation === runtimeStatus.data?.applied_generation;
@@ -158,10 +170,10 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
   };
 
   const submitAdvanced = () => {
-    if (!advanced.value) return;
+    if (!advanced.value || !advancedChanges.length) return;
     requestConfirmation({
       title: t('confirm.apply_advanced_title'),
-      description: t('confirm.apply_advanced_description'),
+      description: t('confirm.apply_advanced_description') + ' ' + t('server.settings.advanced_change_summary', { count: advancedChanges.length }),
       confirmLabel: t('server.settings.save_and_apply'),
       tone: 'warning',
       onConfirm: () => { saveSource.current = 'advanced'; return save.mutateAsync(advanced.value!); },
@@ -176,7 +188,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
     }
     const blocked = save.isPending || retryApply.isPending || !activeDirty || (tab === 'basic'
       ? !form.server_endpoint.trim() || !form.server_identity.trim() || !form.vpn_name.trim()
-      : !advanced.value);
+      : !advanced.value || advancedChanges.length === 0);
     onRegisterSaveButton(
       <button type="button" disabled={blocked}
         onClick={tab === 'basic' ? submitBasic : submitAdvanced}
@@ -186,7 +198,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
       </button>
     );
     return () => onRegisterSaveButton(null);
-  }, [onRegisterSaveButton, settings.data, tab, save.isPending, retryApply.isPending, form, advanced.value, activeDirty, t]);
+  }, [onRegisterSaveButton, settings.data, tab, save.isPending, retryApply.isPending, form, advanced.value, advancedChanges.length, activeDirty, t]);
 
   return (
     <div className="space-y-4">
@@ -313,28 +325,45 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
               {t('server.settings.advanced_description')}
             </p>
           </div>
-          <textarea aria-label={t('server.settings.advanced_title')} spellCheck={false} value={advancedText}
-            onChange={e => { setAdvancedDirty(true); setAdvancedText(e.target.value); }} rows={22}
-            className="w-full font-mono text-xs leading-5 rounded-lg border subtle-border surface-input p-4 focus:outline-none focus:border-blue-500" />
+          <AdvancedJSONEditor label={t('server.settings.advanced_title')} value={advancedText}
+            onChange={value => { setAdvancedDirty(true); setAdvancedText(value); }} error={advanced.error} />
           {advanced.error
-            ? <p role="alert" className="text-xs text-status-danger">{advanced.error}</p>
+            ? <p id="advanced-json-error" role="alert" className="text-xs text-status-danger">{advanced.error}</p>
             : <p role="status" className="text-xs text-status-success">{t('server.settings.valid_json')}</p>}
+          {advanced.value && advancedChanges.length > 0 && (
+            <div className="rounded-lg border subtle-border overflow-hidden" role="region" aria-label={t('server.settings.advanced_changes')}>
+              <div className="surface-header border-b subtle-border px-3 py-2 font-semibold text-xs">
+                {t('server.settings.advanced_change_summary', { count: advancedChanges.length })}
+              </div>
+              <ul className="divide-y subtle-border text-xs max-h-60 overflow-y-auto">
+                {advancedChanges.map(change => (
+                  <li key={change.field} className="grid gap-1 sm:grid-cols-[minmax(130px,1fr)_2fr_2fr] p-3 font-mono break-all">
+                    <strong className="text-heading">{change.field}</strong>
+                    <span className="text-status-danger">- {change.before === undefined ? '—' : JSON.stringify(change.before)}</span>
+                    <span className="text-status-success">+ {change.after === undefined ? '—' : JSON.stringify(change.after)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => { if (advanced.value) setAdvancedText(JSON.stringify(advanced.value, null, 2)); }}
               disabled={!advanced.value} className="border subtle-border rounded-lg px-3 py-2 text-xs disabled:opacity-50">{t('server.settings.format_json')}</button>
             <button type="button" onClick={() => {
-              const { id: _id, updated_at: _updated, dpd_timeout: _unsupported, ...editable } = settings.data!;
-              setAdvancedDirty(false);
-              setAdvancedText(JSON.stringify({
-                ...editable, advanced_connection: settings.data!.advanced_connection || {},
-                advanced_child: settings.data!.advanced_child || {},
-              }, null, 2));
+              if (!savedAdvanced) return;
+              const reset = () => { setAdvancedDirty(false); setAdvancedText(JSON.stringify(savedAdvanced, null, 2)); return Promise.resolve(); };
+              if (advancedDirty) requestConfirmation({
+                title: t('server.settings.reset_advanced_title'),
+                description: t('server.settings.reset_advanced_description', { count: advancedChanges.length }),
+                confirmLabel: t('server.settings.reset_to_saved'), tone: 'warning', onConfirm: reset,
+              });
+              else void reset();
             }} className="border subtle-border rounded-lg px-3 py-2 text-xs inline-flex gap-2 items-center">
               <RotateCcw className="h-3.5 w-3.5" />{t('server.settings.reset_to_saved')}
             </button>
             <p className="text-[11px] text-subtle self-center">{t('server.settings.header_save_hint')}</p>
           </div>
-          <p className="text-[11px] text-dim">{t('server.settings.advanced_warning')}</p>
+          <p className="text-xs text-dim">{t('server.settings.advanced_warning')}</p>
         </section>
       )}
 
@@ -348,7 +377,8 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
           {ca.isError && <p role="alert" className="text-status-danger text-xs">{t('server.settings.ca_error')}</p>}
           {ca.data && (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <h3 className="text-xs font-semibold text-heading">{t('server.settings.current_ca_identity')}</h3>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {([
                   ['common_name', t('server.settings.ca_common_name')],
                   ['organization', t('server.settings.ca_organization')],
@@ -356,21 +386,39 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
                   ['province', t('server.settings.ca_province')],
                   ['locality', t('server.settings.ca_locality')],
                 ] as const).map(([field, title]) => (
-                  <label key={field}>
-                    <span className={labelClass}>{title}</span>
-                    <input className={inputClass} value={caForm[field]} disabled={!ca.data.can_rotate}
-                      onChange={e => setCAForm(s => ({ ...s, [field]: e.target.value }))} />
-                  </label>
+                  <div key={field}>
+                    <dt className={labelClass}>{title}</dt>
+                    <dd className="flex items-center justify-between gap-2 rounded-lg surface-header border subtle-border px-3 py-2.5 min-w-0">
+                      <span className="font-medium break-all">{ca.data.ca[field] || t('common.unavailable')}</span>
+                      {ca.data.ca[field] && <CopyButton value={ca.data.ca[field]} label={title} />}
+                    </dd>
+                  </div>
                 ))}
-              </div>
+              </dl>
               <p className="text-[11px] text-dim break-all">
                 {t('server.settings.certificate_serial')}: {ca.data.ca.serial} · {t('server.settings.expires')}: {new Date(ca.data.ca.not_after).toLocaleDateString()}
               </p>
               {ca.data.can_rotate ? (
-                <div className="border border-amber-500/40 rounded-lg p-3 space-y-3">
+                <details className="border border-amber-500/40 rounded-lg p-4 space-y-3">
+                  <summary className="cursor-pointer font-semibold text-status-warning">{t('server.settings.prepare_new_ca')}</summary>
                   <p className="text-xs text-status-warning">
                     {t('server.settings.ca_warning')}
                   </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {([
+                      ['common_name', t('server.settings.ca_common_name')],
+                      ['organization', t('server.settings.ca_organization')],
+                      ['country', t('server.settings.ca_country')],
+                      ['province', t('server.settings.ca_province')],
+                      ['locality', t('server.settings.ca_locality')],
+                    ] as const).map(([field, title]) => (
+                      <label key={field}>
+                        <span className={labelClass}>{title}</span>
+                        <input className={inputClass} value={caForm[field]}
+                          onChange={e => setCAForm(s => ({ ...s, [field]: e.target.value }))} />
+                      </label>
+                    ))}
+                  </div>
                   <label className="block">
                     <span className={labelClass}>{t('server.settings.ca_confirm_type')}</span>
                     <input className={inputClass} value={confirmation} onChange={e => setConfirmation(e.target.value)} />
@@ -384,7 +432,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
                     })} className="rounded-lg border border-red-500 text-status-danger px-4 py-2 text-xs font-medium disabled:opacity-50">
                     {rotate.isPending ? t('server.settings.rotating') : t('server.settings.issue_ca')}
                   </button>
-                </div>
+                </details>
               ) : (
                 <p className="text-xs text-dim border subtle-border p-3 rounded-lg">
                   {t('server.settings.ca_locked')}

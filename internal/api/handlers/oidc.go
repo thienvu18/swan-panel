@@ -3,6 +3,7 @@ package handlers
 import (
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -45,7 +46,15 @@ func (h *OIDCHandler) ListProviders(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"providers": providers})
+	callback, callbackErr := h.callbackURL(c)
+	configured := strings.TrimSpace(os.Getenv("PUBLIC_URL")) != ""
+	c.JSON(http.StatusOK, gin.H{
+		"providers":                  providers,
+		"redirect_uri":               callback,
+		"external_origin_configured": configured,
+		"production":                 h.cfg.Environment == "production",
+		"redirect_uri_valid":         callbackErr == nil,
+	})
 }
 
 // CreateProvider adds a new identity provider

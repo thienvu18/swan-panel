@@ -257,6 +257,8 @@ Configure SwanPanel via environment variables or an `/etc/swan-panel/swan-panel.
 
 SwanPanel is actively maintained. Here is our prioritized engineering roadmap:
 
+* **v1.0.1 UI/UX maintenance (in verification):** Clearer, more comfortable page layouts; contextual actions, human-readable session telemetry, safer advanced settings, public OIDC callback guidance and accessible mobile action descriptions. Publication follows EN/VI Light/Dark and responsive acceptance tests.
+
 * **Stable v1.0.0:**
   * Single-binary Linux delivery with embedded React 19 UI and native SQLite WAL (CGO compiled, statically linked).
   * 1-click native client provisioning for Apple iOS/macOS, Windows, Linux, and Android.

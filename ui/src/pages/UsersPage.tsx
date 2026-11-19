@@ -7,6 +7,8 @@ import { Modal } from '../components/Modal';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
+import { TableQueryState } from '../components/TableQueryState';
+import { TableActionLegend } from '../components/TableActionLegend';
 
 interface UserItem {
   id: string;
@@ -48,7 +50,7 @@ export const UsersPage: React.FC = () => {
   const [grpDesc, setGrpDesc] = useState('');
 
   // 1. Query Users
-  const { data: usersData, isError: usersError, refetch: refetchUsers } = useQuery<{ users: UserItem[] }>({
+  const { data: usersData, isPending: usersPending, isError: usersError, refetch: refetchUsers } = useQuery<{ users: UserItem[] }>({
     queryKey: ['users'],
     queryFn: async () => {
       const res = await fetch('/api/users', {
@@ -60,7 +62,7 @@ export const UsersPage: React.FC = () => {
   });
 
   // 2. Query Groups
-  const { data: groupsData, isError: groupsError, refetch: refetchGroups } = useQuery<{ user_groups: UserGroupItem[] }>({
+  const { data: groupsData, isPending: groupsPending, isError: groupsError, refetch: refetchGroups } = useQuery<{ user_groups: UserGroupItem[] }>({
     queryKey: ['user_groups'],
     queryFn: async () => {
       const res = await fetch('/api/user-groups', {
@@ -281,7 +283,7 @@ export const UsersPage: React.FC = () => {
           </button>
         </div>
 
-        <div className="flex items-center gap-2 flex-1 max-w-sm ml-auto">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 min-w-0 sm:max-w-lg sm:ml-auto">
           <div className="relative w-full">
             <Search className="w-3.5 h-3.5 text-subtle absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
@@ -292,19 +294,10 @@ export const UsersPage: React.FC = () => {
               className="w-full surface-input border subtle-border rounded-lg pl-8 pr-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
-          <button
-            onClick={() => setIsAddUserOpen(true)}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            {t('users.add_user')}
-          </button>
-          <button
-            onClick={() => setIsAddGroupOpen(true)}
-            className="border subtle-border hover:bg-slate-500/10 text-subtle hover:text-current font-medium px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs shrink-0"
-          >
-            <UsersIcon className="w-3.5 h-3.5" />
-            {t('users.add_group')}
+          <button onClick={() => activeSubView === 'directory' ? setIsAddUserOpen(true) : setIsAddGroupOpen(true)}
+            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs shrink-0">
+            <Plus className="w-4 h-4" />
+            {activeSubView === 'directory' ? t('users.add_user') : t('users.add_group')}
           </button>
         </div>
       </div>
@@ -318,6 +311,7 @@ export const UsersPage: React.FC = () => {
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                 {t('users.approval_queue')} ({pendingUsers.length})
               </span>
+              <TableActionLegend actions={[{ icon: X, label: t('users.reject') }, { icon: Check, label: t('users.approve') }]} />
               <div className="border border-amber-500/30 rounded-xl overflow-hidden surface-card shadow-xs">
                 <table className="w-full text-left text-xs">
                   <thead className="border-b subtle-border surface-header text-subtle text-[11px]">
@@ -335,7 +329,7 @@ export const UsersPage: React.FC = () => {
                           <div className="font-medium text-slate-900 dark:text-white">{u.name}</div>
                           <div className="text-[11px] text-dim font-mono">{u.email}</div>
                         </td>
-                        <td className="py-2.5 px-3.5 text-subtle">{u.idp_provider?.name || 'OIDC Provider'}</td>
+                        <td className="py-2.5 px-3.5 text-subtle">{u.idp_provider?.name || t('users.oidc_provider_fallback')}</td>
                         <td className="py-2.5 px-3.5">
                           <div className="flex flex-wrap items-center gap-3 text-xs">
                             {userGroups.length === 0 ? (
@@ -367,7 +361,7 @@ export const UsersPage: React.FC = () => {
                               onConfirm: () => rejectMutation.mutateAsync(u.id),
                             })}
                             className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors inline-block"
-                            title={t('users.reject')}
+                            title={t('users.reject')} data-tooltip={t('users.reject')} aria-label={`${t('users.reject')} ${u.name}`}
                           >
                             <X className="w-4 h-4" />
                           </button>
@@ -383,7 +377,7 @@ export const UsersPage: React.FC = () => {
                               }),
                             })}
                             className="p-1.5 hover:bg-emerald-500/10 rounded-md text-status-success transition-colors inline-block"
-                            title={t('users.approve')}
+                            title={t('users.approve')} data-tooltip={t('users.approve')} aria-label={`${t('users.approve')} ${u.name}`}
                           >
                             <Check className="w-4 h-4" />
                           </button>
@@ -401,6 +395,7 @@ export const UsersPage: React.FC = () => {
             <span className="font-semibold text-xs text-subtle">
               {t('users.enrolled_users')} ({activeUsers.length})
             </span>
+            <TableActionLegend actions={[{ icon: Shield, label: t('users.grant_admin') }, { icon: Trash2, label: t('common.delete') }]} />
             <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs min-w-[650px]">
@@ -414,7 +409,9 @@ export const UsersPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y subtle-border">
-                    {activeUsers.length === 0 ? (
+                    {usersPending || (usersError && !usersData) ? (
+                      <TableQueryState columns={5} error={usersError} onRetry={() => void refetchUsers()} />
+                    ) : activeUsers.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="py-8">
                           <EmptyState
@@ -432,7 +429,7 @@ export const UsersPage: React.FC = () => {
                       activeUsers.map((u) => (
                       <tr key={u.id} className="hover-row transition-colors">
                         <td className="py-2.5 px-3.5 font-medium text-slate-900 dark:text-white">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <span>{u.name}</span>
                             <span className="text-dim font-normal font-mono">({u.email})</span>
                             <CopyButton value={u.email} label={`email ${u.email}`} />
@@ -477,6 +474,7 @@ export const UsersPage: React.FC = () => {
                               u.is_admin ? 'text-accent hover:bg-blue-500/10' : 'text-subtle hover:text-blue-700 dark:hover:text-blue-400 hover:bg-slate-500/10'
                             }`}
                             title={t(u.is_admin ? 'common.remove_admin' : 'common.grant_admin')}
+                            data-tooltip={t(u.is_admin ? 'common.remove_admin' : 'common.grant_admin')}
                             aria-label={t(u.is_admin ? 'common.remove_admin' : 'common.grant_admin') + ' ' + u.name}
                           >
                             <Shield className="w-3.5 h-3.5" />
@@ -489,7 +487,7 @@ export const UsersPage: React.FC = () => {
                               onConfirm: () => deleteUserMutation.mutateAsync(u.id),
                             })}
                             className="p-1.5 rounded-md text-status-danger hover:bg-rose-500/10"
-                            title={t('common.delete')}
+                            title={t('common.delete')} data-tooltip={t('common.delete')}
                             aria-label={t('common.delete') + ' ' + u.name}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -508,8 +506,11 @@ export const UsersPage: React.FC = () => {
 
       {/* VIEW B: USER GROUPS */}
       {activeSubView === 'usergroups' && (
-        <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
-          <table className="w-full text-left text-xs">
+        <div>
+          <TableActionLegend actions={[{ icon: Trash2, label: t('common.delete') }]} />
+          <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
+          <div className="overflow-x-auto" role="region" tabIndex={0} aria-label={t('users.user_groups')}>
+          <table className="w-full min-w-[520px] text-left text-xs">
             <thead className="border-b subtle-border surface-header text-subtle font-semibold text-[11px]">
               <tr>
                 <th className="py-2.5 px-3.5">{t('common.name')}</th>
@@ -519,20 +520,28 @@ export const UsersPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y subtle-border">
-              {filteredGroups.length === 0 ? (
+              {groupsPending || (groupsError && !groupsData) ? (
+                <TableQueryState columns={4} error={groupsError} onRetry={() => void refetchGroups()} />
+              ) : filteredGroups.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="py-8 text-center text-subtle font-sans text-xs">
-                    {searchQuery
-                      ? t('users.no_matching_groups', { query: searchQuery })
-                      : t('users.no_groups_created')}
+                  <td colSpan={4} className="py-8">
+                    <EmptyState icon={UsersIcon}
+                      title={searchQuery ? t('users.no_matching_groups', { query: searchQuery }) : t('users.no_groups_created')}
+                      description={t(searchQuery ? 'users.no_matching_groups_description' : 'users.no_groups_created_description')}
+                      actionLabel={searchQuery ? t('common.clear_search') : t('users.add_group')}
+                      actionIcon={searchQuery ? X : Plus}
+                      onAction={searchQuery ? () => setSearchQuery('') : () => setIsAddGroupOpen(true)}
+                      className="border-none shadow-none bg-transparent" />
                   </td>
                 </tr>
               ) : (
                 filteredGroups.map((g) => (
                   <tr key={g.id} className="hover-row">
-                    <td className="py-2.5 px-3.5 font-medium text-accent flex items-center gap-2">
-                      <UsersIcon className="w-3.5 h-3.5 text-accent" />
-                      {g.name}
+                    <td className="py-2.5 px-3.5 font-medium text-accent">
+                      <div className="flex items-center gap-2">
+                        <UsersIcon className="w-3.5 h-3.5 text-accent" />
+                        {g.name}
+                      </div>
                     </td>
                     <td className="py-2.5 px-3.5 text-subtle">{g.description || '-'}</td>
                     <td className="py-2.5 px-3.5 text-dim font-mono">{t('users.member_count', { count: g.member_count ?? 0 })}</td>
@@ -545,7 +554,7 @@ export const UsersPage: React.FC = () => {
                           onConfirm: () => deleteGroupMutation.mutateAsync(g.id),
                         })}
                         className="p-1.5 hover:bg-rose-500/10 rounded-md text-subtle hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
-                        title={t('confirm.delete_group_title')}
+                        title={t('confirm.delete_group_title')} data-tooltip={t('confirm.delete_group_title')}
                         aria-label={t('confirm.delete_group_title')}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -556,6 +565,8 @@ export const UsersPage: React.FC = () => {
               )}
             </tbody>
           </table>
+          </div>
+          </div>
         </div>
       )}
 

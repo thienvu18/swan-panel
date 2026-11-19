@@ -13,7 +13,7 @@ This document records quality assurance audits, discovered defects, regression e
 | **Native Android Setup** | App-free native IKEv2 RSA PKCS#12 bundle delivery & credentials | **VERIFIED** | API & Automated Tour |
 | **Effective Access Preview** | Zero-trust compilation, explicit ALLOW/DENY evaluation, runtime sync | **VERIFIED** | Real-time Engine Audit |
 | **Gateway Reconciliation** | Runtime apply banner, generation tracking, CA rotation safety | **VERIFIED** | VICI Stub & Live Handlers |
-| **Internationalization (i18n)** | 581 EN/VI key pairs verified by the current static checker; previously captured screenshots retain their original review scope | **VERIFIED (STATIC)** | `npm run check:i18n`; UX-008/011/006 visual retests verified |
+| **Internationalization (i18n)** | 611 EN/VI key pairs verified by the current static checker; previously captured screenshots retain their original review scope | **VERIFIED (STATIC)** | `npm run check:i18n`; UX-008/011/006 visual retests verified |
 | **Frontend Visual Tour** | 108 desktop screenshots across Light/Dark themes and EN/VI (27 per suite) with enterprise realistic dataset | **VERIFIED** | Automated Headless Chrome + 2026-11-18 visual inspection |
 
 ---
@@ -200,6 +200,25 @@ This document records quality assurance audits, discovered defects, regression e
 | **SWAN-UX-014 — Production-ready OIDC callback disclosure** | P2 | Redirect URI currently follows window.location.origin, appearing as 127.0.0.1:8095 in the lab capture. For public/reverse-proxy deployment, show/validate configured external origin, HTTPS and redirect URI before IdP registration; 15_oidc_providers. The loopback value in a local capture is not itself a defect. |
 | **SWAN-UX-015 — Consistent empty/loading/error states** | P3 | Replace ad-hoc English empty-result copy in Resources/Users with shared translated EmptyState patterns; test zero items, filtering, slow network, failed mutation and stale SSE after static capture. |
 | **SWAN-UX-016 — Discoverable dashboard table overflow** | P3 | **RESOLVED & VERIFIED.** The Dashboard sessions table features a localized horizontal-scroll hint below `lg`, a named focusable scroll region (`role="region"` with `tabIndex={0}`), and visible keyboard focus ring (`focus-visible:ring-rose-500`). Verified across 320px (`dashboard_320px_table_scroll_start.png`, `end.png`, `action_keyboard_focus.png`) and 768px (`dashboard_768px_table_scroll_start.png`, `end.png`, `action_keyboard_focus.png`), confirming that the final Actions column with the Disconnect button is fully reachable via touch, trackpad, and keyboard without document-level overflow. |
+
+### v1.0.1 implementation update (2026-11-19)
+
+The v1.0.0 accepted baseline and its screenshot evidence above are unchanged. The following remaining P2/P3 recommendations have code changes in the v1.0.1 working branch. **IMPLEMENTED is not the same as VERIFIED**: the previous screenshots must not be reused as proof that the new layout passes responsive, keyboard or screen-reader checks.
+
+| Backlog IDs | Code change | Acceptance status |
+| :--- | :--- | :--- |
+| UX-002, UX-015 | More EN/VI microcopy; shared loading/error table rows and actionable empty states on Users, Resources, DNS, Access and OIDC. | **IMPLEMENTED — UI retest pending** |
+| UX-003 | Balanced text and control sizes; consistent focus-visible tooltips, native form semantics and readable theme tokens. | **IMPLEMENTED — 200% zoom, keyboard and screen-reader retest pending** |
+| UX-004 | Display session durations as `2h 15m` while preserving raw hover value. Unknown PID, memory and dashboard statistics no longer appear as trustworthy zero readings. | **IMPLEMENTED — UI/runtime retest pending** |
+| UX-005 | Users tab now promotes Add User only for Directory, Add Group only for User Groups. | **IMPLEMENTED — UI retest pending** |
+| UX-007 | Accessible names and focusable tooltips on icon actions, plus visible mobile action legends. Destructive confirmations remain. | **IMPLEMENTED — touch/keyboard retest pending** |
+| UX-009 | IPv4 CIDR preview and overlap detection before creating a subnet; owner-assignment explanation for User Devices. Existing A/CNAME type-specific validation retained. | **IMPLEMENTED — UI retest pending** |
+| UX-010 | DNS filter chips now match the A and CNAME record types supported by creation; existing records remain visible through All. | **IMPLEMENTED — UI retest pending** |
+| UX-012 | Advanced JSON has line numbers, highlighted tokens, basic field/type checks, changed-field diff, reset confirmation and existing save/apply confirmation. | **IMPLEMENTED — UI/gateway retest pending** |
+| UX-013 | Current Root CA identity is displayed as read-only details with copy actions; proposed replacement values live inside a separate, explicitly dangerous rotation section. | **IMPLEMENTED — UI retest pending** |
+| UX-014 | OIDC provider list returns the same server-computed callback URL used by actual OIDC login, including public-URL validity/configuration metadata. | **IMPLEMENTED — HTTPS/reverse-proxy retest pending** |
+
+P1 UX-008 and previously resolved UX-001/006/011/016 remain closed; no P1 UI defects were reopened. BUG-002 remains a test-harness note, not a SwanPanel product defect. The specific verification matrix for v1.0.1 is in [V1.0.1_UI_QA.md](V1.0.1_UI_QA.md).
 
 ### Per-screen visual review index
 

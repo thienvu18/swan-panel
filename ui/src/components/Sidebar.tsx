@@ -156,7 +156,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Navigation Links */}
-        <nav className="flex-1 overflow-y-auto p-2 space-y-1 text-xs">
+        <nav className="flex-1 overflow-y-auto p-2 space-y-1 text-sm">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;

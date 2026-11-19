@@ -24,7 +24,7 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   error,
   children,
-  maxWidth = 'max-w-sm',
+  maxWidth = 'max-w-md',
   dialogRole = 'dialog',
   descriptionId,
   closeDisabled = false,

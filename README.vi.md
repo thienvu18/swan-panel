@@ -251,6 +251,8 @@ Cấu hình SwanPanel qua biến môi trường hoặc tệp `/etc/swan-panel/sw
 
 SwanPanel được duy trì và phát triển liên tục. Dưới đây là lộ trình kỹ thuật ưu tiên:
 
+* **v1.0.1 — cải thiện UI/UX (đang kiểm thử):** Giao diện thoáng, dễ đọc; hành động đúng ngữ cảnh; thời lượng VPN dễ hiểu; chỉnh sửa cấu hình an toàn hơn; hướng dẫn OIDC công khai rõ ràng; chú thích nút thao tác trên màn hình nhỏ. Chỉ phát hành sau khi kiểm tra đủ EN/VI, sáng/tối và responsive.
+
 * **Bản ổn định v1.0.0:**
   * Đóng gói single-binary với giao diện React 19 và SQLite WAL (CGO liên kết tĩnh).
   * Cấu hình 1-click cho Apple iOS/macOS, Windows, Linux và Android.

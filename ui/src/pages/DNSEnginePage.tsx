@@ -7,6 +7,8 @@ import { Modal } from '../components/Modal';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
+import { TableQueryState } from '../components/TableQueryState';
+import { TableActionLegend } from '../components/TableActionLegend';
 import { QueryErrorBanner } from '../components/QueryErrorBanner';
 import { isValidDNSOverrideTarget, type DNSOverrideRecordType } from '../lib/dnsRecordTargets';
 
@@ -65,7 +67,7 @@ export const DNSEnginePage: React.FC = () => {
   }, [dnsSettingsData, settingsDirty.suffix, settingsDirty.upstreams]);
 
   // Query DNS Overrides
-  const { data: overridesData, isError: dnsOverridesError, refetch: refetchOverrides } = useQuery<{ dns_overrides: DNSOverrideItem[] }>({
+  const { data: overridesData, isPending: overridesPending, isError: dnsOverridesError, refetch: refetchOverrides } = useQuery<{ dns_overrides: DNSOverrideItem[] }>({
     queryKey: ['dns_overrides'],
     queryFn: async () => {
       const res = await fetch('/api/dns/overrides', {
@@ -242,7 +244,7 @@ export const DNSEnginePage: React.FC = () => {
             </span>
             <div className="text-[11px] text-dim">{t('dns.custom_overrides_desc')}</div>
           </div>
-          <div className="flex items-center gap-2 flex-1 max-w-sm ml-auto">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 w-full min-w-0 sm:w-auto sm:max-w-sm sm:ml-auto">
             <div className="relative w-full">
               <Search className="w-3.5 h-3.5 text-subtle absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
@@ -270,7 +272,7 @@ export const DNSEnginePage: React.FC = () => {
             <Filter className="w-3 h-3" />
             {t('dns.record_type_filter')}:
           </span>
-          {(['all', 'A', 'AAAA', 'CNAME', 'TXT'] as const).map((rType) => {
+          {(['all', 'A', 'CNAME'] as const).map((rType) => {
             const count = rType === 'all' ? overrides.length : overrides.filter((o) => o.record_type?.toUpperCase() === rType).length;
             const isSelected = typeFilter === rType;
             return (
@@ -278,7 +280,7 @@ export const DNSEnginePage: React.FC = () => {
                 key={rType}
                 type="button"
                 onClick={() => setTypeFilter(rType)}
-                className={`px-2 py-0.5 rounded-md border subtle-border transition-colors uppercase font-mono text-[10px] ${
+                className={`px-2.5 py-1 rounded-md border subtle-border transition-colors uppercase font-mono text-[11px] ${
                   isSelected
                     ? 'bg-blue-600/15 border-blue-500/40 text-accent font-semibold'
                     : 'text-subtle hover:text-current hover:bg-slate-500/10'
@@ -303,6 +305,7 @@ export const DNSEnginePage: React.FC = () => {
           )}
         </div>
 
+        <TableActionLegend actions={[{ icon: Trash2, label: t('common.delete') }]} />
         <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left font-mono text-xs min-w-[500px]">
@@ -315,7 +318,9 @@ export const DNSEnginePage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y subtle-border">
-                {filteredOverrides.length === 0 ? (
+                {overridesPending || (dnsOverridesError && !overridesData) ? (
+                  <TableQueryState columns={4} error={dnsOverridesError} onRetry={() => void refetchOverrides()} />
+                ) : filteredOverrides.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="py-8">
                       <EmptyState
@@ -360,7 +365,8 @@ export const DNSEnginePage: React.FC = () => {
                             onConfirm: () => deleteOverrideMutation.mutateAsync(rec.id),
                           })}
                           className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors"
-                          title={t('common.delete')}
+                          title={t('common.delete')} data-tooltip={t('common.delete')}
+                          aria-label={`${t('common.delete')} ${rec.hostname}`}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

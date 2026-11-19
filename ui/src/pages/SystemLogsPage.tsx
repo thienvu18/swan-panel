@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { QueryErrorBanner } from '../components/QueryErrorBanner';
 import { RotateCcw, Power, Play, Pause, Trash2, Download, Search, Terminal, ArrowDown } from 'lucide-react';
+import { availableMetric, formatDuration } from '../lib/telemetry';
 
 interface LogEntry {
   timestamp: string;
@@ -170,8 +171,8 @@ export const SystemLogsPage: React.FC<{isRealtimeConnected?: boolean}> = ({ isRe
                 </span>
               )}
             </div>
-            <div className="text-[11px] text-dim font-mono">
-              PID: {daemonData?.pid ?? '...'} &bull; Memory: {daemonData?.memory || '...'} &bull; Uptime: {daemonData?.uptime || '...'}
+            <div className="text-[11px] text-dim font-mono" title={daemonData ? `${daemonData.pid} · ${daemonData.memory} · ${daemonData.uptime}` : undefined}>
+              {t('logs.pid')}: {availableMetric(daemonData?.pid, t('common.unavailable'))} &bull; {t('logs.memory')}: {availableMetric(daemonData?.memory, t('common.unavailable'))} &bull; {t('logs.uptime')}: {formatDuration(daemonData?.uptime, t('common.unavailable'))}
             </div>
           </div>
         </div>

@@ -7,6 +7,8 @@ import { Modal } from '../components/Modal';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
+import { TableQueryState } from '../components/TableQueryState';
+import { TableActionLegend } from '../components/TableActionLegend';
 import { QueryErrorBanner } from '../components/QueryErrorBanner';
 import { EffectiveAccessPanel } from '../components/EffectiveAccessPanel';
 
@@ -45,7 +47,7 @@ export const AccessRulesPage: React.FC = () => {
   const [targetType, setTargetType] = useState<'resource_group' | 'cidr_ip'>('resource_group');
   const [targetValue, setTargetValue] = useState('');
 
-  const { data, isError: rulesError, refetch: refetchRules } = useQuery<{ access_rules: AccessRuleItem[] }>({
+  const { data, isPending: rulesPending, isError: rulesError, refetch: refetchRules } = useQuery<{ access_rules: AccessRuleItem[] }>({
     queryKey: ['access_rules'],
     queryFn: async () => {
       const res = await fetch('/api/access-rules', {
@@ -194,7 +196,7 @@ export const AccessRulesPage: React.FC = () => {
           <span className="font-semibold text-xs text-slate-900 dark:text-white">
             {t('access.title')} ({rules.length})
           </span>
-          <div className="flex items-center gap-2 flex-1 max-w-sm ml-auto">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 w-full min-w-0 sm:w-auto sm:max-w-sm sm:ml-auto">
             <div className="relative w-full">
               <Search className="w-3.5 h-3.5 text-subtle absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
@@ -257,6 +259,7 @@ export const AccessRulesPage: React.FC = () => {
           )}
         </div>
 
+        <TableActionLegend actions={[{ icon: Trash2, label: t('common.delete') }]} />
         <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs min-w-[700px]">
@@ -270,7 +273,9 @@ export const AccessRulesPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y subtle-border">
-                {filteredRules.length === 0 ? (
+                {rulesPending || (rulesError && !data) ? (
+                  <TableQueryState columns={5} error={rulesError} onRetry={() => void refetchRules()} />
+                ) : filteredRules.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-8">
                       <EmptyState
@@ -345,7 +350,8 @@ export const AccessRulesPage: React.FC = () => {
                             onConfirm: () => deleteRuleMutation.mutateAsync(r.id),
                           })}
                           className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors"
-                          title={t('common.delete')}
+                          title={t('common.delete')} data-tooltip={t('common.delete')}
+                          aria-label={`${t('common.delete')} ${r.subject_name}`}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

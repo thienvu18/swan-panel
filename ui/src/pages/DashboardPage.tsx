@@ -8,6 +8,7 @@ import { AndroidNativeSetupDialog } from '../components/AndroidNativeSetupDialog
 import { EmptyState } from '../components/EmptyState';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { downloadDeviceProfile } from '../lib/profileDownload';
+import { formatDuration } from '../lib/telemetry';
 import type { Device } from '../types';
 
 interface SessionInfo {
@@ -183,9 +184,9 @@ export const DashboardPage: React.FC<{ isAdmin: boolean; currentUserID: string }
             <span className="text-subtle font-medium text-xs">{t('dashboard.active_sessions')}</span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-bold font-mono text-status-success">
-                {isStatsLoading ? '...' : stats.active_sessions}
+                {isStatsLoading ? '…' : isStatsError ? '—' : stats.active_sessions}
               </span>
-              <span className="text-[10px] text-status-success font-mono">Live IPC</span>
+              <span className="text-[10px] text-status-success font-mono">{t('dashboard.live_sessions_caption')}</span>
             </div>
           </div>
 
@@ -193,7 +194,7 @@ export const DashboardPage: React.FC<{ isAdmin: boolean; currentUserID: string }
             <span className="text-subtle font-medium text-xs">{t('dashboard.total_devices')}</span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-bold font-mono text-slate-900 dark:text-white">
-                {isStatsLoading ? '...' : stats.total_devices}
+                {isStatsLoading ? '…' : isStatsError ? '—' : stats.total_devices}
               </span>
               <span className="text-[10px] text-dim">{t('dashboard.native_profiles')}</span>
             </div>
@@ -203,9 +204,9 @@ export const DashboardPage: React.FC<{ isAdmin: boolean; currentUserID: string }
             <span className="text-subtle font-medium text-xs">{t('dashboard.total_users')}</span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-bold font-mono text-slate-900 dark:text-white">
-                {isStatsLoading ? '...' : stats.total_users}
+                {isStatsLoading ? '…' : isStatsError ? '—' : stats.total_users}
               </span>
-              <span className="text-[10px] text-accent font-mono">SSO + Local</span>
+              <span className="text-[10px] text-accent font-mono">{t('dashboard.sso_local_caption')}</span>
             </div>
           </div>
 
@@ -213,7 +214,7 @@ export const DashboardPage: React.FC<{ isAdmin: boolean; currentUserID: string }
             <span className="text-subtle font-medium text-xs">{t('dashboard.pending_approvals')}</span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-bold font-mono text-status-warning">
-                {isStatsLoading ? '...' : stats.pending_users}
+                {isStatsLoading ? '…' : isStatsError ? '—' : stats.pending_users}
               </span>
               <span className="text-[10px] text-status-warning font-mono">{t('dashboard.requires_review')}</span>
             </div>
@@ -258,15 +259,15 @@ export const DashboardPage: React.FC<{ isAdmin: boolean; currentUserID: string }
                     </tr>
                   ) : isSessionsError ? (
                     <tr><td colSpan={6} role="alert" className="py-8 px-4 text-center text-status-danger font-sans">
-                      Cannot reach strongSwan session data. Connection status is unknown.
+                      {t('dashboard.sessions_unavailable')}
                     </td></tr>
                   ) : liveSessions.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-8">
                         <EmptyState
                           icon={Activity}
-                          title="No active VPN sessions"
-                          description="No client nodes are currently connected to the gateway. As soon as a client establishes an IKEv2 tunnel, it will appear here in real time."
+                          title={t('dashboard.no_active_sessions')}
+                          description={t('dashboard.sessions_empty_description')}
                           className="border-none shadow-none bg-transparent"
                         />
                       </td>
@@ -280,17 +281,17 @@ export const DashboardPage: React.FC<{ isAdmin: boolean; currentUserID: string }
                         </td>
                         <td className="py-2.5 px-3.5 text-accent">
                           <div className="flex items-center gap-1.5">
-                            <span>{sess.virtual_ip || 'N/A'}</span>
+                            <span>{sess.virtual_ip || t('common.unavailable')}</span>
                             {sess.virtual_ip && (
                               <CopyButton value={sess.virtual_ip} label={`Virtual IP ${sess.virtual_ip}`} />
                             )}
                           </div>
                         </td>
-                        <td className="py-2.5 px-3.5 font-sans text-subtle">{sess.remote_wan || 'N/A'}</td>
-                        <td className="py-2.5 px-3.5 font-sans text-subtle">{sess.uptime || 'Just now'}</td>
+                        <td className="py-2.5 px-3.5 font-sans text-subtle">{sess.remote_wan || t('common.unavailable')}</td>
+                        <td className="py-2.5 px-3.5 font-sans text-subtle" title={sess.uptime || undefined}>{formatDuration(sess.established_seconds || sess.uptime, t('common.unavailable'))}</td>
                         <td className="py-2.5 px-3.5">
                           <span className="bg-blue-500/10 text-accent border border-blue-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono">
-                            {sess.cipher_suite || 'AES-GCM'}
+                            {sess.cipher_suite || t('common.unavailable')}
                           </span>
                         </td>
                         <td className="py-2.5 px-3.5 text-right font-sans">
