@@ -117,6 +117,7 @@ async function run() {
 
   await send('Page.enable');
   await send('Runtime.enable');
+  await send('DOMStorage.enable');
 
   const setViewport = async (width, height, scale = 2, mobile = false) => {
     await send('Emulation.setDeviceMetricsOverride', {
@@ -144,6 +145,15 @@ async function run() {
     return res.result?.result?.value;
   };
 
+  // Pass session values as CDP data, never as JavaScript source.
+  const setSession = async () => {
+    const storageId = { securityOrigin: new URL(BASE_URL).origin, isLocalStorage: true };
+    for (const [key, value] of [['token', token], ['user', JSON.stringify(user)]]) {
+      const response = await send('DOMStorage.setDOMStorageItem', { storageId, key, value });
+      if (response.error) throw new Error(`Failed to set session ${key}: ${response.error.message}`);
+    }
+  };
+
   const capture = async (relPath) => {
     await evaluate('await document.fonts.ready');
     await new Promise(r => setTimeout(r, 500));
@@ -155,9 +165,8 @@ async function run() {
   };
 
   // Set logged in session
+  await setSession();
   await evaluate(`
-    localStorage.setItem('token', ${JSON.stringify(token)});
-    localStorage.setItem('user', ${JSON.stringify(JSON.stringify(user))});
     localStorage.setItem('theme', 'dark');
     localStorage.setItem('i18nextLng', 'en');
     if (document.documentElement) document.documentElement.classList.add('dark');

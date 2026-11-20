@@ -262,6 +262,7 @@ async function run() {
   }
   await send('Page.enable');
   await send('Runtime.enable');
+  await send('DOMStorage.enable');
   await send('Page.addScriptToEvaluateOnNewDocument', {
     source: `
       window.__setReactVal = function(el, val) {
@@ -325,6 +326,15 @@ async function run() {
     return res.result?.result?.value;
   };
 
+  // Pass session values as CDP data, never as JavaScript source.
+  const setSession = async () => {
+    const storageId = { securityOrigin: new URL(BASE_URL).origin, isLocalStorage: true };
+    for (const [key, value] of [['token', token], ['user', JSON.stringify(user)]]) {
+      const response = await send('DOMStorage.setDOMStorageItem', { storageId, key, value });
+      if (response.error) throw new Error(`Failed to set session ${key}: ${response.error.message}`);
+    }
+  };
+
   const waitForCondition = async (desc, exp, timeout = 6000) => {
     const start = Date.now();
     while (Date.now() - start < timeout) {
@@ -339,10 +349,6 @@ async function run() {
     }
     const html = await evaluate(`document.body.innerText`).catch(() => 'N/A');
     throw new Error(`Timed out waiting for condition "${desc}". Body text: ${html ? html.slice(0, 300) : 'empty'}`);
-  };
-
-  const waitForSelector = async (sel, timeout = 6000) => {
-    return waitForCondition(`Selector "${sel}" visible`, `Boolean(document.querySelector(${JSON.stringify(sel)}))`, timeout);
   };
 
   const switchNavTab = async (tabName) => {
@@ -417,9 +423,8 @@ async function run() {
     await capture(`${suite.lang}/${suite.theme}/01_login_page.png`);
 
     // Authenticate Admin session
+    await setSession();
     await evaluate(`
-      localStorage.setItem('token', ${JSON.stringify(token)});
-      localStorage.setItem('user', ${JSON.stringify(JSON.stringify(user))});
       localStorage.setItem('theme', '${suite.theme}');
       localStorage.setItem('i18nextLng', '${suite.lang}');
       if ('${suite.theme}' === 'dark') document.documentElement.classList.add('dark');
@@ -905,9 +910,8 @@ async function run() {
   console.log(`======================================================`);
 
   // Ensure logged in admin, dark theme, English baseline for responsive tests
+  await setSession();
   await evaluate(`
-    localStorage.setItem('token', ${JSON.stringify(token)});
-    localStorage.setItem('user', ${JSON.stringify(JSON.stringify(user))});
     localStorage.setItem('theme', 'dark');
     localStorage.setItem('i18nextLng', 'en');
     if (document.documentElement) document.documentElement.classList.add('dark');
