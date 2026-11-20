@@ -63,7 +63,7 @@ const translations = {
       f4_title: "Micro-Segmented Access Policies",
       f4_desc: "Grant access by user, group or device. Preview ALLOW/DENY decisions, matching networks and contributing rules before troubleshooting connectivity.",
       f5_title: "Controlled Gateway Updates",
-      f5_desc: "Save settings centrally, see what is active on the VPN gateway, and retry pending updates without SSH.",
+      f5_desc: "See whether your VPN gateway is healthy and your saved settings are active; retry pending updates without SSH.",
       f6_title: "Single Self-Contained Binary",
       f6_desc: "Go, SQLite, the web dashboard and DNS in one Linux control-plane binary; Docker Compose also bundles the strongSwan VPN gateway."
     },
@@ -253,7 +253,7 @@ const translations = {
     footer: {
       github: "GitHub Repository",
       wiki: "Wiki",
-      releases: "Release v1.0.0",
+      releases: "Release v1.0.1",
       guide: "Docs & Guide",
       home: "Home",
       admin_guide: "Admin Guide",
@@ -324,7 +324,7 @@ const translations = {
       f4_title: "Chính Sách Phân Quyền Micro-Segmented",
       f4_desc: "Phân quyền theo người dùng, nhóm hoặc thiết bị. Xem trước kết quả CHO PHÉP/CHẶN, mạng khớp và luật liên quan trước khi xử lý sự cố.",
       f5_title: "Cập Nhật Gateway Có Kiểm Soát",
-      f5_desc: "Lưu cấu hình tập trung, biết chính xác bản nào đang chạy trên Gateway và thử đồng bộ lại ngay trên Web.",
+      f5_desc: "Biết Gateway có hoạt động ổn định và cấu hình đã áp dụng chưa; thử đồng bộ lại ngay trên Web khi cần.",
       f6_title: "Một File Nhị Phân Tích Hợp",
       f6_desc: "Go, SQLite, giao diện Web và DNS trong một file điều khiển cho Linux; Docker Compose kèm luôn dịch vụ VPN strongSwan."
     },
@@ -514,7 +514,7 @@ const translations = {
     footer: {
       github: "GitHub Repository",
       wiki: "Tài liệu Wiki",
-      releases: "Bản phát hành v1.0.0",
+      releases: "Bản phát hành v1.0.1",
       guide: "Tài liệu & Hướng dẫn",
       home: "Trang chủ",
       admin_guide: "Cẩm Nang Quản Trị",

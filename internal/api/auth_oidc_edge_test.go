@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -9,6 +10,38 @@ import (
 	"github.com/swan-panel/swan-panel/internal/db"
 	"time"
 )
+
+func TestOIDCProviderListDisclosesServerCallback(t *testing.T) {
+	t.Setenv("PUBLIC_URL", "https://vpn.example.org/")
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+	admin := getAdminToken(t, router)
+
+	getCallback := func() map[string]any {
+		t.Helper()
+		response := requestJSON(t, router, "GET", "/api/oidc/providers", admin, nil)
+		if response.Code != http.StatusOK {
+			t.Fatalf("OIDC listing failed: %d %s", response.Code, response.Body.String())
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+
+	configured := getCallback()
+	if configured["redirect_uri"] != "https://vpn.example.org/api/auth/oidc/callback" ||
+		configured["redirect_uri_valid"] != true || configured["external_origin_configured"] != true {
+		t.Fatalf("canonical OIDC callback not disclosed: %v", configured)
+	}
+
+	t.Setenv("PUBLIC_URL", "http://vpn.example.org")
+	invalid := getCallback()
+	if invalid["redirect_uri"] != "" || invalid["redirect_uri_valid"] != false || invalid["external_origin_configured"] != true {
+		t.Fatalf("unsafe external callback should be blocked: %v", invalid)
+	}
+}
 
 func TestPasswordChangesRejectWrongCurrentPasswordAndInvalidateOldSecret(t *testing.T) {
 	router, cleanup := setupTestRouter(t)

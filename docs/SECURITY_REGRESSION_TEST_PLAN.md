@@ -88,4 +88,4 @@ Unit/static tests do **not** validate the actual OS/network data plane. An isola
 
 GitHub Actions runs `npm test`, frontend build, `go vet ./...`, `go test -race ./...`, Go build and Docker build. Developer-machine Go tests, even if they all pass, are **not** a substitute for NET-01 through NET-05.
 
-Historical clean-install assumptions must not replace real hardware verification. SwanPanel now has an Orange Pi ARM64 lab deployment; follow the revision-specific A01–A06 acceptance cases in `docs/VPN_GATEWAY_ACCEPTANCE_TEST_PLAN.md` before signing off changes. No seed-admin migration or compatibility path should be added without a new user story.
+Automated checks do not prove live VPN connectivity or firewall enforcement. Run the repeatable hardware and network checks in [VPN Gateway Acceptance Test Plan](VPN_GATEWAY_ACCEPTANCE_TEST_PLAN.md) on the exact build under test. Preserve the one-time setup flow; do not introduce a default administrator password.

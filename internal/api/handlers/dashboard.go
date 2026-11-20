@@ -46,23 +46,22 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 		return
 	}
 	// A failed VICI read is not evidence of zero live sessions.
-	status := "offline"
-	activeSessionsCount := 0
+	var activeSessionsCount *int
 	liveSAs, err := vici.GetClient("").ListSAs(ctx)
 	if err == nil {
-		status = "online"
 		liveSAs, err = sessionsForCurrentUser(c, liveSAs)
 		if err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Unable to resolve session ownership"})
 			return
 		}
-		activeSessionsCount = len(liveSAs)
+		count := len(liveSAs)
+		activeSessionsCount = &count
 	} else {
 		slog.Warn("VPN runtime unavailable in dashboard", "error", err)
 	}
 	stats := gin.H{
 		"active_sessions": activeSessionsCount, "total_devices": totalDevices,
-		"gateway_status": status, "uptime_seconds": int64(time.Since(h.startTime).Seconds()),
+		"gateway_status": DefaultGatewayMonitor.Snapshot().Status, "uptime_seconds": int64(time.Since(h.startTime).Seconds()),
 	}
 	if isAdmin {
 		stats["total_users"] = totalUsers

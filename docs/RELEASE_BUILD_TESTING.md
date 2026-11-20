@@ -71,7 +71,7 @@ dist/swan-panel-linux-$(go env GOARCH) --version
 
 The script refuses mismatched host/C compiler architecture. GitHub Actions uses native `ubuntu-24.04` (AMD64) and `ubuntu-24.04-arm` (ARM64) runners. Production Docker builds use musl/CGO in a separate builder stage, then copy only the binary to the runtime image.
 
-## Manual VPN / UI acceptance test handoff
+## Manual VPN / UI acceptance checks
 
 For testers on disposable Linux VMs and real client devices, follow
 [VPN_GATEWAY_ACCEPTANCE_TEST_PLAN.md](VPN_GATEWAY_ACCEPTANCE_TEST_PLAN.md).

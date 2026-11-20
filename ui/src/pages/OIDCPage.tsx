@@ -7,6 +7,8 @@ import { Modal } from '../components/Modal';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
+import { TableQueryState } from '../components/TableQueryState';
+import { TableActionLegend } from '../components/TableActionLegend';
 import { QueryErrorBanner } from '../components/QueryErrorBanner';
 
 interface OIDCProviderItem {
@@ -64,9 +66,13 @@ export const OIDCPage: React.FC = () => {
     setClaimMapping(p.claim_mapping || '');
     setIsAddOpen(true);
   };
-  const redirectURI = `${window.location.origin}/api/auth/oidc/callback`;
-
-  const { data, isError: providersError, refetch: refetchProviders } = useQuery<{ providers: OIDCProviderItem[] }>({
+  const { data, isPending: providersPending, isError: providersError, refetch: refetchProviders } = useQuery<{
+    providers: OIDCProviderItem[];
+    redirect_uri: string;
+    external_origin_configured: boolean;
+    production: boolean;
+    redirect_uri_valid: boolean;
+  }>({
     queryKey: ['oidc_providers'],
     queryFn: async () => {
       const res = await fetch('/api/oidc/providers', {
@@ -78,6 +84,9 @@ export const OIDCPage: React.FC = () => {
   });
 
   const providers = data?.providers || [];
+  const redirectURI = data?.redirect_uri || '';
+  const redirectReady = Boolean(data?.redirect_uri_valid && redirectURI);
+  const isLocalPreview = Boolean(redirectReady && !data?.external_origin_configured);
 
   const filteredProviders = providers.filter((p) => {
     if (!searchQuery.trim()) return true;
@@ -161,19 +170,27 @@ export const OIDCPage: React.FC = () => {
     <div className="space-y-4">
       {providersError && <QueryErrorBanner onRetry={() => void refetchProviders()} />}
       {/* Redirect URI Guidance & Copy Box */}
-      <div className="border subtle-border rounded-xl p-3.5 surface-card flex flex-wrap items-center justify-between gap-3 shadow-xs">
-        <div>
-          <div className="font-semibold text-xs text-slate-900 dark:text-white">{t('oidc.redirect_uri')}</div>
-          <div className="text-[11px] text-dim">
+      <div className="border subtle-border rounded-xl p-4 surface-card space-y-3 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+          <div className="font-semibold text-sm text-slate-900 dark:text-white">{t('oidc.redirect_uri')}</div>
+          <div className="text-xs text-dim mt-1">
             {t('oidc.redirect_uri_hint')}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <code className="bg-slate-500/10 border subtle-border px-2.5 py-1 rounded text-xs font-mono text-accent">
-            {redirectURI}
+          <div className="flex items-center gap-2 min-w-0 max-w-full">
+          <code className="min-w-0 bg-slate-500/10 border subtle-border px-3 py-2 rounded text-xs font-mono text-accent break-all">
+            {redirectReady ? redirectURI : t('common.unavailable')}
           </code>
-          <CopyButton value={redirectURI} label={t('oidc.redirect_uri_copy_label')} />
+          {redirectReady && <CopyButton value={redirectURI} label={t('oidc.redirect_uri_copy_label')} />}
         </div>
+        </div>
+        <p role={!redirectReady ? 'alert' : 'status'} className={`text-xs flex items-center gap-2 ${redirectReady && !isLocalPreview ? 'text-status-success' : 'text-status-warning'}`}>
+          {redirectReady && !isLocalPreview ? t('oidc.redirect_verified')
+            : isLocalPreview ? t('oidc.redirect_local_preview')
+            : t('oidc.redirect_not_configured')}
+        </p>
+        {redirectReady && !redirectURI.startsWith('https://') && <p className="text-xs text-status-warning" role="note">{t('oidc.redirect_https_required')}</p>}
       </div>
 
       {testResult && (
@@ -188,12 +205,12 @@ export const OIDCPage: React.FC = () => {
 
       {/* Providers Table */}
       <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
-        <div className="p-3 border-b subtle-border flex flex-wrap items-center justify-between gap-3">
+        <div className="p-3 border-b subtle-border flex flex-col items-stretch gap-3 lg:flex-row lg:items-center lg:justify-between">
           <span className="font-semibold text-xs text-slate-900 dark:text-white">
             {t('oidc.title')} ({providers.length})
           </span>
-          <div className="flex items-center gap-2 flex-1 max-w-sm ml-auto">
-            <div className="relative w-full">
+          <div className="flex flex-col sm:flex-row items-stretch gap-2 w-full min-w-0 lg:max-w-sm lg:ml-auto">
+            <div className="relative flex-1 min-w-0">
               <Search className="w-3.5 h-3.5 text-subtle absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -207,7 +224,8 @@ export const OIDCPage: React.FC = () => {
               type="button"
               data-action="add-oidc"
               onClick={() => { clearForm(); setIsAddOpen(true); }}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs shrink-0"
+              disabled={!redirectReady}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs text-xs shrink-0 whitespace-nowrap w-full sm:w-auto"
             >
               <Plus className="w-3.5 h-3.5" />
               {t('oidc.add_provider')}
@@ -215,6 +233,7 @@ export const OIDCPage: React.FC = () => {
           </div>
         </div>
 
+        <div className="px-3"><TableActionLegend actions={[{ icon: Zap, label: t('oidc.test_handshake') }, { icon: Pencil, label: t('common.edit') }, { icon: Trash2, label: t('common.delete') }]} /></div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs min-w-[700px]">
             <thead className="border-b subtle-border surface-header text-subtle font-semibold text-[11px]">
@@ -228,16 +247,18 @@ export const OIDCPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y subtle-border">
-              {filteredProviders.length === 0 ? (
+              {providersPending || (providersError && !data) ? (
+                <TableQueryState columns={6} error={providersError} onRetry={() => void refetchProviders()} />
+              ) : filteredProviders.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-8">
                     <EmptyState
                       icon={Key}
                       title={searchQuery ? t('oidc.no_matching_providers') : t('oidc.no_providers')}
-                      description={searchQuery ? `No SSO providers match '${searchQuery}'.` : 'Connect Google Workspace, Microsoft Entra ID, or Okta for federated zero-trust authentication.'}
-                      actionLabel={searchQuery ? 'Clear Search' : t('oidc.add_provider')}
+                      description={searchQuery ? t('oidc.no_matching_providers_description', { query: searchQuery }) : t('oidc.no_providers_description')}
+                      actionLabel={searchQuery ? t('common.clear_search') : t('oidc.add_provider')}
                       actionIcon={searchQuery ? X : Plus}
-                      onAction={searchQuery ? () => setSearchQuery('') : () => { clearForm(); setIsAddOpen(true); }}
+                      onAction={searchQuery ? () => setSearchQuery('') : redirectReady ? () => { clearForm(); setIsAddOpen(true); } : undefined}
                       className="border-none shadow-none bg-transparent"
                     />
                   </td>
@@ -272,11 +293,12 @@ export const OIDCPage: React.FC = () => {
                         type="button"
                         onClick={() => handleTestConnection(p.id)}
                         className="p-1.5 hover:bg-blue-500/10 rounded-md text-accent transition-colors inline-block"
-                        title={t('oidc.test_handshake')}
+                        title={t('oidc.test_handshake')} data-tooltip={t('oidc.test_handshake')}
+                        aria-label={`${t('oidc.test_handshake')} ${p.name}`}
                       >
                         <Zap className="w-3.5 h-3.5" />
                       </button>
-                      <button type="button" onClick={() => editForm(p)} className="p-1.5 hover:bg-blue-500/10 rounded-md text-accent transition-colors inline-block" title={t('common.edit')} aria-label={`Edit ${p.name}`}>
+                      <button type="button" onClick={() => editForm(p)} className="p-1.5 hover:bg-blue-500/10 rounded-md text-accent transition-colors inline-block" title={t('common.edit')} data-tooltip={t('common.edit')} aria-label={`${t('common.edit')} ${p.name}`}>
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button
@@ -288,7 +310,8 @@ export const OIDCPage: React.FC = () => {
                           onConfirm: () => deleteProviderMutation.mutateAsync(p.id),
                         })}
                         className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors inline-block"
-                        title={t('common.delete')}
+                        title={t('common.delete')} data-tooltip={t('common.delete')}
+                        aria-label={`${t('common.delete')} ${p.name}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

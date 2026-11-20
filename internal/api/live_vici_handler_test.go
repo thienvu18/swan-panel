@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/swan-panel/swan-panel/internal/api/handlers"
 	"github.com/swan-panel/swan-panel/internal/api/middleware"
 	"github.com/swan-panel/swan-panel/internal/db"
 	vicipkg "github.com/swan-panel/swan-panel/internal/vici"
@@ -113,6 +114,9 @@ func startLiveVICIStub(t *testing.T, rejectCommand ...string) string {
 // Exercises the actual router -> session handler -> govici socket boundary,
 // with deterministic protocol packets and no machine-level VPN privileges.
 func TestAuthenticatedSessionsAndDashboardUseRealVICIStreamAndOwnerFilters(t *testing.T) {
+	previousMonitor := handlers.DefaultGatewayMonitor
+	handlers.DefaultGatewayMonitor = &handlers.GatewayMonitor{}
+	t.Cleanup(func() { handlers.DefaultGatewayMonitor = previousMonitor })
 	router, cleanup := setupTestRouter(t)
 	defer cleanup()
 	admin := getAdminToken(t, router)
@@ -145,13 +149,23 @@ func TestAuthenticatedSessionsAndDashboardUseRealVICIStreamAndOwnerFilters(t *te
 	if !strings.Contains(userSessions, "my-client") {
 		t.Fatal("owner cannot see their connected device")
 	}
+	// The live VICI stub responds, but no configuration has been reconciled
+	// to this daemon. Health must report Degraded, never a false Online.
+	health := mustStatus(t, router, "GET", "/api/gateway/health", admin, nil, 200)
+	if !strings.Contains(health, `"status":"degraded"`) {
+		t.Fatalf("unreconciled daemon incorrectly reported healthy: %s", health)
+	}
+	userHealth := mustStatus(t, router, "GET", "/api/gateway/health", token, nil, 200)
+	if !strings.Contains(userHealth, `"status":"degraded"`) {
+		t.Fatalf("owner cannot read gateway health: %s", userHealth)
+	}
 	adminStats := mustStatus(t, router, "GET", "/api/dashboard/stats", admin, nil, 200)
-	if !strings.Contains(adminStats, "online") {
-		t.Fatal("daemon stats did not confirm online")
+	if !strings.Contains(adminStats, `"gateway_status":"degraded"`) || !strings.Contains(adminStats, `"active_sessions":1`) {
+		t.Fatalf("admin dashboard did not preserve live session count and health: %s", adminStats)
 	}
 	userStats := mustStatus(t, router, "GET", "/api/dashboard/stats", token, nil, 200)
-	if !strings.Contains(userStats, "online") {
-		t.Fatal("owner dashboard did not confirm online")
+	if !strings.Contains(userStats, `"gateway_status":"degraded"`) || !strings.Contains(userStats, `"active_sessions":1`) {
+		t.Fatalf("owner dashboard did not preserve live session count and health: %s", userStats)
 	}
 	mustStatus(t, router, "GET", "/api/system/daemon/status", token, nil, 200)
 	mustStatus(t, router, "POST", "/api/sessions/terminate", admin, map[string]any{

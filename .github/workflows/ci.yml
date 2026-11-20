@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main, dev]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -49,6 +50,15 @@ jobs:
       - name: Build embedded frontend
         run: cd ui && npm run build
 
+      - name: Upload verified frontend assets for release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: swan-panel-ui-dist
+          path: ui/dist/
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
@@ -67,7 +77,9 @@ jobs:
         run: sh scripts/check-descriptive-test-names.sh
 
       - name: Check release configuration invariants
-        run: sh scripts/test-release-config.sh
+        run: |
+          sh scripts/test-release-config.sh
+          node scripts/test-release-ci-gate.mjs
 
       - name: Check approved direct dependencies
         run: sh scripts/check-dependencies.sh
@@ -92,17 +104,12 @@ jobs:
           version: v2.14.0
           args: ./...
 
-      - name: Run Go tests with race detector and CGO
-        env:
-          SWANPANEL_REQUIRE_BUILT_UI: "1"
-        run: go test -count=1 -race ./...
-
-      - name: Enforce 80 percent Go integration coverage
+      - name: Run Go tests with race detector and coverage
         env:
           APP_ENV: test
           SWANPANEL_REQUIRE_BUILT_UI: "1"
         run: |
-          go test -count=1 -coverpkg=./... -coverprofile=coverage.out ./...
+          go test -count=1 -race -coverpkg=./... -coverprofile=coverage.out ./...
           coverage="$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/, "", $3); print $3}')"
           awk -v value="$coverage" 'BEGIN {
             printf "Backend Go cross-package coverage: %.1f%%\n", value
@@ -119,7 +126,7 @@ jobs:
         run: |
           # First-initialization failure of the sync.Once PKI singleton must
           # run in its own process, with coverage captured and merged.
-          SWANPANEL_TEST_ROOT_CA_UNAVAILABLE=1 go test -count=1 -coverpkg=./... -coverprofile=coverage-ca-unavailable.out -run '^TestUnavailableRootCAFailsClosedAcrossControlPlaneOperations$' ./internal/api
+          SWANPANEL_TEST_ROOT_CA_UNAVAILABLE=1 go test -count=1 -covermode=atomic -coverpkg=./... -coverprofile=coverage-ca-unavailable.out -run '^TestUnavailableRootCAFailsClosedAcrossControlPlaneOperations$' ./internal/api
           awk 'NR==FNR {print;next} FNR>1 {print}' coverage.out coverage-ca-unavailable.out > coverage-critical.out
           sh scripts/check-p1-critical-coverage.sh coverage-critical.out
 
@@ -129,12 +136,9 @@ jobs:
           OUTPUT: dist/swan-panel-linux-amd64
         run: sh scripts/build-linux-static.sh
 
-      - name: Verify production Docker image builds with CGO SQLite
-        run: docker build --pull --tag swan-panel:ci .
-
-      - name: Smoke test release image binary
-        run: |
-          docker run --rm --entrypoint /usr/local/bin/swan-panel swan-panel:ci --version | grep -Fx 'SwanPanel dev'
-
       - name: Build VS Code Dev Container image
         run: docker compose -f .devcontainer/compose.yml build workspace
+
+  vpn-integration:
+    name: Verify real IKEv2, nftables and revocation
+    uses: ./.github/workflows/docker-integration.yml

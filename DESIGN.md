@@ -75,7 +75,7 @@ tokens:
   layout:
     sidebarWidth: "14rem"
     headerHeight: "3.5rem"
-    containerMaxWidth: "72rem"
+    containerMaxWidth: "80rem"
     breakpoints:
       sm: "640px"
       md: "768px"
@@ -107,10 +107,10 @@ This document provides the authoritative visual and behavioral design contract f
 ## Overview
 
 ### Brand Identity & Design Philosophy
-SwanPanel follows an aesthetic of **Tailscale-grade architectural minimalism and high information density**:
+SwanPanel follows an aesthetic of **Tailscale-grade architectural minimalism and balanced information density**:
 * **Zero Decorative Gradients:** Visual hierarchy is communicated through high-contrast structural borders, intentional typography weights, and semantic background surfaces—never through flashy gradients or rainbow accents.
 * **Functional Minimalism:** Every button, table column, and metric card directly serves an explicit operational user story. Extraneous chrome, decorative badges, and redundant developer jargon are eliminated.
-* **Dual Theme Parity:** Both Dark Mode (`#0b0f17`) and Light Mode (`#f8fafc`) must maintain identical information density, crisp 1px borders, and high WCAG AA contrast.
+* **Dual Theme Parity:** Both Dark Mode (`#0b0f17`) and Light Mode (`#f8fafc`) must maintain identical comfortable density, crisp 1px borders, and high WCAG AA contrast.
 * **Desktop & Mobile Responsiveness:** The UI adapts seamlessly from desktop multi-column layouts to mobile single-column drawers with collapsible slide-overs and horizontal scrolling tables.
 
 ---
@@ -144,8 +144,8 @@ Colors represent network state and user actions, never decoration:
 * **Header Numbers:** `24px` (`text-2xl`), bold, monospace for live session counters and metric totals.
 * **Section Titles:** `14px` (`text-sm`), font-weight 700, tracking tight.
 * **Card Titles:** `12px` (`text-xs`), font-weight 600.
-* **Body / Form Labels:** `12px` (`text-xs`), font-weight 500.
-* **Help Hints / Subtitles:** `11px` (`text-xs`), font-color `text-dim` (`#8292a8` dark / `#64748b` light), italic or standard.
+* **Body / Form Labels:** `14px` (`text-sm`) for controls and common prose; table cells may use `13px` to accommodate operational data.
+* **Help Hints / Subtitles:** `12px`, font-color `text-dim` (`#8292a8` dark / `#64748b` light), italic or standard. Avoid 10px microcopy for instructions.
 * **Accent Text / Links:** Use semantic `text-accent` (`#60a5fa` dark / `#1d4ed8` light) for link-like names and IPs.
 * **Status Text:** Use `text-status-success`, `text-status-warning`, or `text-status-danger` for small readable labels. Their colors are distinct from bright status dots and button backgrounds, especially on white surfaces.
 * **Badges & Tooltips:** `10px` / `11px`, font-weight 500, uppercase or monospace.
@@ -155,9 +155,10 @@ Colors represent network state and user actions, never decoration:
 ## Layout
 
 ### Viewport & Spatial Grid
-* **Sidebar:** Fixed width `w-56` (14rem / 224px). Sticky on desktop. On mobile (`<md` / <768px), it transitions into an off-canvas drawer with a backdrop overlay.
-* **Header:** Sticky height `h-14` (3.5rem / 56px) with backdrop blur, holding page title, live SSE indicator pill, and contextual action buttons.
-* **Content Container:** Centered with max-width `max-w-6xl` (72rem / 1152px) and responsive padding: `p-4` on mobile, `p-6` on desktop.
+* **Sidebar:** Fixed width `w-56` (14rem / 224px), with 14px navigation labels. Sticky on desktop. On mobile (`<md` / <768px), it transitions into an off-canvas drawer with a backdrop overlay.
+* **Header:** Sticky height 60px with backdrop blur, holding the page title and contextual actions. On mobile, show the Gateway health indicator here; on desktop, show it in the sidebar footer.
+* **Content Container:** Centered with max-width `max-w-7xl` (80rem / 1280px) and responsive padding: `p-4` on mobile, `p-6` on tablet, `px-8` on wide desktop.
+* **Density:** Maintain 38px minimum form controls, approximately 44–48px data rows, 12px section-cell padding, and 20px between major page blocks. Avoid large empty cards and overly generous 24px+ vertical spacing between closely related controls.
 * **Responsive Grid Breakpoints:**
   * Metric Cards: 1 column on mobile (`grid-cols-1`), 2 columns on tablet (`sm:grid-cols-2`), 4 columns on desktop (`lg:grid-cols-4`).
   * Configuration Cards: 1 column on mobile, 2 columns on desktop (`lg:grid-cols-2`).
@@ -210,7 +211,7 @@ Colors represent network state and user actions, never decoration:
 
 ### 5. Status Indicators & Live Signals
 * **Online / Active:** Green dot `bg-emerald-500` with pulse animation + badge `bg-emerald-500/10 text-emerald-500 border border-emerald-500/20`.
-* **Live SSE Stream Pill:** Header pill with live pulse dot demonstrating real-time data push without manual page refresh.
+* **Gateway Health:** Display both a distinct status color and readable text: Online, Degraded, Offline, or Unknown. Show the last verified time on hover or tap. Expire status after 45 seconds without fresh evidence; never present SSE connection health as VPN readiness.
 
 ---
 

@@ -2,8 +2,6 @@
 
 **Goal:** minimize the total supply-chain surface, not just the number of `require` lines. Choose the Go standard library first; prefer an *already-approved dependency* when it provides the same behavior safely. A new dependency must justify why it is safer/cheaper than maintaining the equivalent code and quantify what it adds transitively.
 
-**Snapshot (2026-11-13, before dependency normalization):** 13 direct modules. The indirect module list still contains entries from the former CGO-free SQLite driver, pending `go mod tidy` and a committed `go.sum` update. Recalculate the resolved graph with `go list -m all` after tidy; module entries are not identical to runtime packages.
-
 ## Rules for introducing or replacing a library
 
 1. **stdlib first.** Do not pull in a module for parsing URLs, encoding JSON/XML, cryptographic randomness, hashing, X.509 certificate issuance/CRL, HTTP requests, or simple transformations already handled well by Go stdlib.
@@ -42,7 +40,7 @@
 
 ## Re-evaluation priorities
 
-1. Recalculate and prune the old `modernc`/glebarez module graph via `go mod tidy`, verify binary static-linking and test the native SQLite driver.
+1. Verify dependency graph hygiene with `go mod tidy -diff` and `go list -m all`; recheck native SQLite and static Linux binary compatibility after driver upgrades.
 2. Gin's transitive footprint versus practical need for its framework features. Verify with `go mod why -m <module>` and `go list -m all` before considering replacement.
 3. PKCS#12 encoding algorithms and real-client interoperability (do not switch based only on crypto strength if importing breaks on native clients).
 4. Review external dependencies every release, including known vulnerabilities; priority is exploitable runtime exposure rather than count of module names.

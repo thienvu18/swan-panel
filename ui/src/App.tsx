@@ -189,7 +189,7 @@ const AppShell: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen flex antialiased text-xs font-sans bg-transparent text-current">
+      <div className="min-h-screen flex antialiased text-sm font-sans bg-transparent text-current">
         {/* Responsive Sidebar */}
         <Sidebar
           currentTab={currentTab}
@@ -203,15 +203,14 @@ const AppShell: React.FC = () => {
         />
 
         {/* Main Viewport */}
-        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        <main className="app-main flex-1 flex flex-col min-w-0 overflow-y-auto">
           <Header
             title={titles[currentTab] || t('nav.dashboard')}
             onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-            isRealtimeConnected={isConnected}
             actionButton={contextualBtn}
           />
 
-          <div className="p-4 md:p-6 max-w-6xl w-full mx-auto">{renderContent()}</div>
+          <div className="app-content p-4 md:p-6 lg:px-8 max-w-7xl w-full mx-auto">{renderContent()}</div>
         </main>
       </div>
     </ErrorBoundary>

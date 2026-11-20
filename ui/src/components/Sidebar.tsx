@@ -16,6 +16,7 @@ import {
   X
 } from 'lucide-react';
 import { SwanLogo } from './SwanLogo';
+import { GatewayStatus } from './GatewayStatus';
 
 interface SidebarProps {
   currentTab: string;
@@ -59,17 +60,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   });
 
   const stats = statsData?.stats;
-  const gatewayStatusText = stats?.gateway_status === 'online'
-    ? t('nav.gateway_online')
-    : stats?.gateway_status === 'offline'
-      ? t('nav.gateway_offline')
-      : t('nav.gateway_unknown');
 
   const navItems = [
     { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
     {
       id: 'resources',
-      label: t('nav.resources'),
+      label: t('nav.resources_short'),
       icon: Server,
       badge: stats?.total_devices > 0 ? String(stats.total_devices) : undefined,
     },
@@ -137,18 +133,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          {/* Keep translated gateway status on a separate row from the language/theme controls. */}
-          <div className="mt-1.5 pl-10 flex items-center justify-between gap-1.5">
-            <div className="min-w-0 flex items-center gap-1 text-[10px] font-medium text-subtle" title={gatewayStatusText}>
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                stats?.gateway_status === 'online' ? 'bg-emerald-500' : stats?.gateway_status === 'offline' ? 'bg-rose-500' : 'bg-slate-500'
-              }`}></span>
-              <span className="truncate">{gatewayStatusText}</span>
-            </div>
+          {/* Mobile drawer close action stays visible without repeating gateway status. */}
+          <div className="mt-1.5 flex justify-end md:hidden">
             <button
               onClick={onClose}
               aria-label={t('common.close')}
-              className="p-1.5 rounded-md hover:bg-slate-500/10 text-subtle hover:text-current md:hidden shrink-0"
+              className="p-1.5 rounded-md hover:bg-slate-500/10 text-subtle hover:text-current"
             >
               <X className="w-4 h-4" />
             </button>
@@ -156,7 +146,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Navigation Links */}
-        <nav className="flex-1 overflow-y-auto p-2 space-y-1 text-xs">
+        <nav className="flex-1 overflow-y-auto p-2 space-y-1 text-sm">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
@@ -169,20 +159,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onSelectTab(item.id);
                   onClose();
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium transition-colors ${
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg font-medium transition-colors ${
                   isActive
                     ? 'bg-blue-600/10 text-accent font-semibold'
                     : 'text-subtle hover:text-current hover:bg-slate-500/10'
                 }`}
               >
-                <span className="flex items-center gap-2.5">
-                  <Icon className="w-4 h-4" />
-                  {item.label}
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="truncate" title={item.label}>{item.label}</span>
                 </span>
 
                 {item.badge && (
                   <span
-                    className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${
+                    className={`font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
                       item.badgeColor || 'bg-slate-500/10 text-subtle'
                     }`}
                   >
@@ -200,8 +190,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="p-3 surface-header border-b subtle-border">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-current truncate">{currentUser.name || 'Admin'}</p>
-                  <p className="text-[10px] text-subtle truncate font-mono">{currentUser.email || ''}</p>
+                  <p className="text-xs font-semibold text-current truncate">{currentUser.name || currentUser.email || t('common.unavailable')}</p>
+                  {currentUser.name && currentUser.email && (
+                    <p className="text-[10px] text-subtle truncate font-mono">{currentUser.email}</p>
+                  )}
                 </div>
                 {onLogout && (
                   <button
@@ -217,13 +209,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
 
-          {/* Footer Status */}
-          <div className="p-2.5 text-[10px] text-subtle flex items-center justify-between font-mono">
-            <span className="flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${stats?.gateway_status === 'online' ? 'bg-emerald-500' : stats?.gateway_status === 'offline' ? 'bg-rose-500' : 'bg-slate-500'}`}></span>
-              {stats?.gateway_status === 'online' ? t('common.online') : stats?.gateway_status === 'offline' ? t('common.offline') : t('server.status_unknown')}
-            </span>
-            <span className="text-dim">IKEv2</span>
+          {/* Mobile uses the header indicator, including when the drawer is open. */}
+          <div className="hidden md:block p-2.5 text-subtle">
+            <GatewayStatus />
           </div>
         </div>
       </aside>

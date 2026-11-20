@@ -96,6 +96,7 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 			protected.GET("/auth/me", authH.Me)
 			protected.PUT("/auth/password", authH.ChangePassword)
 			protected.GET("/dashboard/stats", dashboardH.GetStats)
+			protected.GET("/gateway/health", dashboardH.GetGatewayHealth)
 
 			// Device management & configuration profiles
 			protected.GET("/devices", resH.ListDevices)

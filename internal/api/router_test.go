@@ -179,8 +179,11 @@ func TestLoginAndProtectedStatsFlow(t *testing.T) {
 	var statsRes map[string]interface{}
 	_ = json.Unmarshal(w3.Body.Bytes(), &statsRes)
 	stats, ok := statsRes["stats"].(map[string]interface{})
-	if !ok || stats["gateway_status"] != "offline" {
+	if !ok || stats["gateway_status"] != "unknown" {
 		t.Errorf("Stats payload incorrect: %v", statsRes)
+	}
+	if stats["active_sessions"] != nil {
+		t.Errorf("Unavailable gateway must report unknown, not zero sessions: %v", stats["active_sessions"])
 	}
 }
 

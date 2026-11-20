@@ -89,8 +89,8 @@ html:not(.dark) .divide-y.subtle-border > :not(:last-child) { border-color: #e2e
 select.surface-input {
   -webkit-appearance: none;
   appearance: none;
-  height: 2.125rem;
-  min-height: 2.125rem;
+  height: 2.375rem;
+  min-height: 2.375rem;
   padding: 0.375rem 2.25rem 0.375rem 0.75rem;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -119,6 +119,45 @@ html.dark select option,
 html.dark select optgroup { background: #111827; color: #f8fafc; }
 html:not(.dark) select option,
 html:not(.dark) select optgroup { background: #fff; color: #0f172a; }
+
+/* Comfortable admin-panel density: preserve compact data tables, but never
+   sacrifice legibility or usable controls to fit another column on screen. */
+.app-content { font-size: 0.875rem; line-height: 1.5; }
+.app-content .text-xs { font-size: 0.8125rem; }
+.app-content > .space-y-4 > :not(:last-child) { margin-bottom: 1.25rem; }
+.app-content .surface-input:not(textarea) { min-height: 2.375rem; font-size: 0.875rem; }
+.app-content textarea.surface-input { font-size: 0.8125rem; }
+.app-content table { line-height: 1.5; }
+.app-content table th { font-size: 0.8125rem; line-height: 1.4; }
+.app-content table td { font-size: 0.8125rem; line-height: 1.5; }
+/* Full-width loading/empty rows retain their own generous padding. */
+.app-content table th,
+.app-content table tbody td:not([colspan]) { padding-top: 0.8125rem; padding-bottom: 0.8125rem; }
+.app-content table td button { min-width: 2rem; min-height: 2rem; }
+.app-content button:not([data-filter-os]) { line-height: 1.35; }
+/* Improve instructional copy, while retaining compact badges and log metadata. */
+.app-content p.text-\[10px\],
+.app-content div.text-\[10px\],
+.app-content p.text-\[11px\],
+.app-content div.text-\[11px\] { font-size: 0.75rem; }
+
+/* Keyboard users need the same action explanation as pointer users. */
+[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  padding: 4px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+  border-radius: 6px;
+  z-index: 50;
+  pointer-events: none;
+}
 /* Visible keyboard focus for all controls, including icon-only actions. */
 :where(button, a, input, textarea, select, [role="button"]):focus-visible {
   outline: 2px solid #3b82f6;

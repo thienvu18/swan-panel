@@ -60,11 +60,22 @@ test('Access rule subject label and placeholder follow selected subject type in 
   assert.match(access, /t\(subjectField\.placeholder\)/);
 });
 
-test('Sidebar gateway status does not share a row with language and theme controls', () => {
+test('Gateway status is accessible in desktop footer and mobile header without developer jargon', () => {
   const sidebar = readFileSync(new URL('../src/components/Sidebar.tsx', import.meta.url), 'utf8');
-  assert.match(sidebar, /Keep translated gateway status on a separate row/);
-  assert.match(sidebar, /min-w-0 flex items-center gap-1 text-\[10px\].*title=\{gatewayStatusText\}/);
-  assert.match(sidebar, /<span className="truncate">\{gatewayStatusText\}<\/span>/);
+  const header = readFileSync(new URL('../src/components/Header.tsx', import.meta.url), 'utf8');
+  const backend = readFileSync(new URL('../../internal/api/handlers/dashboard.go', import.meta.url), 'utf8');
+  assert.match(backend, /vici\.GetClient\(""\)\.ListSAs\(ctx\)/);
+  assert.match(sidebar, /hidden md:block p-2\.5 text-subtle/);
+  assert.match(sidebar, /<GatewayStatus \/>/);
+  assert.match(header, /md:hidden[^"]*"/);
+  assert.match(header, /<GatewayStatus compact \/>/);
+  const gateway = readFileSync(new URL('../src/components/GatewayStatus.tsx', import.meta.url), 'utf8');
+  assert.match(gateway, /onClick=\{\(\) => setDetailsOpen\(open => !open\)\}/);
+  assert.match(gateway, /aria-expanded=\{detailsOpen\}/);
+  assert.match(gateway, /\['gateway_health'\]/);
+  assert.doesNotMatch(sidebar, /IKEv2/);
+  assert.doesNotMatch(sidebar, /currentUser\.name \|\| 'Admin'/);
+  assert.match(sidebar, /currentUser\.name \|\| currentUser\.email \|\| t\('common\.unavailable'\)/);
   assert.match(sidebar, /aria-label=\{t\('common\.close'\)\}/);
 });
 

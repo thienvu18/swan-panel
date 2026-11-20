@@ -9,8 +9,11 @@ import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
 import { QueryErrorBanner } from '../components/QueryErrorBanner';
+import { TableQueryState } from '../components/TableQueryState';
+import { TableActionLegend } from '../components/TableActionLegend';
 import { downloadDeviceProfile } from '../lib/profileDownload';
 import { buildDeviceProvisioningPayload, requiresDeviceOwnerSelection } from '../lib/deviceProvisioning';
+import { previewSubnet, subnetOverlaps } from '../lib/subnetPreview';
 
 interface DeviceItem {
   id: string;
@@ -72,7 +75,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
   const [groupDesc, setGroupDesc] = useState('');
 
   // 1. Query Devices
-  const { data: devicesData, isError: devicesError, refetch: refetchDevices } = useQuery<{ devices: DeviceItem[] }>({
+  const { data: devicesData, isPending: devicesPending, isError: devicesError, refetch: refetchDevices } = useQuery<{ devices: DeviceItem[] }>({
     queryKey: ['devices'],
     queryFn: async () => {
       const res = await fetch('/api/devices', {
@@ -84,7 +87,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
   });
 
   // 2. Query Resource Groups
-  const { data: groupsData, isError: groupsError, refetch: refetchGroups } = useQuery<{ resource_groups: ResourceGroupItem[] }>({
+  const { data: groupsData, isPending: groupsPending, isError: groupsError, refetch: refetchGroups } = useQuery<{ resource_groups: ResourceGroupItem[] }>({
     queryKey: ['resource_groups'],
     queryFn: async () => {
       const res = await fetch('/api/resource-groups', {
@@ -109,6 +112,11 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
 
   const devices = devicesData?.devices || [];
   const resourceGroups = groupsData?.resource_groups || [];
+  const groupPreview = previewSubnet(groupCIDR);
+  const overlappingGroup = groupPreview && resourceGroups.find(g => {
+    const existing = previewSubnet(g.cidr_block);
+    return existing && subnetOverlaps(groupPreview, existing);
+  });
   const activeOwners = (ownersData?.users || []).filter((user) => user.status === 'ACTIVE');
   const ownerRequired = requiresDeviceOwnerSelection(isAdmin, deviceType);
   const validOwnerSelected = !ownerRequired || activeOwners.some((user) => user.id === selectedOwnerUserID);
@@ -262,8 +270,8 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
       <AndroidNativeSetupDialog isOpen={androidDevice !== null} onClose={() => setAndroidDevice(null)}
         deviceId={androidDevice?.id || ''} hostname={androidDevice?.hostname || ''} />
       {/* Subnav & Action */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex border subtle-border rounded-lg p-0.5 surface-header text-xs">
+      <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap self-start lg:self-auto max-w-full border subtle-border rounded-lg p-0.5 surface-header text-xs">
           <button
             onClick={() => setActiveSubView('devices')}
             className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
@@ -282,8 +290,8 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
           </button>
         </div>
 
-        <div className="flex items-center gap-2 flex-1 max-w-sm ml-auto">
-          <div className="relative w-full">
+        <div className="flex flex-col sm:flex-row items-stretch gap-2 w-full min-w-0 lg:max-w-sm lg:ml-auto">
+          <div className="relative flex-1 min-w-0">
             <Search className="w-3.5 h-3.5 text-subtle absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -295,7 +303,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
           </div>
           <button
             onClick={() => (activeSubView === 'devices' ? setIsAddDeviceOpen(true) : setIsAddGroupOpen(true))}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs shrink-0"
+            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs text-xs shrink-0 whitespace-nowrap w-full sm:w-auto"
           >
             <Plus className="w-3.5 h-3.5" />
             {activeSubView === 'devices' ? t('resources.add_device') : t('resources.add_group')}
@@ -307,7 +315,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
       {activeSubView === 'devices' && (
         <div className="space-y-2">
           {/* Faceted Filter Chips */}
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px] px-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs py-1">
             <span className="text-subtle font-medium flex items-center gap-1 mr-1">
               <Filter className="w-3 h-3" />
               {t('resources.os_filter')}:
@@ -321,7 +329,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                   type="button"
                   data-filter-os={p}
                   onClick={() => setPlatformFilter(p)}
-                  className={`px-2 py-0.5 rounded-md border subtle-border transition-colors uppercase font-mono text-[10px] ${
+                  className={`px-2.5 py-1 rounded-md border subtle-border transition-colors uppercase font-mono text-[11px] ${
                     isSelected
                       ? 'bg-blue-600/15 border-blue-500/40 text-accent font-semibold'
                       : 'text-subtle hover:text-current hover:bg-slate-500/10'
@@ -341,7 +349,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                   key={tType}
                   type="button"
                   onClick={() => setOwnershipFilter(tType)}
-                  className={`px-2 py-0.5 rounded-md border subtle-border transition-colors capitalize text-[10px] ${
+                  className={`px-2.5 py-1 rounded-md border subtle-border transition-colors capitalize text-[11px] ${
                     isSelected
                       ? 'bg-blue-600/15 border-blue-500/40 text-accent font-semibold'
                       : 'text-subtle hover:text-current hover:bg-slate-500/10'
@@ -367,6 +375,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
             )}
           </div>
 
+          <TableActionLegend actions={[{ icon: Download, label: t('resources.download_profile_generic') }, { icon: ShieldAlert, label: t('common.revoke') }]} />
           <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs min-w-[700px]">
@@ -381,7 +390,9 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y subtle-border">
-                  {filteredDevices.length === 0 ? (
+                  {devicesPending || (devicesError && !devicesData) ? (
+                    <TableQueryState columns={6} error={devicesError} onRetry={() => void refetchDevices()} />
+                  ) : filteredDevices.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-8">
                         <EmptyState
@@ -437,7 +448,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                               <button
                                 onClick={() => setAndroidDevice({ id: dev.id, hostname: dev.hostname })}
                                 className="p-1.5 hover:bg-emerald-500/10 rounded-md text-status-success transition-colors inline-block"
-                                title={t('resources.download_android_native')}
+                                title={t('resources.download_android_native')} data-tooltip={t('resources.download_android_native')}
                                 aria-label={t('resources.download_android_native')}
                               >
                                 <Download className="w-3.5 h-3.5" />
@@ -447,7 +458,8 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                             <button
                               onClick={() => handleDownload(dev, dev.platform === 'linux' ? 'linux' : dev.platform === 'windows' ? 'windows' : 'apple')}
                               className="p-1.5 hover:bg-blue-500/10 rounded-md text-accent transition-colors inline-block"
-                              title={getDownloadTooltip(dev.platform)}
+                              title={getDownloadTooltip(dev.platform)} data-tooltip={getDownloadTooltip(dev.platform)}
+                              aria-label={`${getDownloadTooltip(dev.platform)} ${dev.hostname}`}
                             >
                               <Download className="w-3.5 h-3.5" />
                             </button>
@@ -457,7 +469,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                             disabled={dev.is_revoked}
                             aria-label={t('common.revoke') + ' ' + dev.hostname}
                             className="p-1.5 hover:bg-rose-500/10 rounded-md text-status-danger transition-colors inline-block disabled:opacity-40 disabled:cursor-not-allowed"
-                            title={t('dashboard.self_revoke')}
+                            title={t('dashboard.self_revoke')} data-tooltip={t('dashboard.self_revoke')}
                           >
                             <ShieldAlert className="w-3.5 h-3.5" />
                           </button>
@@ -476,7 +488,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
       {activeSubView === 'groups' && (
         <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left font-mono text-xs min-w-[600px]">
+            <table className="w-full text-left font-mono text-xs min-w-[720px]">
               <thead className="border-b subtle-border surface-header text-subtle font-sans font-semibold text-[11px]">
                 <tr>
                   <th className="py-2.5 px-3.5">{t('resources.resource_group')}</th>
@@ -487,7 +499,9 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                 </tr>
               </thead>
               <tbody className="divide-y subtle-border">
-                {filteredGroups.length === 0 ? (
+                {groupsPending || (groupsError && !groupsData) ? (
+                  <TableQueryState columns={5} error={groupsError} onRetry={() => void refetchGroups()} />
+                ) : filteredGroups.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-8">
                       <EmptyState
@@ -523,8 +537,8 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                           </div>
                         </td>
                         <td className="py-2.5 px-3.5">
-                          <div className="w-36 font-sans">
-                            <div className="flex items-center justify-between text-[10px] mb-1">
+                          <div className="w-48 font-sans">
+                            <div className="flex items-center justify-between gap-3 text-[10px] mb-1 whitespace-nowrap tabular-nums">
                               <span className="font-mono font-medium text-slate-900 dark:text-white">{t('resources.leased_amount', { amount: displayedPercent })}</span>
                               <span className="text-dim">{enrolled} / {totalCap.toLocaleString()}</span>
                             </div>
@@ -546,7 +560,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                               onConfirm: () => deleteGroupMutation.mutateAsync(rg.id),
                             })}
                             className="p-1.5 hover:bg-rose-500/10 rounded-md text-subtle hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
-                            title={t('confirm.delete_subnet_title')}
+                            title={t('confirm.delete_subnet_title')} data-tooltip={t('confirm.delete_subnet_title')}
                             aria-label={t('confirm.delete_subnet_title')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -626,6 +640,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                   </option>
                 ))}
               </select>
+              <p className="mt-1.5 text-xs text-dim">{t('resources.owner_required_hint')}</p>
               {isOwnersPending && <p className="text-dim mt-1">{t('resources.loading_users')}</p>}
               {isOwnersError && <p role="alert" className="text-status-danger mt-1">{t('resources.failed_to_load_users')}</p>}
               {!isOwnersPending && !isOwnersError && activeOwners.length === 0 && (
@@ -756,8 +771,16 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
               value={groupCIDR}
               onChange={(e) => setGroupCIDR(e.target.value)}
               placeholder={t('resources.subnet_cidr_placeholder')}
+              aria-invalid={Boolean(groupCIDR && (!groupPreview || overlappingGroup))}
+              aria-describedby={groupCIDR ? 'subnet-preview' : undefined}
               className="w-full surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
             />
+            {groupCIDR && <p id="subnet-preview" role={(!groupPreview || overlappingGroup) ? 'alert' : 'status'}
+              className={`mt-1.5 text-xs ${!groupPreview || overlappingGroup ? 'text-status-danger' : 'text-dim'}`}>
+              {!groupPreview ? t('resources.cidr_invalid')
+                : overlappingGroup ? t('resources.cidr_overlaps', { name: overlappingGroup.name, cidr: overlappingGroup.cidr_block })
+                : t('resources.cidr_preview', { cidr: groupPreview.normalized, count: groupPreview.capacity.toLocaleString() })}
+            </p>}
           </div>
 
           <div>
@@ -775,7 +798,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
         <div className="flex gap-2 pt-2 border-t subtle-border">
           <button
             onClick={() => createGroupMutation.mutate()}
-            disabled={!groupName || !groupCIDR || createGroupMutation.isPending}
+            disabled={!groupName.trim() || !groupPreview || Boolean(overlappingGroup) || createGroupMutation.isPending}
             className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
           >
             {createGroupMutation.isPending ? t('common.saving') : t('common.save')}

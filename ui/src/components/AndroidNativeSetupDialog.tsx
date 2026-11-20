@@ -51,7 +51,11 @@ export const AndroidNativeSetupDialog: React.FC<Props> = ({ isOpen, onClose, dev
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`${t('resources.android_setup_title')}: ${hostname}`} maxWidth="max-w-xl" error={error}>
+    <Modal isOpen={isOpen} onClose={onClose} title={t('resources.android_setup_title')} maxWidth="max-w-xl" error={error}>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-subtle">{t('resources.device_hostname')}:</span>
+        <code className="min-w-0 break-all font-mono text-current">{hostname}</code>
+      </div>
       {loading && <p role="status" className="text-sm text-subtle">{t('resources.android_setup_loading')}</p>}
       {setup && (
         <div className="space-y-4">
@@ -68,24 +72,24 @@ export const AndroidNativeSetupDialog: React.FC<Props> = ({ isOpen, onClose, dev
                 onClick={() => downloadAndroidCredential(setup.client_p12, `${hostname}.p12`, 'application/x-pkcs12')}>
                 <Download className="w-4 h-4" /> {t('resources.android_download_p12')}
               </button>
-              <div className="flex items-center justify-between gap-3 py-1.5 border-b subtle-border">
-              <span className="text-xs text-subtle">{t('resources.android_import_password')}</span>
-              <span className="flex items-center gap-1 min-w-0">
-                <code className="text-xs font-mono break-all text-right">
-                  {showImportPassword ? setup.import_password : '••••••••••••'}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => setShowImportPassword(visible => !visible)}
-                  aria-label={t(showImportPassword ? 'resources.android_hide_password' : 'resources.android_show_password')}
-                  aria-pressed={showImportPassword}
-                  className="p-1.5 rounded-md text-subtle hover:text-current hover:bg-slate-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-                >
-                  {showImportPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
-                <CopyButton value={setup.import_password} label={t('resources.android_import_password')} />
-              </span>
-            </div>
+              <div className="flex flex-col items-stretch gap-1.5 py-1.5 border-b subtle-border sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <span className="text-xs text-subtle">{t('resources.android_import_password')}</span>
+                <span className="flex items-center gap-1 min-w-0 w-full sm:w-auto">
+                  <code className="block flex-1 min-w-0 overflow-x-auto whitespace-nowrap text-xs font-mono sm:text-right">
+                    {showImportPassword ? setup.import_password : '••••••••••••'}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => setShowImportPassword(visible => !visible)}
+                    aria-label={t(showImportPassword ? 'resources.android_hide_password' : 'resources.android_show_password')}
+                    aria-pressed={showImportPassword}
+                    className="shrink-0 p-1.5 rounded-md text-subtle hover:text-current hover:bg-slate-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                  >
+                    {showImportPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                  <CopyButton value={setup.import_password} label={t('resources.android_import_password')} />
+                </span>
+              </div>
             <p className="text-[11px] text-subtle">{t('resources.android_password_masked_hint')}</p>
             </li>
             <li className="pl-1 space-y-2">

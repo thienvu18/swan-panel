@@ -19,7 +19,7 @@
 [![strongSwan](https://img.shields.io/badge/strongSwan-VICI_IPC-crimson?style=flat-square)](https://github.com/strongswan/strongswan)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-gray?style=flat-square)](LICENSE)
 
-[Website & Docs](https://thienvu18.github.io/swan-panel/) • [English](README.md) • [Tiếng Việt](README.vi.md) • [v1.0.0 Release Notes](CHANGELOG.md) • [Discussions](https://github.com/thienvu18/swan-panel/discussions) • [Wiki](https://github.com/thienvu18/swan-panel/wiki)
+[Website & Docs](https://thienvu18.github.io/swan-panel/) • [English](README.md) • [Tiếng Việt](README.vi.md) • [Release Notes](CHANGELOG.md) • [Discussions](https://github.com/thienvu18/swan-panel/discussions) • [Wiki](https://github.com/thienvu18/swan-panel/wiki)
 
 <br>
 
@@ -257,7 +257,9 @@ Configure SwanPanel via environment variables or an `/etc/swan-panel/swan-panel.
 
 SwanPanel is actively maintained. Here is our prioritized engineering roadmap:
 
-* **Stable v1.0.0:**
+* **Stable v1.0.1:** Easier-to-read tables and forms, clearer settings and device actions, and Gateway status that distinguishes Online, Degraded, Offline and Unknown. Gateway health is rechecked every 15 seconds; old results expire after 45 seconds. The status stays visible in the mobile header. See [release notes](CHANGELOG.md).
+
+* **v1.0.0 — First stable release:**
   * Single-binary Linux delivery with embedded React 19 UI and native SQLite WAL (CGO compiled, statically linked).
   * 1-click native client provisioning for Apple iOS/macOS, Windows, Linux, and Android.
   * strongSwan VICI IPC hot-reload without tunnel disruption.
