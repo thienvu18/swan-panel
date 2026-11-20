@@ -11,107 +11,32 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   verify:
     name: Verify tag before publishing
     runs-on: ubuntu-24.04
-    env:
-      CGO_ENABLED: "1"
+    outputs:
+      ci_run_id: ${{ steps.ci.outputs.run_id }}
+      ui_artifact_id: ${{ steps.ci.outputs.artifact_id }}
     steps:
       - name: Checkout tagged commit
         uses: actions/checkout@v7
-
-      - name: Install native C compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
         with:
-          node-version: "26"
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
+          fetch-depth: 0
 
-      - name: Install frontend
-        run: cd ui && npm ci
-
-      - name: Test frontend
-        run: cd ui && npm test
-
-      - name: Build embedded frontend
-        run: cd ui && npm run build
-
-      - name: Verify production frontend build
-        run: |
-          test -s ui/dist/index.html
-          find ui/dist/assets -type f -name '*.js' | grep -q .
-
-      - name: Upload embedded frontend assets
-        uses: actions/upload-artifact@v4
-        with:
-          name: swan-panel-ui-dist
-          path: ui/dist/
-          if-no-files-found: error
-          retention-days: 3
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Validate shell scripts
-        run: |
-          bash -n install.sh
-          sh -n scripts/build-linux-static.sh
-          sh -n scripts/check-dependencies.sh
-          sh -n scripts/test-release-config.sh
-          sh -n scripts/check-descriptive-test-names.sh
-
-      - name: Enforce descriptive test naming
-        run: sh scripts/check-descriptive-test-names.sh
-
-      - name: Check release configuration invariants
-        run: sh scripts/test-release-config.sh
-
-      - name: Check reviewed dependencies
-        run: sh scripts/check-dependencies.sh
-
-      - name: Verify go.mod and go.sum are tidy
-        run: go mod tidy -diff
-
-      - name: Go formatting
-        run: |
-          unformatted="$(gofmt -l embed.go embed_test.go $(find cmd internal -name '*.go'))"
-          if [ -n "$unformatted" ]; then
-            printf 'Unformatted Go files:\n%s\n' "$unformatted"
-            exit 1
-          fi
-
-      - name: Go vet
-        run: go vet ./...
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9.3.0
-        with:
-          version: v2.14.0
-          args: ./...
-
-      - name: Go regression tests with CGO and race detector
+      - name: Require successful main CI for this commit
+        id: ci
         env:
-          SWANPANEL_REQUIRE_BUILT_UI: "1"
-        run: go test -count=1 -race ./...
-
-  vpn-integration:
-    name: Verify real IKEv2, nftables and revocation
-    needs: verify
-    uses: ./.github/workflows/docker-integration.yml
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        run: sh scripts/verify-release-ci.sh
 
   build:
     name: Linux ${{ matrix.arch }} (native musl, static CGO)
-    needs: [verify, vpn-integration]
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -143,15 +68,19 @@ jobs:
       - name: Download verified frontend assets
         uses: actions/download-artifact@v4
         with:
-          name: swan-panel-ui-dist
+          artifact-ids: ${{ needs.verify.outputs.ui_artifact_id }}
           path: ui/dist/
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.verify.outputs.ci_run_id }}
 
       - name: Verify embedded frontend bundle exists
         run: |
           test -s ui/dist/index.html
           find ui/dist/assets -type f -name '*.js' | grep -q .
 
-      - name: Test Go on native architecture with CGO
+      - name: Test Go on native ARM64 with CGO
+        if: matrix.arch == 'arm64'
         env:
           SWANPANEL_REQUIRE_BUILT_UI: "1"
         run: go test -count=1 ./...

@@ -42,12 +42,14 @@ api() {
 }
 
 echo "Starting isolated Docker integration project $PROJECT"
-compose up -d --build
+compose build --pull
+compose up -d --no-build
 for _ in $(seq 1 45); do
   if curl -fsS --max-time 2 "$API/health" >/dev/null 2>&1; then break; fi
   sleep 2
 done
 curl -fsS "$API/health" >/dev/null || fail "Gateway API health did not become ready"
+compose exec -T gateway /usr/local/bin/swan-panel --version | grep -Fx 'SwanPanel dev'
 compose exec -T gateway swanctl --stats >/dev/null || fail "Gateway VICI daemon unavailable"
 compose exec -T client swanctl --stats >/dev/null || fail "Client VICI daemon unavailable"
 pass "Gateway and client real strongSwan VICI daemons"
