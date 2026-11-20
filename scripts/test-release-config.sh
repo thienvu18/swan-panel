@@ -62,6 +62,7 @@ assert_contains .github/workflows/release.yml 'needs: verify' 'release build mus
 assert_contains .github/workflows/release.yml 'needs: build' 'release publication must depend on both binaries'
 assert_contains .github/workflows/release.yml 'needs: [verify, vpn-integration]' 'release binaries must require successful real IKEv2 integration'
 assert_contains .github/workflows/release.yml 'uses: ./.github/workflows/docker-integration.yml' 'release must use disposable Docker IKEv2 integration suite'
+assert_contains .github/workflows/ci.yml 'uses: ./.github/workflows/docker-integration.yml' 'pull-request CI must also require real IKEv2 integration'
 assert_contains .github/workflows/docker-integration.yml 'workflow_call:' 'Docker IKEv2 tests must be reusable by the release gate'
 assert_contains .github/workflows/release.yml 'sh scripts/build-linux-static.sh' 'shared native release build script required'
 assert_contains .github/workflows/release.yml 'swan-panel-linux-amd64' 'AMD64 release required'

@@ -23,6 +23,13 @@ export function useRealtime(token?: string | null) {
 
     let lastLogsInvalidated = 0;
     const dispatch = (event: RealtimeEvent) => {
+      if (event.type === 'gateway_health') {
+        const snapshot = event.payload as { status?: unknown; checked_at?: unknown } | null;
+        if (snapshot && typeof snapshot.status === 'string' && typeof snapshot.checked_at === 'string') {
+          queryClient.setQueryData(['gateway_health'], { health: snapshot });
+        }
+        return;
+      }
       if (event.type.includes('session') || event.type === 'gateway_status' ||
           event.type === 'device_created' || event.type === 'device_revoked') {
         queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] });
@@ -55,6 +62,7 @@ export function useRealtime(token?: string | null) {
           throw new Error(`SSE unavailable (HTTP ${response.status})`);
         }
         setIsConnected(true);
+        queryClient.invalidateQueries({ queryKey: ['gateway_health'] });
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let textBuffer = '';

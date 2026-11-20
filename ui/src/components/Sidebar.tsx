@@ -16,6 +16,7 @@ import {
   X
 } from 'lucide-react';
 import { SwanLogo } from './SwanLogo';
+import { GatewayStatus } from './GatewayStatus';
 
 interface SidebarProps {
   currentTab: string;
@@ -59,11 +60,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   });
 
   const stats = statsData?.stats;
-  const gatewayStatusText = stats?.gateway_status === 'online'
-    ? t('nav.gateway_online')
-    : stats?.gateway_status === 'offline'
-      ? t('nav.gateway_offline')
-      : t('nav.gateway_unknown');
 
   const navItems = [
     { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
@@ -213,12 +209,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
 
-          {/* Single runtime status: live VICI availability, not client connectivity. */}
-          <div className="p-2.5 text-[11px] text-subtle font-medium">
-            <span className="flex items-center gap-1.5 min-w-0" role="status" title={gatewayStatusText}>
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${stats?.gateway_status === 'online' ? 'bg-emerald-500' : stats?.gateway_status === 'offline' ? 'bg-rose-500' : 'bg-slate-500'}`}></span>
-              <span className="truncate">{gatewayStatusText}</span>
-            </span>
+          {/* Mobile uses the header indicator, including when the drawer is open. */}
+          <div className="hidden md:block p-2.5 text-subtle">
+            <GatewayStatus />
           </div>
         </div>
       </aside>

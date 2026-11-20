@@ -138,10 +138,9 @@ An existing Docker nftables backend or a custom `FORWARD DROP` without
 legacy broad manual VPN `DOCKER-USER ACCEPT` rules after reviewing their ownership;
 SwanPanel never deletes rules it did not create.
 SwanPanel may update its managed `/etc/swanctl` configuration; review existing routing,
-DNS, firewall, and certificate configuration before opting in. The Host-mode preflight and acceptance checklist is in
-[VPN Gateway Acceptance Test Plan](../docs/VPN_GATEWAY_ACCEPTANCE_TEST_PLAN.md);
-the completed Orange Pi findings, including rollback, are recorded in the
-[E2E Acceptance Report](../docs/E2E_ACCEPTANCE_TEST_REPORT_2026-11-16.md).
+DNS, firewall, and certificate configuration before opting in. Follow the Host-mode preflight and acceptance checklist in
+[VPN Gateway Acceptance Test Plan](../docs/VPN_GATEWAY_ACCEPTANCE_TEST_PLAN.md).
+For reusable build checks, see the [release build and testing guide](../docs/RELEASE_BUILD_TESTING.md).
 
 ---
 

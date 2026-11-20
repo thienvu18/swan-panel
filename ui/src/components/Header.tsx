@@ -1,6 +1,7 @@
 import React from 'react';
 import { Menu } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { GatewayStatus } from './GatewayStatus';
 
 interface HeaderProps {
   title: string;
@@ -26,7 +27,10 @@ export const Header: React.FC<HeaderProps> = ({
           <Menu className="w-4 h-4" />
         </button>
 
-        <h1 className="font-bold text-base tracking-tight truncate">{title}</h1>
+        <h1 className="font-bold text-base tracking-tight truncate min-w-0 flex-1">{title}</h1>
+        <div className="md:hidden shrink-0 max-w-[132px] text-subtle">
+          <GatewayStatus compact />
+        </div>
       </div>
 
       {/* Header Contextual Action Button */}

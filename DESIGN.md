@@ -156,7 +156,7 @@ Colors represent network state and user actions, never decoration:
 
 ### Viewport & Spatial Grid
 * **Sidebar:** Fixed width `w-56` (14rem / 224px), with 14px navigation labels. Sticky on desktop. On mobile (`<md` / <768px), it transitions into an off-canvas drawer with a backdrop overlay.
-* **Header:** Sticky height 60px with backdrop blur, holding page title, live SSE indicator pill, and contextual action buttons.
+* **Header:** Sticky height 60px with backdrop blur, holding the page title and contextual actions. On mobile, show the Gateway health indicator here; on desktop, show it in the sidebar footer.
 * **Content Container:** Centered with max-width `max-w-7xl` (80rem / 1280px) and responsive padding: `p-4` on mobile, `p-6` on tablet, `px-8` on wide desktop.
 * **Density:** Maintain 38px minimum form controls, approximately 44–48px data rows, 12px section-cell padding, and 20px between major page blocks. Avoid large empty cards and overly generous 24px+ vertical spacing between closely related controls.
 * **Responsive Grid Breakpoints:**
@@ -211,7 +211,7 @@ Colors represent network state and user actions, never decoration:
 
 ### 5. Status Indicators & Live Signals
 * **Online / Active:** Green dot `bg-emerald-500` with pulse animation + badge `bg-emerald-500/10 text-emerald-500 border border-emerald-500/20`.
-* **Live SSE Stream Pill:** Header pill with live pulse dot demonstrating real-time data push without manual page refresh.
+* **Gateway Health:** Display both a distinct status color and readable text: Online, Degraded, Offline, or Unknown. Show the last verified time on hover or tap. Expire status after 45 seconds without fresh evidence; never present SSE connection health as VPN readiness.
 
 ---
 

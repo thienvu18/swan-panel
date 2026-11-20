@@ -1,7 +1,6 @@
-# SwanPanel P1 — Hướng dẫn nghiệm thu thủ công (QA / Operator)
+# SwanPanel — Kiểm thử nghiệm thu VPN Gateway (QA / Operator)
 
-**Trạng thái: HOÀN TẤT NGHIỆM THU (PASS trên các tính năng được hỗ trợ; BLOCKED có điều kiện cho IPv6 / DoT / Live WAN Outage)**
-**Phạm vi:** đúng commit/revision được bàn giao, Docker IKEv2, systemd native, UI, client VPN, release.
+**Phạm vi:** Kiểm thử Docker IKEv2, systemd native, UI, kết nối VPN thực và điều kiện phát hành trên đúng bản build được đánh giá.
 **Nguyên tắc:** PASS chỉ khi có kết quả thực thi. BLOCKED/NOT RUN không được tính PASS.
 
 > CẢNH BÁO: Toàn bộ thử nghiệm restart, firewall, CA, revoke và fault injection chỉ chạy trên VM / lab disposable, không có dữ liệu khách hàng. Không chạy trên production. Không gửi JWT, private key, PKCS#12, setup token hoặc mật khẩu vào ticket, screenshot hay log.
@@ -24,10 +23,10 @@
 Trên máy Linux thử nghiệm:
 
     umask 077
-    mkdir -p "$HOME/swanpanel-p1-evidence"
+    mkdir -p "$HOME/swanpanel-test-evidence"
     cd /path/to/swan-panel
-    git rev-parse HEAD | tee "$HOME/swanpanel-p1-evidence/commit.txt"
-    uname -a | tee "$HOME/swanpanel-p1-evidence/kernel.txt"
+    git rev-parse HEAD | tee "$HOME/swanpanel-test-evidence/commit.txt"
+    uname -a | tee "$HOME/swanpanel-test-evidence/kernel.txt"
 
 Mọi log hoặc packet capture cần lọc dữ liệu nhạy cảm trước khi chia sẻ. Không thu thập file khóa riêng. Backup/snapshot VM test trước khi thay đổi kernel firewall hoặc PKI.
 
@@ -53,7 +52,7 @@ Kỳ vọng: Docker API, Compose và kernel XFRM đều khả dụng.
 
     cd /path/to/swan-panel
     umask 077
-    bash -o pipefail -c 'bash scripts/test_docker_integration.sh 2>&1 | tee "$HOME/swanpanel-p1-evidence/docker-ikev2.log"'
+    bash -o pipefail -c 'bash scripts/test_docker_integration.sh 2>&1 | tee "$HOME/swanpanel-test-evidence/docker-ikev2.log"'
     echo "exit=$?"
 
 3. Kỳ vọng exit 0 và dòng: PASS: 11 Docker integration checks against real strongSwan and nftables.
@@ -203,21 +202,25 @@ Mỗi trường hợp phải ghi OS, version, cách import, profile ID/serial v�
 4. Nếu có quyền của maintainer, thử tag **prerelease** dành cho test, ví dụ vX.Y.Z-rcN. Khi VPN job thất bại, release không được publish. Khi verify, VPN job, AMD64 và ARM64 đều PASS mới publish.
 5. Không tự tạo/push tag release khi chưa được chủ repo cho phép.
 
-## 12. Template báo cáo trả lại người phát triển
+## 12. Bảng kết quả kiểm thử
 
-| Case | Priority | PASS / FAIL / BLOCKED / NOT RUN | Timestamp | Evidence link/log (đã lọc) | Issue nếu FAIL |
-| --- | --- | --- | --- | --- | --- |
-| D01 Linux Docker/XFRM | P0 | **PASS** | 2026-11-17 03:03:42Z | Orange Pi Zero 3 ARM64 Docker Engine 26.1.4, Compose v2.27.1; Docker integration runner supported. | |
-| D02 Docker real IKEv2 | P0 | **PASS** | 2026-11-17 02:45:00Z | `scripts/test_docker_integration.sh` exit 0 (11/11 checks PASS against real strongSwan & nftables). | |
-| D03 Packet-level ALLOW/DENY | P0 | **PASS** | 2026-11-17 02:50:00Z | Nftables `table inet swanpanel` MSS clamp 1360, default drop for IPsec, target allow/deny rules enforced. | |
-| D04 Restart/Recovery/Apply status | P0 | **PASS** | 2026-11-17 03:03:42Z | `/etc/swanctl/conf.d/swanpanel-gateway.conf` survives restart, VICI reloaded without downtime, apply-status `applied`. | |
-| D05 Live revoke/CRL | P0 | **PASS** | 2026-11-17 02:52:00Z | Device revoked publishes DER CRL `/etc/swanctl/x509crl/swanpanel.crl`, terminates active SA via VICI, reconnect rejected. | |
-| N01 Native systemd permissions/persistence | P0 | **PASS** | 2026-11-17 02:53:00Z | Unit sandbox `ProtectSystem=full`, `ReadWritePaths=/etc/swanctl`, server.key `600` root:root verified. | |
-| U01 Select/theme/browser | P1 | **PASS** | 2026-11-17 03:05:10Z | Unified styled select across Light/Dark modes, zero horizontal overflow, full keyboard accessibility. | |
-| U02 Confirm/keyboard/error/double submit | P1 | **PASS** | 2026-11-17 03:05:10Z | Shared ConfirmDialog with double-submit protection, error preservation, focus trap, Escape cancel (22/22 UI tests pass). | |
-| U03 RBAC/subnet consistency | P1 | **PASS** | 2026-11-17 03:05:10Z | Last-admin 409 guard, non-admin 403 on admin endpoints, subnet deletion blocked when devices/rules exist. | |
-| P02 Client platform matrix | P2 | **PASS** | 2026-11-17 02:58:00Z | Android native IKEv2 RSA (Xiaomi), iOS native `.mobileconfig` (iPhone 13 Pro Max), Linux `setup.sh`, Windows `setup.ps1`. | |
-| R01 Release gate | P0 | **PASS** | 2026-11-17 03:04:38Z | `sh scripts/test-release-config.sh` PASS; CI/Release workflows gate on real Docker VPN integration. | |
+Ghi PASS chỉ sau khi chạy đúng ca kiểm thử và lưu bằng chứng đã lọc thông tin nhạy cảm. Đánh dấu BLOCKED nếu môi trường không cho phép xác minh.
+
+| Case | Priority | Kết quả (PASS / FAIL / BLOCKED / NOT RUN) | Thời điểm | Bằng chứng / lỗi |
+| --- | --- | --- | --- | --- |
+| D01 Linux Docker/XFRM | P0 | | | |
+| D02 Docker real IKEv2 | P0 | | | |
+| D03 Packet-level ALLOW/DENY | P0 | | | |
+| D04 Restart/Recovery/Apply status | P0 | | | |
+| D05 Live revoke/CRL | P0 | | | |
+| N01 Native systemd permissions/persistence | P0 | | | |
+| U01 Select/theme/browser | P1 | | | |
+| U02 Confirm/keyboard/error/double submit | P1 | | | |
+| U03 RBAC/subnet consistency | P1 | | | |
+| P02 Client platform matrix | P2 | | | |
+| R01 Release gate | P0 | | | |
+| A01–A06 Native VPN/DNS/persistence | P0/P1 | | | |
+| Gateway health and responsive UI | P1/P2 | | | |
 
 **Exit criteria:** P0 phải PASS trên đúng SHA; không có sai lệch Zero-Trust, không có bypass khi revoke, không mất VPN không liên quan sau policy apply. P1 phải PASS hoặc issue được review/chấp thuận. P2 cần ghi rõ nền tảng nào đã chạy, không suy đoán toàn bộ OS đã tương thích.
 
@@ -230,7 +233,7 @@ Chạy trên máy development/test có Go, CGO và Node:
     cd /path/to/swan-panel
     sh scripts/test-release-config.sh
     sh scripts/check-descriptive-test-names.sh
-    sh scripts/test-p1-critical-coverage.sh  # 20/20 critical functions, 100% statements
+    sh scripts/test-p1-critical-coverage.sh  # Validate critical statement coverage
     go vet ./...
     golangci-lint run ./...
     APP_ENV=test SWANPANEL_REQUIRE_BUILT_UI=1 CGO_ENABLED=1 go test -count=1 -race -shuffle=on ./...
@@ -238,10 +241,9 @@ Chạy trên máy development/test có Go, CGO và Node:
 
 **Lưu ý:** 100% statement coverage của các hàm được liệt kê đo bằng hai profile (suite chính + test khởi tạo CA lỗi chạy riêng). Nó không chứng minh 100% branch/path hoặc VPN thực tế. Docker E2E và manual cases bên trên vẫn bắt buộc để ký nghiệm thu.
 
-## 14. A01-A06: Nghiệm thu thay đổi Android Native, DNS, VICI và restart (2026-11-16 / Cập nhật 2026-11-17)
+## 14. A01–A06: Android, iOS, DNS và vòng đời Gateway
 
-**Kết quả nghiệm thu trên revision mới (2026-11-17):** Các case A01–A06 đã được kiểm thử thực tế trên Orange Pi Zero 3 và bộ test tự động. Ghi nhận PASS cho các tính năng được hỗ trợ, và BLOCKED đối với các giới hạn môi trường được duyệt (IPv6 WAN, DoT 853, cắt WAN upstream live).
-Chỉ dùng Orange Pi lab hoặc máy thử nghiệm có snapshot và quyền thu hồi cấu hình.
+Chỉ dùng Gateway lab hoặc máy thử nghiệm có snapshot và quyền thu hồi cấu hình.
 Không upload/screenshot mật khẩu nhập PKCS#12, khóa riêng hoặc dữ liệu xác thực.
 
 ### A01 (P1): Android Native không ứng dụng bổ sung
@@ -307,7 +309,7 @@ Không upload/screenshot mật khẩu nhập PKCS#12, khóa riêng hoặc dữ l
 5. Không ký nghiệm thu full-tunnel IPv6 chỉ dựa trên Apple OverridePrimary.
 ### A05 (P1): Pool và loopback VIP không gây gián đoạn
 
-1. Trong Orange Pi lab, tạo ba group CIDR khác nhau và ít nhất hai
+1. Trong Gateway lab, tạo ba group CIDR khác nhau và ít nhất hai
    client đang online. Ghi SA, pool, và địa chỉ lo trước thay đổi:
    `docker exec swan-panel swanctl --list-sas`
    `docker exec swan-panel swanctl --list-pools`
@@ -340,16 +342,24 @@ Không upload/screenshot mật khẩu nhập PKCS#12, khóa riêng hoặc dữ l
    `ENABLE_DNS=false`: kiểm tra không đẩy DNS VIP không tồn tại xuống client,
    `send_cert = always` vẫn được ghi ra file, export `.p12` không cache và
    revoke khóa cả tái kết nối lẫn tải lại chứng chỉ.
-6. Chỉ triển khai revision mới lên **Orange Pi lab** hoặc Orange Pi đang chạy
-   sau khi operator chấp thuận maintenance window, backup và rollback. Không
-   đổi container `swan-panel` đang phục vụ chỉ để lấy bằng chứng. A01-A06 phải
-   chạy trên revision mới, không dùng PASS của bản build cũ để nghiệm thu.
+6. Chỉ triển khai trên **Gateway lab** sau khi operator xác nhận backup, snapshot
+   và phương án rollback. Không thay đổi Gateway đang phục vụ người dùng chỉ
+   để lấy bằng chứng. Chạy A01–A06 trên đúng bản build đang đánh giá.
 
-| Case mới | Priority | PASS / FAIL / BLOCKED / NOT RUN | Log / timestamp / issue |
-| --- | --- | :---: | --- |
-| A01 Android Native OS keystore | P1 | **PASS** | 2026-11-17 02:50:00Z: Direct `.p12` export with `Cache-Control: no-store`, paired password in response, OS KeyChain import without helper app; active native IKEv2 RSA connected on Orange Pi; unauthorized/revoked export 403. |
-| A02 iOS `send_cert` restart/rekey | P0 | **PASS** | 2026-11-17 02:55:00Z: `send_cert = always` in VICI and disk (`swanpanel-gateway.conf`); advanced JSON override blocked (400); iPhone 13 Pro Max reconnected after daemon and container recreation without connecting hang. Rekey verified with seamless CHILD_SA rollover. |
-| A03 DNS NODATA/SERVFAIL/wildcard | P1 | **PASS (SERVFAIL WAN: BLOCKED)** | 2026-11-17 03:24:49Z: Tested live on Orange Pi hardware; exact `test.example.test -> 10.122.0.99`, wildcard `*.example.test -> 10.122.0.98`. A query resolves IP; AAAA returns authoritative `NOERROR` with `ANCOUNT: 0` (RFC 4074 NODATA); missing `.strongnet` returns authoritative `NXDOMAIN` without upstream leak. Giả lập ngắt WAN upstream trên Orange Pi live đánh dấu BLOCKED để tránh làm gián đoạn dịch vụ fcna. |
-| A04 Private DNS/IPv6 leak | P1 | **BLOCKED (IPv6 / DoT)** | 2026-11-17 03:00:00Z: Private DNS Off & Automatic resolve via pushed DNS VIP `10.122.0.1:53`. DoT (port 853) và DoH đánh dấu BLOCKED vì SwanPanel gateway không chạy DoT server (Android Strict mode fail-closed đúng thiết kế). IPv6 Full-tunnel đánh dấu BLOCKED vì hạ tầng lab Orange Pi và cấu hình pool SwanPanel là thuần IPv4, không có default route IPv6 WAN. |
-| A05 VICI pool/loopback lifecycle | P1 | **PASS** | 2026-11-17 03:03:42Z: 3 pools and `lo:swanpanel` aliases (`10.122.0.1`, `10.250.0.1`, `172.28.0.1`) managed dynamically. Unrelated policy apply preserves active SAs. Stale pool/VIP cleanup deferred while active leases exist. Loopback deletion restricted strictly to `lo:swanpanel` label; `127.0.0.1/8` completely preserved. |
-| A06 Docker one-command invariants | P0 | **PASS** | 2026-11-17 03:04:38Z: Single service `swan-panel`, bridge networking, internal strongSwan/VICI, embedded SPA, SQLite WAL, Split-DNS, persistent volumes (`swanpanel_data`, `swanpanel_config`, `swanpanel_swanctl`). `sh scripts/test-host-swan-compose.sh` PASS. |
+Ghi kết quả A01–A06 cùng log và thời điểm vào bảng ở mục 12; không sử dụng kết quả của bản build khác.
+
+## 15. Kiểm thử sức khỏe Gateway và giao diện
+
+Chạy từng tình huống trên **Gateway lab riêng**, ghi commit SHA, thời điểm, trạng thái trên UI và JSON từ `GET /api/gateway/health` bằng một phiên quản trị đã đăng nhập. Không lưu cookie hoặc token vào báo cáo. `GET /api/health` chỉ xác nhận Web API còn chạy; nó không chứng minh VPN khỏe.
+
+| Tình huống | Bằng chứng cần kiểm tra |
+| --- | --- |
+| **Online** | Runtime VPN phản hồi, cấu hình đã áp dụng; nhãn và thời điểm kiểm tra gần nhất chính xác. |
+| **Degraded** | VPN vẫn chạy nhưng cấu hình chờ áp dụng hoặc có lỗi một phần; không hiển thị Online. |
+| **Offline** | Chỉ báo Offline khi xác minh được daemon đã dừng, không suy diễn từ một lần timeout. |
+| **Unknown** | Không đủ bằng chứng mới để kết luận; lỗi mạng hoặc VICI timeout không được mặc định thành Offline. |
+| **Stale** | Ngừng cấp kết quả mới trong môi trường lab; sau 45 giây, giao diện phải chuyển sang Unknown. |
+| **SSE reconnect** | Ngắt và phục hồi kết nối sự kiện; trình duyệt yêu cầu ngay một bản sức khỏe mới. |
+| **Recovery** | Khôi phục daemon; chỉ trở lại Online khi runtime và cấu hình áp dụng được xác nhận, nếu chưa thì Degraded. |
+
+Backend chủ động xác minh mỗi 15 giây và đẩy cập nhật qua SSE; không yêu cầu frontend polling liên tục. Chạy thêm kiểm tra responsive ở 320px (trạng thái chỉ trong header, có nhãn chữ và thời điểm khi chạm), 768px và 800px (DNS và Access Rules không tràn), zoom 200%, EN/VI và sáng/tối. Ghi PASS/FAIL/BLOCKED cho từng trường hợp trên đúng build đang chuẩn bị phát hành; kết quả của lần kiểm thử cũ không tự động áp dụng cho build mới.

@@ -2,7 +2,7 @@ import { useToast } from '../components/ToastProvider';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Globe, Plus, Trash2, Search, Filter, X } from 'lucide-react';
+import { ChevronDown, Globe, Plus, Trash2, Search, Filter, X } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
@@ -181,7 +181,7 @@ export const DNSEnginePage: React.FC = () => {
                   value={magicSuffix}
                   onChange={(e) => { setMagicSuffix(e.target.value); setSettingsDirty(previous => ({ ...previous, suffix: true })); }}
                   placeholder="e.g. .strongnet or .corp.internal"
-                  className="flex-1 surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
+                  className="flex-1 min-w-0 surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
                 />
                 <button
                   onClick={() => updateSettingsMutation.mutate({ magic_dns_suffix: magicSuffix })}
@@ -199,14 +199,17 @@ export const DNSEnginePage: React.FC = () => {
           </div>
         </div>
 
-        {/* Upstream Resolvers */}
-        <div className="border subtle-border rounded-xl p-4 surface-card space-y-3 shadow-xs">
-          <div className="border-b subtle-border pb-2">
-            <h2 className="font-bold text-xs text-slate-900 dark:text-white">{t('dns.upstream_title')}</h2>
-            <div className="text-[11px] text-dim">{t('dns.upstream_desc')}</div>
-          </div>
+        {/* Upstream resolvers are advanced settings; keep the common DNS setup scannable. */}
+        <details className="group border subtle-border rounded-xl p-4 surface-card shadow-xs">
+          <summary className="list-none cursor-pointer flex items-start justify-between gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-blue-500">
+            <span>
+              <span className="block font-bold text-xs text-slate-900 dark:text-white">{t('dns.upstream_title')}</span>
+              <span className="block text-[11px] text-dim mt-1">{t('dns.upstream_desc')}</span>
+            </span>
+            <ChevronDown aria-hidden="true" className="w-4 h-4 mt-0.5 shrink-0 text-subtle transition-transform group-open:rotate-180" />
+          </summary>
 
-          <div className="space-y-2 text-xs">
+          <div className="space-y-2 text-xs border-t subtle-border pt-3 mt-3">
             <div>
               <label className="text-subtle text-[11px] block mb-1">{t('dns.ip_resolvers')}</label>
               <div className="flex gap-2">
@@ -215,7 +218,7 @@ export const DNSEnginePage: React.FC = () => {
                   value={upstreams}
                   onChange={(e) => { setUpstreams(e.target.value); setSettingsDirty(previous => ({ ...previous, upstreams: true })); }}
                   placeholder="e.g. 1.1.1.1, 8.8.8.8, 9.9.9.9"
-                  className="flex-1 surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
+                  className="flex-1 min-w-0 surface-input border subtle-border rounded-lg px-2.5 py-1.5 font-mono text-xs focus:outline-none focus:border-blue-500"
                 />
                 <button
                   onClick={() => updateSettingsMutation.mutate({ upstream_resolvers: upstreams })}
@@ -226,26 +229,26 @@ export const DNSEnginePage: React.FC = () => {
                 </button>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-[10px] text-subtle">
+            <div className="flex flex-wrap items-center gap-2 text-[10px] text-subtle">
               <span>{t('dns.suggestions')}:</span>
               <span className="bg-slate-500/10 border subtle-border px-1.5 py-0.5 rounded font-mono">1.1.1.1 (Cloudflare)</span>
               <span className="bg-slate-500/10 border subtle-border px-1.5 py-0.5 rounded font-mono">8.8.8.8 (Google)</span>
             </div>
           </div>
-        </div>
+        </details>
       </div>
 
       {/* Custom DNS Overrides */}
       <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <span className="font-semibold text-xs text-slate-900 dark:text-white tracking-tight">
               {t('dns.custom_overrides')} ({overrides.length})
             </span>
             <div className="text-[11px] text-dim">{t('dns.custom_overrides_desc')}</div>
           </div>
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 w-full min-w-0 sm:w-auto sm:max-w-sm sm:ml-auto">
-            <div className="relative w-full">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto lg:ml-auto">
+            <div className="relative flex-1 min-w-0 sm:w-48 md:w-56">
               <Search className="w-3.5 h-3.5 text-subtle absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -258,7 +261,7 @@ export const DNSEnginePage: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsAddOverrideOpen(true)}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs shrink-0"
+              className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs text-xs shrink-0 whitespace-nowrap"
             >
               <Plus className="w-3.5 h-3.5" />
               {t('dns.add_override')}

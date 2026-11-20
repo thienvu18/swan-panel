@@ -15,8 +15,8 @@ Authenticates an administrator or local user.
 - **Request Body:**
   ```json
   {
-    "email": "admin@swanpanel.internal",
-    "password": "Admin@SwanPanel123"
+    "email": "<YOUR_ADMIN_EMAIL>",
+    "password": "<YOUR_PASSWORD>"
   }
   ```
 - **Response (200 OK):**
@@ -67,12 +67,27 @@ Revokes device certificate and terminates active tunnels.
 ### `GET /api/realtime/stream`
 Server-Sent Events (SSE) stream streaming live events:
 - `session_update`: Active tunnel counts, connection and disconnection events.
-- `gateway_status`: strongSwan daemon memory usage and SA states.
+- `gateway_status`: Daemon lifecycle notifications.
+- `gateway_health`: Verified Gateway state updates every 15 seconds (Online, Degraded, Offline or Unknown).
 - `log_event`: Structured audit log stream.
 
 ---
 
 ## 4. System & strongSwan Control
+
+### `GET /api/gateway/health` (Authenticated)
+Returns the current Gateway health snapshot on initial load or after reconnect. Example response:
+
+```json
+{
+  "health": {
+    "status": "online",
+    "checked_at": "2026-11-20T07:30:00Z"
+  }
+}
+```
+
+The `status` value is `online`, `degraded`, `offline` or `unknown`. The server verifies health every 15 seconds; a snapshot older than 45 seconds is treated as `unknown`. A transient VICI timeout is not proof that the VPN is stopped. Use the separate `/api/health` endpoint only for web-server liveness.
 
 ### `GET /api/system/daemon/status`
 Queries strongSwan `charon` daemon status via VICI IPC.

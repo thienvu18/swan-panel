@@ -130,12 +130,16 @@ html:not(.dark) select optgroup { background: #fff; color: #0f172a; }
 .app-content table { line-height: 1.5; }
 .app-content table th { font-size: 0.8125rem; line-height: 1.4; }
 .app-content table td { font-size: 0.8125rem; line-height: 1.5; }
+/* Full-width loading/empty rows retain their own generous padding. */
 .app-content table th,
-.app-content table td { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+.app-content table tbody td:not([colspan]) { padding-top: 0.8125rem; padding-bottom: 0.8125rem; }
 .app-content table td button { min-width: 2rem; min-height: 2rem; }
 .app-content button:not([data-filter-os]) { line-height: 1.35; }
-.app-content .text-\[10px\] { font-size: 0.6875rem; }
-.app-content .text-\[11px\] { font-size: 0.75rem; }
+/* Improve instructional copy, while retaining compact badges and log metadata. */
+.app-content p.text-\[10px\],
+.app-content div.text-\[10px\],
+.app-content p.text-\[11px\],
+.app-content div.text-\[11px\] { font-size: 0.75rem; }
 
 /* Keyboard users need the same action explanation as pointer users. */
 [data-tooltip]:focus-visible::after {

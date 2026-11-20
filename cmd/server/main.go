@@ -13,6 +13,7 @@ import (
 
 	swanpanel "github.com/swan-panel/swan-panel"
 	"github.com/swan-panel/swan-panel/internal/api"
+	"github.com/swan-panel/swan-panel/internal/api/handlers"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
 	"github.com/swan-panel/swan-panel/internal/config"
 	"github.com/swan-panel/swan-panel/internal/db"
@@ -120,6 +121,11 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	// Independently verify gateway runtime/apply state and broadcast health
+	// snapshots. Browser clients never poll for status.
+	gatewayHealthCtx, stopGatewayHealth := context.WithCancel(context.Background())
+	go handlers.DefaultGatewayMonitor.Run(gatewayHealthCtx)
+
 	// Failed or interrupted applies are retried promptly and survive restarts.
 	stopRetry := make(chan struct{})
 	go func() {
@@ -245,6 +251,7 @@ func main() {
 
 	slog.Info("Termination signal received; commencing graceful shutdown", "signal", sig.String())
 
+	stopGatewayHealth()
 	close(stopRetry)
 	close(stopReconciliation)
 	close(stopDNSRefresh)

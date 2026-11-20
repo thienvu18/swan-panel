@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Code2, FileJson2, RotateCcw, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import { Check, ChevronDown, Code2, FileJson2, RotateCcw, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
@@ -300,18 +300,24 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
                 <option value="custom">{t('server.settings.preset_custom')}</option>
               </select>
             </label>
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" checked={form.mobike_enabled}
-                  onChange={e => { setBasicDirty(true); setForm(s => ({ ...s, mobike_enabled: e.target.checked })); }} />
-                {t('server.settings.mobike')}
-              </label>
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" checked={form.force_encap_natt}
-                  onChange={e => { setBasicDirty(true); setForm(s => ({ ...s, force_encap_natt: e.target.checked })); }} />
-                {t('server.settings.nat_t')}
-              </label>
-            </div>
+            <details className="group md:col-span-2 rounded-lg border subtle-border px-3 py-2">
+              <summary className="cursor-pointer list-none flex items-center justify-between gap-2 text-xs font-semibold text-subtle">
+                {t('server.settings.connection_options')}
+                <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 mt-3 border-t subtle-border">
+                <label className="flex items-center gap-2 text-xs">
+                  <input type="checkbox" checked={form.mobike_enabled}
+                    onChange={e => { setBasicDirty(true); setForm(s => ({ ...s, mobike_enabled: e.target.checked })); }} />
+                  {t('server.settings.mobike')}
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                  <input type="checkbox" checked={form.force_encap_natt}
+                    onChange={e => { setBasicDirty(true); setForm(s => ({ ...s, force_encap_natt: e.target.checked })); }} />
+                  {t('server.settings.nat_t')}
+                </label>
+              </div>
+            </details>
           </div>
           <p className="text-[11px] text-subtle">{t('server.settings.header_save_hint')}</p>
         </section>

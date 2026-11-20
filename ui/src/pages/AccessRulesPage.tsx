@@ -192,25 +192,25 @@ export const AccessRulesPage: React.FC = () => {
 
       {/* Access Rules Table */}
       <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <span className="font-semibold text-xs text-slate-900 dark:text-white">
             {t('access.title')} ({rules.length})
           </span>
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 w-full min-w-0 sm:w-auto sm:max-w-sm sm:ml-auto">
-            <div className="relative w-full">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto lg:ml-auto">
+            <div className="relative flex-1 min-w-0 sm:w-48 md:w-56">
               <Search className="w-3.5 h-3.5 text-subtle absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t('access.search_placeholder')}
-                className="w-full surface-input border subtle-border rounded-lg pl-8 pr-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                className="w-full surface-input border subtle-border rounded-lg pl-8 pr-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-sans"
               />
             </div>
             <button
               type="button"
               onClick={() => setIsAddOpen(true)}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs shrink-0"
+              className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs text-xs shrink-0 whitespace-nowrap"
             >
               <Plus className="w-3.5 h-3.5" />
               {t('access.add_rule')}

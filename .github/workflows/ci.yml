@@ -138,3 +138,7 @@ jobs:
 
       - name: Build VS Code Dev Container image
         run: docker compose -f .devcontainer/compose.yml build workspace
+
+  vpn-integration:
+    name: Verify real IKEv2, nftables and revocation
+    uses: ./.github/workflows/docker-integration.yml

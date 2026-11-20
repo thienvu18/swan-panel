@@ -19,7 +19,7 @@
 [![strongSwan](https://img.shields.io/badge/strongSwan-VICI_IPC-crimson?style=flat-square)](https://github.com/strongswan/strongswan)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-gray?style=flat-square)](LICENSE)
 
-[Website & Tài liệu](https://thienvu18.github.io/swan-panel/) • [English](README.md) • [Tiếng Việt](README.vi.md) • [Bản phát hành v1.0.0](CHANGELOG.md) • [Thảo luận](https://github.com/thienvu18/swan-panel/discussions) • [Wiki](https://github.com/thienvu18/swan-panel/wiki)
+[Website & Tài liệu](https://thienvu18.github.io/swan-panel/) • [English](README.md) • [Tiếng Việt](README.vi.md) • [Nhật ký phiên bản](CHANGELOG.md) • [Thảo luận](https://github.com/thienvu18/swan-panel/discussions) • [Wiki](https://github.com/thienvu18/swan-panel/wiki)
 
 <br>
 
@@ -251,9 +251,9 @@ Cấu hình SwanPanel qua biến môi trường hoặc tệp `/etc/swan-panel/sw
 
 SwanPanel được duy trì và phát triển liên tục. Dưới đây là lộ trình kỹ thuật ưu tiên:
 
-* **v1.0.1 — cải thiện UI/UX (đang kiểm thử):** Giao diện thoáng, dễ đọc; hành động đúng ngữ cảnh; thời lượng VPN dễ hiểu; chỉnh sửa cấu hình an toàn hơn; hướng dẫn OIDC công khai rõ ràng; chú thích nút thao tác trên màn hình nhỏ. Chỉ phát hành sau khi kiểm tra đủ EN/VI, sáng/tối và responsive.
+* **Bản ổn định v1.0.1:** Bảng và biểu mẫu dễ đọc hơn, thiết lập nâng cao gọn hơn, thao tác rõ ràng hơn. Trạng thái Gateway phân biệt Online, Degraded, Offline và Unknown, được kiểm tra lại mỗi 15 giây và tự hết hiệu lực sau 45 giây. Trên điện thoại, trạng thái luôn hiện ở thanh đầu trang. Xem [nhật ký thay đổi](CHANGELOG.md).
 
-* **Bản ổn định v1.0.0:**
+* **v1.0.0 — Bản phát hành ổn định đầu tiên:**
   * Đóng gói single-binary với giao diện React 19 và SQLite WAL (CGO liên kết tĩnh).
   * Cấu hình 1-click cho Apple iOS/macOS, Windows, Linux và Android.
   * Điều khiển VICI IPC hot-reload RAM không gián đoạn kết nối.

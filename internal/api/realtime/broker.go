@@ -112,6 +112,9 @@ func sanitizeEvent(event Event, isAdmin bool) (Event, bool) {
 		return Event{Type: "session_update", Timestamp: event.Timestamp}, true
 	case "gateway_status":
 		return Event{Type: "gateway_status", Timestamp: event.Timestamp}, true
+	case "gateway_health":
+		// Health contains only public-facing state and a check timestamp.
+		return event, true
 	default:
 		return Event{}, false
 	}

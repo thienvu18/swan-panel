@@ -98,7 +98,8 @@ test('global header shows no SSE health pill while Logs keeps stream feedback in
   assert.doesNotMatch(headerUsage, /isRealtimeConnected=/);
   assert.match(app, /<SystemLogsPage isRealtimeConnected=\{isConnected\}/);
   assert.match(logs, /isRealtimeConnected \? t\('logs\.live_events'\)/);
-  assert.match(sidebar, /gateway_status/);
+  assert.match(sidebar, /<GatewayStatus \/>/);
+  assert.match(header, /<GatewayStatus compact \/>/);
 });
 
 test('Dashboard reports unavailable sessions instead of false zero when gateway runtime is down', () => {

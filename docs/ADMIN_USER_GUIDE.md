@@ -83,7 +83,7 @@ The **Dashboard** serves as the mission-critical cockpit for network operations 
 1. **Active Sessions:** Number of concurrent established IPsec security associations (SAs).
 2. **Total Devices:** Total enrolled endpoints with active X.509 certificates.
 3. **Total Users:** Registered directory users across local database and OIDC federations.
-4. **Gateway Status:** Live status indicator receiving heartbeats over Server-Sent Events (`/api/realtime/stream`).
+4. **Gateway Status:** Verified VPN health: Online (running with settings applied), Degraded (running but requiring attention), Offline (confirmed stopped) or Unknown (insufficient recent evidence). The server checks every 15 seconds; information older than 45 seconds becomes Unknown. On desktop the indicator is in the sidebar footer; on mobile it is in the header. Hover or tap to see the last check time. This status does not prove end-to-end client connectivity.
 
 ### 3.2. Active Tunnels Table & Instant Actions
 The table displays real-time parameters streamed directly from `charon.vici`:
@@ -360,11 +360,13 @@ Filter the live stream by clicking the chips: `ALL`, `INFO`, `WARN`, or `ERROR` 
 ## 12. ADMINISTRATIVE TROUBLESHOOTING & FAQ
 
 ### 12.1. Gateway Health Check
-Query the unauthenticated health endpoint:
+First check whether the SwanPanel web service is reachable. The unauthenticated endpoint below checks the application, **not** VPN readiness:
 ```bash
 curl -i http://localhost:8080/api/health
 # Expected: HTTP 200 {"service":"SwanPanel","status":"healthy"}
 ```
+
+Sign in to SwanPanel to check the Gateway indicator and its last verified time. If it is **Degraded**, inspect **Server Settings > Gateway apply status** and retry a pending apply when appropriate. If it is **Unknown**, check connectivity and wait for a fresh verification rather than assuming the VPN is stopped. **Offline** means the VPN service has been confirmed stopped. The authenticated `GET /api/gateway/health` endpoint provides the same evidence-based state for diagnostics.
 
 ### 12.2. Checking strongSwan Daemon Status via VICI
 Verify that the strongSwan daemon is active inside the container or host:
@@ -573,7 +575,7 @@ Eliminate noise and isolate critical security anomalies within the live socket c
 
 ---
 
-## Gateway Settings (Go 1.27.4 / P1 hardening)
+## Gateway Settings & Advanced Operations
 
 The **Server Settings** page has three tabs:
 
@@ -588,7 +590,7 @@ An administrator can see a distinct unsaved-edit warning, the **saved revision**
 ### Operational notes
 
 - **Recommended deployment:** Docker Compose all-in-one, with its own strongSwan and persistent `/etc/swanctl` volume. Save `JWT_SECRET` in `.env` before `docker compose up -d`; keep that file and the database/PKI volumes across upgrades.
-- **Optional host strongSwan:** An explicit Compose override uses host networking so VICI, XFRM, DNS gateway VIPs, nftables and NAT operate in one namespace. The firewall only drops/clamps IPsec traffic from enrolled SwanPanel VIPs (including revoked identities), not every host IPsec packet. Do not overlap another VPN's VIP ranges, and check host DNS/API/IKE ports, kernel forwarding and `/etc/swanctl` before switching. On hosts where Docker daemon runs, Docker's default `iptables -P FORWARD DROP` will drop forwarded VPN traffic unless permitted in Docker's dedicated `DOCKER-USER` chain (`sudo iptables -I DOCKER-USER 1 -s <VPN_SUBNET> -j ACCEPT` and `sudo iptables -I DOCKER-USER 2 -d <VPN_SUBNET> -j ACCEPT`). Host daemon Start/Stop/Restart remains unavailable in the container UI; live connection configuration and session actions continue through VICI.
+- **Optional host strongSwan:** An explicit Compose override uses host networking so VICI, XFRM, DNS gateway VIPs, nftables and NAT operate in one namespace. The firewall only drops/clamps IPsec traffic from enrolled SwanPanel VIPs (including revoked identities), not every host IPsec packet. Do not overlap another VPN's VIP ranges, and check host DNS/API/IKE ports, kernel forwarding and `/etc/swanctl` before switching. When Docker uses the iptables backend with `FORWARD DROP`, SwanPanel maintains an owned `SWANPANEL-FWD` chain and `DOCKER-USER` jump. Only enrolled device VIPs with an authorized Zero-Trust mark may pass; do not add broad subnet-wide `ACCEPT` rules. This integration fails closed on unsupported Docker firewall configurations. Host daemon Start/Stop/Restart remains unavailable in the container UI; live connection configuration and session actions continue through VICI.
 - Use **Go 1.27.4** for building. The Docker and devcontainer build images are pinned to that patch version.
 - `STRONGSWAN_SYSTEMD_UNIT` can override the default `strongswan` unit name on distributions using another systemd unit.
 - SwanPanel writes its connection/pool fragment to `/etc/swanctl/conf.d/swanpanel-gateway.conf` (override with `SWANPANEL_SWANCTL_FILE` only if the daemon is configured to include that location). This file and strongSwan credentials must be accessible by the same daemon. The Linux installer installs a `strongswan.service` restart hook to load all persisted connections. The official Docker Compose stack persists `/etc/swanctl` in its own named volume. The host-daemon override bind-mounts the host `/etc/swanctl` and the live `/run` directory (read-only) at `/host-run`; bind-mounting just the VICI socket file would retain a stale socket inode after an external daemon restart.
