@@ -270,8 +270,8 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
       <AndroidNativeSetupDialog isOpen={androidDevice !== null} onClose={() => setAndroidDevice(null)}
         deviceId={androidDevice?.id || ''} hostname={androidDevice?.hostname || ''} />
       {/* Subnav & Action */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex border subtle-border rounded-lg p-0.5 surface-header text-xs">
+      <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap self-start lg:self-auto max-w-full border subtle-border rounded-lg p-0.5 surface-header text-xs">
           <button
             onClick={() => setActiveSubView('devices')}
             className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
@@ -290,8 +290,8 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
           </button>
         </div>
 
-        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 w-full min-w-0 sm:w-auto sm:max-w-sm sm:ml-auto">
-          <div className="relative w-full">
+        <div className="flex flex-col sm:flex-row items-stretch gap-2 w-full min-w-0 lg:max-w-sm lg:ml-auto">
+          <div className="relative flex-1 min-w-0">
             <Search className="w-3.5 h-3.5 text-subtle absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -303,7 +303,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
           </div>
           <button
             onClick={() => (activeSubView === 'devices' ? setIsAddDeviceOpen(true) : setIsAddGroupOpen(true))}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs shrink-0"
+            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs text-xs shrink-0 whitespace-nowrap w-full sm:w-auto"
           >
             <Plus className="w-3.5 h-3.5" />
             {activeSubView === 'devices' ? t('resources.add_device') : t('resources.add_group')}
@@ -488,7 +488,7 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
       {activeSubView === 'groups' && (
         <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left font-mono text-xs min-w-[600px]">
+            <table className="w-full text-left font-mono text-xs min-w-[720px]">
               <thead className="border-b subtle-border surface-header text-subtle font-sans font-semibold text-[11px]">
                 <tr>
                   <th className="py-2.5 px-3.5">{t('resources.resource_group')}</th>
@@ -537,8 +537,8 @@ export const ResourcesPage: React.FC<ResourcesPageProps> = ({ isAdmin }) => {
                           </div>
                         </td>
                         <td className="py-2.5 px-3.5">
-                          <div className="w-36 font-sans">
-                            <div className="flex items-center justify-between text-[10px] mb-1">
+                          <div className="w-48 font-sans">
+                            <div className="flex items-center justify-between gap-3 text-[10px] mb-1 whitespace-nowrap tabular-nums">
                               <span className="font-mono font-medium text-slate-900 dark:text-white">{t('resources.leased_amount', { amount: displayedPercent })}</span>
                               <span className="text-dim">{enrolled} / {totalCap.toLocaleString()}</span>
                             </div>

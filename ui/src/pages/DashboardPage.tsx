@@ -22,7 +22,7 @@ interface SessionInfo {
 }
 
 interface DashboardStats {
-  active_sessions: number;
+  active_sessions: number | null;
   total_devices: number;
   total_users: number;
   pending_users: number;
@@ -52,7 +52,7 @@ export const DashboardPage: React.FC<{ isAdmin: boolean; currentUserID: string }
   });
 
   const stats = statsData?.stats || {
-    active_sessions: 0,
+    active_sessions: null,
     total_devices: 0,
     total_users: 0,
     pending_users: 0,
@@ -183,10 +183,12 @@ export const DashboardPage: React.FC<{ isAdmin: boolean; currentUserID: string }
           <div className="border subtle-border rounded-xl p-4 surface-card flex flex-col justify-between shadow-xs">
             <span className="text-subtle font-medium text-xs">{t('dashboard.active_sessions')}</span>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-bold font-mono text-status-success">
-                {isStatsLoading ? '…' : isStatsError ? '—' : stats.active_sessions}
+              <span className={`text-2xl font-bold font-mono ${stats.active_sessions === null || isStatsError ? 'text-subtle' : 'text-status-success'}`}>
+                {isStatsLoading ? '…' : isStatsError || stats.active_sessions === null ? '—' : stats.active_sessions}
               </span>
-              <span className="text-[10px] text-status-success font-mono">{t('dashboard.live_sessions_caption')}</span>
+              {!isStatsLoading && <span className={`text-[10px] font-mono ${stats.active_sessions === null || isStatsError ? 'text-subtle' : 'text-status-success'}`}>
+                {isStatsError || stats.active_sessions === null ? t('common.unavailable') : t('dashboard.live_sessions_caption')}
+              </span>}
             </div>
           </div>
 

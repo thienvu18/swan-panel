@@ -178,13 +178,20 @@ This document records quality assurance audits, discovered defects, regression e
   - `12_modal_add_rule_device_select_open.png` (EN/VI): Dropdown opens displaying real devices (`alice-pixel-8 (10.99.1.10)`).
 * **Status:** RESOLVED & VERIFIED across all 16 captures.
 
+### [SWAN-BUG-016] (RESOLVED & VERIFIED) — Vietnamese sidebar navigation item "Tài nguyên & Thiết bị" wraps awkwardly
+* **Severity:** Medium (P2 — Visual / Layout Defect)
+* **Component:** `ui/src/components/Sidebar.tsx` / `ui/src/locales/vi.json`
+* **Symptom:** In the Vietnamese locale with sidebar width fixed at `w-56` (14rem / 224px), the navigation item for Resources ("Tài nguyên & Thiết bị") alongside the enrolled devices count badge wrapped the final syllable ("bị") onto an awkward second line when active/selected (due to `font-semibold` text metrics, particularly evident in Light mode). This increased the navigation button height unexpectedly and broke vertical alignment with the remaining menu items.
+* **Resolution & Verification:** Refined `nav.resources_short` to `"Tài nguyên"` in `Sidebar.tsx` (`ui/src/components/Sidebar.tsx`), preserving a clean single-line layout and maintaining uniform row heights across all themes, viewports (1440px, 768px, 320px), and zoom levels (200%). Re-captured and visually verified across all 76 Vietnamese desktop captures (`vi/light/` and `vi/dark/`) and responsive captures (`responsive/sidebar_320px_mobile_open_vi.png`, `responsive/sidebar_zoom200_vi.png`).
+* **Status:** RESOLVED & VERIFIED.
+
 ## 2A. UI/UX IMPROVEMENT BACKLOG (SCREENSHOT REVIEW, 2026-11-18)
 
 **Evidence baseline:** 25 named scenes × EN/VI × dark/light = 100 desktop screenshots under docs/assets/images/user-guide. Screenshots capture static states, not mobile layouts or successful form submissions. Priority describes impact, not proof that an interaction is broken.
 
 | Recommendation | Priority | Problem / proposed change |
 | :--- | :---: | :--- |
-| **SWAN-UX-001 — Localization-safe header layout** | P2 | **RESOLVED & VERIFIED.** The gateway status occupies its own dedicated sidebar header row below the brand title (`mt-1.5 pl-10`), completely isolated from the language/theme switch controls; the mobile close button shares the lower row. Verified across 1440px desktop (`vi/light/02_dashboard.png`, `vi/dark/02_dashboard.png`), 320px mobile (`responsive/sidebar_320px_mobile_open_vi.png`, `en.png`), and desktop 200% zoom (`responsive/sidebar_zoom200_vi.png`). |
+| **SWAN-UX-001 — Localization-safe header layout** | P2 | **RESOLVED & RECHECKED (2026-11-20).** The sidebar brand row contains only the title and language/theme controls. The redundant gateway status below the title was removed; a single translated, VICI-backed Gateway status remains in the footer, without the hard-coded `IKEv2` footer label. Mobile close control has its own row. Rechecked in desktop EN/VI and responsive `sidebar_320px_mobile_open_vi.png` / `sidebar_zoom200_vi.png`. |
 | **SWAN-UX-002 — Consistent translated microcopy** | P2 | Audit labels, search placeholders, empty states, ownership buttons, status badges, tooltips and plural counts; distinguish intentional tokens (CNAME, IKEv2, OIDC) from English-only UI strings. Closes BUG-004/005. |
 | **SWAN-UX-003 — Light-theme contrast and focus states** | P2 | **Contrast screenshot retest completed** under BUG-014 (selected Subject Type, DENY row/filter, SSO, Users and DNS modal in EN/VI light). The contrast defects are resolved. Separate keyboard/screen-reader and true-browser 200% reflow behavior remain ongoing UX checks; do not reopen BUG-014 without new evidence. |
 | **SWAN-UX-004 — Human-readable telemetry** | P3 | Replace raw durations like “8100s” with “2h 15m” plus raw detail on hover; show telemetry “Unavailable” rather than zero when source lacks data. Screens 02_dashboard and 18_system_logs. |
@@ -220,6 +227,12 @@ The v1.0.0 accepted baseline and its screenshot evidence above are unchanged. Th
 
 P1 UX-008 and previously resolved UX-001/006/011/016 remain closed; no P1 UI defects were reopened. BUG-002 remains a test-harness note, not a SwanPanel product defect. The specific verification matrix for v1.0.1 is in [V1.0.1_UI_QA.md](V1.0.1_UI_QA.md).
 
+### 2026-11-20 final responsive polish checkpoint
+
+- **P3 — Users tabs at 320px:** Fixed uneven wrapping by stacking two full-width segmented buttons below `sm`; the tab pair remains horizontal from `sm` onward. Visual recheck pending for `responsive/users_320px.png`.
+- **P3 — Users Local Auth badge at 768px / 200% zoom:** Prevented word wrapping with an inline-flex, no-wrap badge. Visual recheck pending for `responsive/users_768px.png` and `responsive/users_zoom200.png`.
+- **No other UI pages changed in this checkpoint.** The 196-image capture collected before these two edits remains historical evidence; only the three responsive Users captures need replacement. Frontend test and i18n results are maintained in the QA matrix.
+
 ### Per-screen visual review index
 
 Each row applies to all four EN/VI × dark/light captures of the filename unless noted. “No specific visual defect” means no issue visible **in this static screenshot**, not an end-to-end pass.
@@ -228,7 +241,7 @@ Each row applies to all four EN/VI × dark/light captures of the filename unless
 | :--- | :--- |
 | 01_login_page | Login layout orderly; investigate light SSO control contrast (UX-003). |
 | 01b_setup_token | Light-suite capture appears dark; verify theme/capture state (BUG-011). |
-| 02_dashboard | Header overlap resolved on separate row (UX-001 verified). Sessions table keyboard-scrollable overflow, hint, and keyboard focus verified (UX-016 verified); raw session duration remains UX-004. |
+| 02_dashboard | Sidebar has one Gateway status in the footer, with no duplicated header indicator (UX-001 rechecked). Sessions table keyboard-scrollable overflow, hint, and keyboard focus verified (UX-016); duration formatting updated under UX-004. |
 | 02b_dashboard_user_view | Admin-scoped list shown as personal devices; untranslated state badges (BUG-006/005). |
 | 03_resources_subnets | Positive occupancy rendered 0%; residual English columns/counters (BUG-008/005). |
 | 04_modal_add_subnet | Modal fits desktop; English examples remain in VI and no visible CIDR assistance (UX-002/009). |

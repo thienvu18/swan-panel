@@ -182,6 +182,9 @@ func TestLoginAndProtectedStatsFlow(t *testing.T) {
 	if !ok || stats["gateway_status"] != "offline" {
 		t.Errorf("Stats payload incorrect: %v", statsRes)
 	}
+	if stats["active_sessions"] != nil {
+		t.Errorf("Unavailable gateway must report unknown, not zero sessions: %v", stats["active_sessions"])
+	}
 }
 
 func TestOIDCProvidersCRUD(t *testing.T) {

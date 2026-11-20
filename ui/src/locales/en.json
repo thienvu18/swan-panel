@@ -35,6 +35,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "resources": "Resources",
+    "resources_short": "Resources",
     "access_rules": "Access Rules",
     "users": "Users",
     "dns_engine": "DNS Engine",
@@ -173,7 +174,7 @@
     "no_active_sessions": "No active VPN sessions currently.",
     "native_profiles": "Native Profiles",
     "requires_review": "Requires Review",
-    "auto_refresh_hint": "Auto-refreshing via SSE (Zero Downtime)",
+    "auto_refresh_hint": "Updates automatically",
     "scroll_table_hint": "Scroll the sessions table horizontally to see all columns.",
     "view_mode": "View Mode",
     "no_user_devices": "No devices registered under your profile. Visit Resources to provision a new profile.",

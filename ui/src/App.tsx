@@ -207,7 +207,6 @@ const AppShell: React.FC = () => {
           <Header
             title={titles[currentTab] || t('nav.dashboard')}
             onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-            isRealtimeConnected={isConnected}
             actionButton={contextualBtn}
           />
 

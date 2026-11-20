@@ -205,12 +205,12 @@ export const OIDCPage: React.FC = () => {
 
       {/* Providers Table */}
       <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
-        <div className="p-3 border-b subtle-border flex flex-wrap items-center justify-between gap-3">
+        <div className="p-3 border-b subtle-border flex flex-col items-stretch gap-3 lg:flex-row lg:items-center lg:justify-between">
           <span className="font-semibold text-xs text-slate-900 dark:text-white">
             {t('oidc.title')} ({providers.length})
           </span>
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 w-full min-w-0 sm:w-auto sm:max-w-sm sm:ml-auto">
-            <div className="relative w-full">
+          <div className="flex flex-col sm:flex-row items-stretch gap-2 w-full min-w-0 lg:max-w-sm lg:ml-auto">
+            <div className="relative flex-1 min-w-0">
               <Search className="w-3.5 h-3.5 text-subtle absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -225,7 +225,7 @@ export const OIDCPage: React.FC = () => {
               data-action="add-oidc"
               onClick={() => { clearForm(); setIsAddOpen(true); }}
               disabled={!redirectReady}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs shrink-0"
+              className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs text-xs shrink-0 whitespace-nowrap w-full sm:w-auto"
             >
               <Plus className="w-3.5 h-3.5" />
               {t('oidc.add_provider')}

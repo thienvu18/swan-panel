@@ -60,11 +60,15 @@ test('Access rule subject label and placeholder follow selected subject type in 
   assert.match(access, /t\(subjectField\.placeholder\)/);
 });
 
-test('Sidebar gateway status does not share a row with language and theme controls', () => {
+test('Sidebar shows real gateway status only in the footer without placeholder protocol or user role', () => {
   const sidebar = readFileSync(new URL('../src/components/Sidebar.tsx', import.meta.url), 'utf8');
-  assert.match(sidebar, /Keep translated gateway status on a separate row/);
-  assert.match(sidebar, /min-w-0 flex items-center gap-1 text-\[10px\].*title=\{gatewayStatusText\}/);
-  assert.match(sidebar, /<span className="truncate">\{gatewayStatusText\}<\/span>/);
+  const backend = readFileSync(new URL('../../internal/api/handlers/dashboard.go', import.meta.url), 'utf8');
+  assert.match(backend, /vici\.GetClient\(""\)\.ListSAs\(ctx\)/);
+  assert.match(sidebar, /role="status" title=\{gatewayStatusText\}/);
+  assert.equal((sidebar.match(/<span className="truncate">\{gatewayStatusText\}<\/span>/g) || []).length, 1);
+  assert.doesNotMatch(sidebar, /IKEv2/);
+  assert.doesNotMatch(sidebar, /currentUser\.name \|\| 'Admin'/);
+  assert.match(sidebar, /currentUser\.name \|\| currentUser\.email \|\| t\('common\.unavailable'\)/);
   assert.match(sidebar, /aria-label=\{t\('common\.close'\)\}/);
 });
 

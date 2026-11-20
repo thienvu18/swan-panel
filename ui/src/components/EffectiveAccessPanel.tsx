@@ -73,7 +73,7 @@ export const EffectiveAccessPanel: React.FC<{ devices: DeviceOption[] }> = ({ de
             {currentDevices.map(device => <option key={device.id} value={device.id}>{device.hostname}</option>)}
           </select>
         </label>
-        <form className="md:col-span-2 flex gap-2 items-end" onSubmit={event => {
+        <form className="md:col-span-2 flex flex-col gap-2 items-stretch sm:flex-row sm:items-end" onSubmit={event => {
           event.preventDefault();
           if (destinationValid) setSubmittedDestination(destination.trim());
         }}>
@@ -86,7 +86,7 @@ export const EffectiveAccessPanel: React.FC<{ devices: DeviceOption[] }> = ({ de
               <span role="alert" className="block text-[11px] text-status-danger">{t('effective_policy.invalid_destination')}</span>}
           </label>
           <button type="submit" disabled={!deviceId || !destinationValid}
-            className="bg-blue-600 hover:bg-blue-500 rounded-lg px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 flex items-center gap-1.5">
+            className="bg-blue-600 hover:bg-blue-500 rounded-lg px-3 py-2.5 sm:py-2 text-xs font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-1.5 whitespace-nowrap w-full sm:w-auto">
             <Search className="w-3.5 h-3.5" aria-hidden="true" />
             {t('effective_policy.check')}
           </button>

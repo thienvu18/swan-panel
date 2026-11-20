@@ -35,6 +35,7 @@
   "nav": {
     "dashboard": "Bảng điều khiển",
     "resources": "Tài nguyên & Thiết bị",
+    "resources_short": "Tài nguyên",
     "access_rules": "Luật phân quyền",
     "users": "Người dùng",
     "dns_engine": "Máy chủ DNS",
@@ -173,7 +174,7 @@
     "no_active_sessions": "Hiện không có phiên VPN nào đang hoạt động.",
     "native_profiles": "Cấu hình gốc",
     "requires_review": "Cần phê duyệt",
-    "auto_refresh_hint": "Tự động cập nhật qua SSE (Zero Downtime)",
+    "auto_refresh_hint": "Tự động cập nhật",
     "scroll_table_hint": "Cuộn ngang bảng phiên kết nối để xem tất cả các cột.",
     "view_mode": "Chế độ xem",
     "no_user_devices": "Chưa có thiết bị nào được đăng ký cho bạn. Truy cập mục Tài nguyên để cấp phát cấu hình mới.",

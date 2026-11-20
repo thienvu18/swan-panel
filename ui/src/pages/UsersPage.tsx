@@ -263,11 +263,11 @@ export const UsersPage: React.FC = () => {
         </div>
       )}
       {/* Subnav & Action */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex border subtle-border rounded-lg p-0.5 surface-header text-xs">
+      <div className="flex flex-col items-stretch gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col sm:flex-row self-stretch sm:self-start lg:self-auto max-w-full border subtle-border rounded-lg p-0.5 surface-header text-xs">
           <button
             onClick={() => setActiveSubView('directory')}
-            className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+            className={`w-full sm:w-auto text-center px-3 py-1.5 rounded-md font-medium transition-colors ${
               activeSubView === 'directory' ? 'bg-blue-600 text-white shadow-xs' : 'text-subtle hover:text-current'
             }`}
           >
@@ -275,7 +275,7 @@ export const UsersPage: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveSubView('usergroups')}
-            className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+            className={`w-full sm:w-auto text-center px-3 py-1.5 rounded-md font-medium transition-colors ${
               activeSubView === 'usergroups' ? 'bg-blue-600 text-white shadow-xs' : 'text-subtle hover:text-current'
             }`}
           >
@@ -283,8 +283,8 @@ export const UsersPage: React.FC = () => {
           </button>
         </div>
 
-        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 min-w-0 sm:max-w-lg sm:ml-auto">
-          <div className="relative w-full">
+        <div className="flex flex-col sm:flex-row items-stretch gap-2 w-full min-w-0 lg:max-w-lg lg:ml-auto">
+          <div className="relative flex-1 min-w-0">
             <Search className="w-3.5 h-3.5 text-subtle absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -295,7 +295,7 @@ export const UsersPage: React.FC = () => {
             />
           </div>
           <button onClick={() => activeSubView === 'directory' ? setIsAddUserOpen(true) : setIsAddGroupOpen(true)}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs text-xs shrink-0">
+            className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs text-xs shrink-0 whitespace-nowrap w-full sm:w-auto">
             <Plus className="w-4 h-4" />
             {activeSubView === 'directory' ? t('users.add_user') : t('users.add_group')}
           </button>
@@ -437,7 +437,7 @@ export const UsersPage: React.FC = () => {
                         </td>
                         <td className="py-2.5 px-3.5">
                           {u.auth_type === 'local' ? (
-                            <span className="border subtle-border bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                            <span className="inline-flex items-center whitespace-nowrap border subtle-border bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded text-[10px] font-mono">
                               {t('users.local_auth')}
                             </span>
                           ) : (
