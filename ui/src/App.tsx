@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AccountSecurityModal } from './components/AccountSecurityModal';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ResourcesPage } from './pages/ResourcesPage';
@@ -12,11 +13,12 @@ import { DNSEnginePage } from './pages/DNSEnginePage';
 import { OIDCPage } from './pages/OIDCPage';
 import { ServerSettingsPage } from './pages/ServerSettingsPage';
 import { SystemLogsPage } from './pages/SystemLogsPage';
+import { AuditTrailPage } from './pages/AuditTrailPage';
 import { useRealtime } from './hooks/useRealtime';
 import { ToastProvider } from './components/ToastProvider';
 import { CurrentUser } from './types';
 
-const VALID_TABS = ['dashboard', 'resources', 'access', 'users', 'dns', 'oidc', 'server', 'logs'] as const;
+const VALID_TABS = ['dashboard', 'resources', 'access', 'users', 'dns', 'oidc', 'server', 'audit', 'logs'] as const;
 
 const AppShell: React.FC = () => {
   const { t } = useTranslation();
@@ -43,6 +45,7 @@ const AppShell: React.FC = () => {
   });
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSecurityOpen, setIsSecurityOpen] = useState(false);
   const [isDark, setIsDark] = useState(() => {
     return localStorage.getItem('theme') !== 'light';
   });
@@ -127,7 +130,7 @@ const AppShell: React.FC = () => {
     if (!currentUser?.is_admin && !["dashboard", "resources"].includes(tab)) return;
     setCurrentTab(tab);
     window.location.hash = `#/${tab}`;
-    if (tab !== 'server') {
+    if (tab !== 'server' && tab !== 'audit') {
       setContextualBtn(null);
     }
   };
@@ -161,6 +164,7 @@ const AppShell: React.FC = () => {
     dns: t('nav.dns_engine'),
     oidc: t('nav.oidc_providers'),
     server: t('nav.server_settings'),
+    audit: t('nav.audit_trail'),
     logs: t('nav.system_logs'),
   };
 
@@ -180,6 +184,8 @@ const AppShell: React.FC = () => {
         return <OIDCPage />;
       case 'server':
         return <ServerSettingsPage onRegisterSaveButton={setContextualBtn} />;
+      case 'audit':
+        return <AuditTrailPage onRegisterHeaderAction={setContextualBtn} />;
       case 'logs':
         return <SystemLogsPage isRealtimeConnected={isConnected} />;
       default:
@@ -199,7 +205,14 @@ const AppShell: React.FC = () => {
           isDark={isDark}
           onToggleTheme={() => setIsDark(!isDark)}
           currentUser={currentUser}
+          onOpenSecurity={() => setIsSecurityOpen(true)}
           onLogout={handleLogout}
+        />
+
+        <AccountSecurityModal
+          isOpen={isSecurityOpen}
+          onClose={() => setIsSecurityOpen(false)}
+          currentUser={currentUser}
         />
 
         {/* Main Viewport */}

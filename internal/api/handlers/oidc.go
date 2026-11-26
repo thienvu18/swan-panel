@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/config"
 	"github.com/swan-panel/swan-panel/internal/db"
 )
@@ -92,6 +93,14 @@ func (h *OIDCHandler) CreateProvider(c *gin.Context) {
 	}
 
 	slog.Info("New OIDC provider configured successfully", "id", provider.ID, "name", provider.Name)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "oidc.provider.created",
+		Severity:   audit.SeverityInfo,
+		TargetType: "oidc_provider",
+		TargetID:   provider.ID,
+		Summary:    "OIDC provider created: " + provider.Name,
+		Details:    map[string]any{"provider_type": provider.ProviderType},
+	})
 	c.JSON(http.StatusCreated, gin.H{"provider": provider})
 }
 
@@ -187,6 +196,14 @@ func (h *OIDCHandler) UpdateProvider(c *gin.Context) {
 	}
 
 	slog.Info("OIDC provider updated", "id", id)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "oidc.provider.updated",
+		Severity:   audit.SeverityInfo,
+		TargetType: "oidc_provider",
+		TargetID:   provider.ID,
+		Summary:    "OIDC provider updated: " + provider.Name,
+		Details:    map[string]any{"is_active": provider.IsActive},
+	})
 	c.JSON(http.StatusOK, gin.H{"provider": provider})
 }
 
@@ -209,6 +226,13 @@ func (h *OIDCHandler) DeleteProvider(c *gin.Context) {
 	}
 
 	slog.Info("OIDC provider deleted", "id", id)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "oidc.provider.deleted",
+		Severity:   audit.SeverityWarning,
+		TargetType: "oidc_provider",
+		TargetID:   id,
+		Summary:    "OIDC provider deleted: " + id,
+	})
 	c.JSON(http.StatusOK, gin.H{"message": "Provider deleted successfully"})
 }
 

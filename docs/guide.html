@@ -118,6 +118,7 @@
           <li class="doc-nav-item"><a href="#admin-dns" class="doc-nav-link" data-i18n="guide_sidebar.admin_dns">Split-DNS & MagicDNS</a></li>
           <li class="doc-nav-item"><a href="#admin-oidc" class="doc-nav-link" data-i18n="guide_sidebar.admin_oidc">OIDC SSO Providers</a></li>
           <li class="doc-nav-item"><a href="#admin-settings" class="doc-nav-link" data-i18n="guide_sidebar.admin_settings">Server Settings & VICI</a></li>
+          <li class="doc-nav-item"><a href="#admin-audit" class="doc-nav-link" data-i18n="guide_sidebar.admin_audit">Immutable Audit & Alerts</a></li>
           <li class="doc-nav-item"><a href="#admin-logs" class="doc-nav-link" data-i18n="guide_sidebar.admin_logs">System Audit Logs</a></li>
         </ul>
       </div>
@@ -291,6 +292,12 @@ vpn.yourcompany.com {
           <img src="assets/images/user-guide/en/light/01_login_page.png" class="light-only" alt="SwanPanel Login Screen" loading="lazy">
           <figcaption data-i18n="guide.caption_login">Figure 2.1: SwanPanel administrative authentication interface with brute-force rate-limiting.</figcaption>
         </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/01c_login_mfa_challenge.png" class="dark-only" alt="Two-Factor Authentication Challenge" loading="lazy">
+          <img src="assets/images/user-guide/en/light/01c_login_mfa_challenge.png" class="light-only" alt="Two-Factor Authentication Challenge" loading="lazy">
+          <figcaption data-i18n="guide.caption_login_mfa">Figure 2.1c: Two-factor authentication challenge verifying rolling 6-digit TOTP or single-use recovery code.</figcaption>
+        </figure>
       </section>
 
       <section id="admin-dashboard" tabindex="-1">
@@ -379,6 +386,30 @@ vpn.yourcompany.com {
           <img src="assets/images/user-guide/en/light/09_user_groups.png" class="light-only" alt="User Groups" loading="lazy">
           <figcaption data-i18n="guide.caption_groups">Figure 2.8: User Group management for policy mapping and access scoping.</figcaption>
         </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/30_confirm_reset_mfa.png" class="dark-only" alt="Confirm Reset 2FA Modal" loading="lazy">
+          <img src="assets/images/user-guide/en/light/30_confirm_reset_mfa.png" class="light-only" alt="Confirm Reset 2FA Modal" loading="lazy">
+          <figcaption data-i18n="guide.caption_reset_mfa_confirm">Figure 2.7b: Administrator reset 2FA safety dialog clearing lost authenticator enrollments.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/27_modal_account_security_setup.png" class="dark-only" alt="Account Security TOTP Setup" loading="lazy">
+          <img src="assets/images/user-guide/en/light/27_modal_account_security_setup.png" class="light-only" alt="Account Security TOTP Setup" loading="lazy">
+          <figcaption data-i18n="guide.caption_account_security_setup">Figure 2.7c: Self-service TOTP enrollment modal with QR code and Base32 secret key.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/28_modal_account_security_backup_codes.png" class="dark-only" alt="Emergency Backup Codes" loading="lazy">
+          <img src="assets/images/user-guide/en/light/28_modal_account_security_backup_codes.png" class="light-only" alt="Emergency Backup Codes" loading="lazy">
+          <figcaption data-i18n="guide.caption_account_security_backup_codes">Figure 2.7d: Single-use emergency recovery codes grid with 1-click download.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/29_modal_account_security_active.png" class="dark-only" alt="Active Account Security" loading="lazy">
+          <img src="assets/images/user-guide/en/light/29_modal_account_security_active.png" class="light-only" alt="Active Account Security" loading="lazy">
+          <figcaption data-i18n="guide.caption_account_security_active">Figure 2.7e: Active two-factor protection state with code regeneration controls.</figcaption>
+        </figure>
       </section>
 
       <section id="admin-rules" tabindex="-1">
@@ -466,6 +497,49 @@ vpn.yourcompany.com {
           <img src="assets/images/user-guide/en/dark/21_ca_rotate_confirm.png" class="dark-only" alt="CA Rotation Confirmation Dialog" loading="lazy">
           <img src="assets/images/user-guide/en/light/21_ca_rotate_confirm.png" class="light-only" alt="CA Rotation Confirmation Dialog" loading="lazy">
           <figcaption data-i18n="guide.caption_ca_rotate_confirm">Figure 2.15c: CA rotation safety confirmation dialog verifying zero active devices and revocations before key rollover.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/17d_server_settings_backup.png" class="dark-only" alt="Encrypted Backup & Restore" loading="lazy">
+          <img src="assets/images/user-guide/en/light/17d_server_settings_backup.png" class="light-only" alt="Encrypted Backup & Restore" loading="lazy">
+          <figcaption data-i18n="guide.caption_backup">Figure 2.15e: Encrypted disaster recovery backup and restore tab protected by Argon2id and AES-256-GCM.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/26_confirm_restore_backup.png" class="dark-only" alt="Confirm Restore Backup Dialog" loading="lazy">
+          <img src="assets/images/user-guide/en/light/26_confirm_restore_backup.png" class="light-only" alt="Confirm Restore Backup Dialog" loading="lazy">
+          <figcaption data-i18n="guide.caption_restore_confirm">Figure 2.15f: Safety confirmation modal requiring explicit confirmation before restoring encrypted database and PKI archives.</figcaption>
+        </figure>
+      </section>
+
+      <section id="admin-audit" tabindex="-1">
+        <h2 data-i18n="guide.admin_audit_title">Immutable Audit Trail & Webhook Alerts</h2>
+        <p data-i18n="guide.admin_audit_desc">
+          Maintain compliance-grade observability with an append-only cryptographic ledger (SHA-256 hash chaining) and real-time security alerts dispatched to Slack, Telegram, Microsoft Teams, and SIEM webhooks.
+        </p>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/22_audit_trail.png" class="dark-only" alt="Immutable Audit Trail" loading="lazy">
+          <img src="assets/images/user-guide/en/light/22_audit_trail.png" class="light-only" alt="Immutable Audit Trail" loading="lazy">
+          <figcaption data-i18n="guide.caption_audit_trail">Figure 2.15g: Immutable audit trail table with category/severity filter chips, sequence tracking, and CSV/JSONL export.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/23_audit_chain_verified.png" class="dark-only" alt="Cryptographic Hash Chain Verified" loading="lazy">
+          <img src="assets/images/user-guide/en/light/23_audit_chain_verified.png" class="light-only" alt="Cryptographic Hash Chain Verified" loading="lazy">
+          <figcaption data-i18n="guide.caption_audit_verified">Figure 2.15h: 1-click cryptographic hash chain verification validating zero tampered, skipped, or deleted ledger records.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/24_alert_webhooks.png" class="dark-only" alt="Security Alert Webhooks" loading="lazy">
+          <img src="assets/images/user-guide/en/light/24_alert_webhooks.png" class="light-only" alt="Security Alert Webhooks" loading="lazy">
+          <figcaption data-i18n="guide.caption_alert_webhooks">Figure 2.15i: Outbound security alert webhooks with live delivery tracking and instant test dispatching.</figcaption>
+        </figure>
+
+        <figure class="doc-figure">
+          <img src="assets/images/user-guide/en/dark/25_modal_add_webhook.png" class="dark-only" alt="Add Webhook Modal" loading="lazy">
+          <img src="assets/images/user-guide/en/light/25_modal_add_webhook.png" class="light-only" alt="Add Webhook Modal" loading="lazy">
+          <figcaption data-i18n="guide.caption_modal_add_webhook">Figure 2.15j: Webhook configuration modal supporting Slack, Telegram, Microsoft Teams, and Generic HTTPS endpoints.</figcaption>
         </figure>
       </section>
 

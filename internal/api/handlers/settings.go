@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/pki"
 	"github.com/swan-panel/swan-panel/internal/policy"
@@ -133,6 +134,14 @@ func (h *SettingsHandler) UpdateStrongswanSettings(c *gin.Context) {
 		"mobike", req.MobikeEnabled,
 		"force_encap_natt", req.ForceEncapNATT,
 	)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "gateway.settings.updated",
+		Severity:   audit.SeverityInfo,
+		TargetType: "gateway",
+		TargetID:   "1",
+		Summary:    "Gateway settings updated (endpoint=" + req.ServerEndpoint + ")",
+		Details:    map[string]any{"server_endpoint": req.ServerEndpoint, "cipher_preset": req.CipherPreset},
+	})
 
 	// Reissue a gateway certificate only when its identity changes/approaches expiry,
 	// and synchronize device-specific connections, never the old wildcard tunnel.

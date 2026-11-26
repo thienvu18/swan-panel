@@ -8,7 +8,9 @@ import {
   Users,
   Globe,
   KeyRound,
+  UserLock,
   Settings,
+  ScrollText,
   Terminal,
   Sun,
   Moon,
@@ -26,6 +28,7 @@ interface SidebarProps {
   isDark: boolean;
   onToggleTheme: () => void;
   currentUser?: { name?: string; email?: string; is_admin?: boolean } | null;
+  onOpenSecurity?: () => void;
   onLogout?: () => void;
 }
 
@@ -37,6 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isDark,
   onToggleTheme,
   currentUser,
+  onOpenSecurity,
   onLogout,
 }) => {
   const { t, i18n } = useTranslation();
@@ -80,6 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'dns', label: t('nav.dns_engine'), icon: Globe },
     { id: 'oidc', label: t('nav.oidc_providers'), icon: KeyRound },
     { id: 'server', label: t('nav.server_settings'), icon: Settings },
+    { id: 'audit', label: t('nav.audit_trail'), icon: ScrollText },
     { id: 'logs', label: t('nav.system_logs'), icon: Terminal },
   ].filter(item => currentUser?.is_admin || item.id === "dashboard" || item.id === "resources");
 
@@ -195,16 +200,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <p className="text-[10px] text-subtle truncate font-mono">{currentUser.email}</p>
                   )}
                 </div>
-                {onLogout && (
-                  <button
-                    onClick={onLogout}
-                    className="p-1.5 rounded-lg border subtle-border hover:bg-red-500/10 text-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors shrink-0"
-                    title={t('auth.sign_out')}
-                    aria-label={t('auth.sign_out')}
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                <div className="flex items-center gap-1 shrink-0">
+                  {onOpenSecurity && (
+                    <button
+                      type="button"
+                      onClick={onOpenSecurity}
+                      className="p-1.5 rounded-lg border subtle-border hover:bg-blue-500/10 text-subtle hover:text-accent transition-colors shrink-0"
+                      title={t('mfa.account_security')}
+                      data-tooltip={t('mfa.account_security')}
+                      aria-label={t('mfa.account_security')}
+                    >
+                      <UserLock className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {onLogout && (
+                    <button
+                      onClick={onLogout}
+                      className="p-1.5 rounded-lg border subtle-border hover:bg-red-500/10 text-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors shrink-0"
+                      title={t('auth.sign_out')}
+                      aria-label={t('auth.sign_out')}
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}

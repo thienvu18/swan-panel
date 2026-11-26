@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/pki"
 	"github.com/swan-panel/swan-panel/internal/policy"
@@ -88,6 +89,14 @@ func (h *SettingsHandler) RotateCAIdentity(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": fmt.Sprintf("CA rotation failed: %v", err)})
 		return
 	}
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "gateway.ca.rotated",
+		Severity:   audit.SeverityCritical,
+		TargetType: "ca",
+		TargetID:   manager.CAIdentity().Serial,
+		Summary:    "Root CA rotated: " + name.CommonName,
+		Details:    map[string]any{"common_name": name.CommonName, "organization": req.Organization, "country": req.Country},
+	})
 	// The CA is already rotated; a later apply failure cannot roll it back
 	// safely. Leave durable retry state and tell the UI the operation committed.
 	if err := db.DB.Model(&db.RuntimeApplyState{}).Where("id = ?", 1).Update("status", "pending").Error; err != nil {

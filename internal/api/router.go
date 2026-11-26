@@ -64,6 +64,8 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 	dnsH := handlers.NewDNSHandler()
 	sessH := handlers.NewSessionsHandler()
 	sysH := handlers.NewSystemHandler()
+	auditH := handlers.NewAuditHandler()
+	backupH := handlers.NewBackupHandler(cfg)
 
 	// 1. Public API
 	api := r.Group("/api")
@@ -78,6 +80,7 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 		authGroup.Use(middleware.RateLimit(rate.Limit(5), 10))
 		{
 			authGroup.POST("/login", authH.Login)
+			authGroup.POST("/mfa/verify", authH.VerifyMFALogin)
 			authGroup.GET("/setup/status", handlers.SetupStatus)
 			authGroup.POST("/setup", handlers.SetupAdmin)
 			authGroup.GET("/oidc/providers", oidcH.PublicProviders)
@@ -95,6 +98,11 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 
 			protected.GET("/auth/me", authH.Me)
 			protected.PUT("/auth/password", authH.ChangePassword)
+			protected.GET("/auth/mfa/status", authH.GetMFAStatus)
+			protected.POST("/auth/mfa/setup", authH.SetupMFA)
+			protected.POST("/auth/mfa/enable", authH.EnableMFA)
+			protected.POST("/auth/mfa/disable", authH.DisableMFA)
+			protected.POST("/auth/mfa/backup-codes", authH.RegenerateBackupCodes)
 			protected.GET("/dashboard/stats", dashboardH.GetStats)
 			protected.GET("/gateway/health", dashboardH.GetGatewayHealth)
 
@@ -125,6 +133,7 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 				adminOnly.PUT("/users/:id/role", usersH.ToggleAdminRole)
 				adminOnly.POST("/users/:id/approve", usersH.ApproveUser)
 				adminOnly.POST("/users/:id/reject", usersH.RejectUser)
+				adminOnly.POST("/users/:id/mfa/reset", usersH.ResetUserMFA)
 				adminOnly.DELETE("/users/:id", usersH.DeleteUser)
 				adminOnly.GET("/user-groups", usersH.ListUserGroups)
 				adminOnly.POST("/user-groups", usersH.CreateUserGroup)
@@ -161,6 +170,18 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 				adminOnly.POST("/system/daemon", sysH.ControlDaemon)
 				adminOnly.GET("/system/apply-status", sysH.GetApplyStatus)
 				adminOnly.POST("/system/apply", sysH.RetryApply)
+				adminOnly.POST("/system/backup", backupH.CreateBackup)
+				adminOnly.POST("/system/restore", backupH.RestoreBackup)
+
+				// Immutable Audit Trail & Alert Webhooks
+				adminOnly.GET("/audit-logs", auditH.ListAuditLogs)
+				adminOnly.GET("/audit-logs/verify", auditH.VerifyAuditChain)
+				adminOnly.GET("/audit-logs/export", auditH.ExportAuditLogs)
+				adminOnly.GET("/webhooks", auditH.ListWebhooks)
+				adminOnly.POST("/webhooks", auditH.CreateWebhook)
+				adminOnly.PUT("/webhooks/:id", auditH.UpdateWebhook)
+				adminOnly.DELETE("/webhooks/:id", auditH.DeleteWebhook)
+				adminOnly.POST("/webhooks/:id/test", auditH.TestWebhook)
 			}
 		}
 	}

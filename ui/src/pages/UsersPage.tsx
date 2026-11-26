@@ -2,7 +2,7 @@ import { useToast } from '../components/ToastProvider';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, X, Shield, Trash2, Plus, Users as UsersIcon, Search } from 'lucide-react';
+import { Check, X, Crown, RotateCcwKey, Trash2, Plus, Users as UsersIcon, Search } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
@@ -16,6 +16,7 @@ interface UserItem {
   name: string;
   auth_type: string;
   is_admin: boolean;
+  mfa_enabled?: boolean;
   status: 'PENDING' | 'ACTIVE' | 'SUSPENDED';
   user_groups?: { id: string; name: string }[];
   idp_provider?: { name: string };
@@ -252,6 +253,24 @@ export const UsersPage: React.FC = () => {
     },
   });
 
+  const resetMFAMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch('/api/users/' + encodeURIComponent(id) + '/mfa/reset', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || t('common.error_occurred'));
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success(t('common.operation_saved'));
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
   return (
     <div className="space-y-4">
       {(usersError || groupsError) && (
@@ -395,7 +414,7 @@ export const UsersPage: React.FC = () => {
             <span className="font-semibold text-xs text-subtle">
               {t('users.enrolled_users')} ({activeUsers.length})
             </span>
-            <TableActionLegend actions={[{ icon: Shield, label: t('users.grant_admin') }, { icon: Trash2, label: t('common.delete') }]} />
+            <TableActionLegend actions={[{ icon: Crown, label: t('users.grant_admin') }, { icon: RotateCcwKey, label: t('mfa.reset_user_mfa') }, { icon: Trash2, label: t('common.delete') }]} />
             <div className="border subtle-border rounded-xl overflow-hidden surface-card shadow-xs">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs min-w-[650px]">
@@ -437,9 +456,16 @@ export const UsersPage: React.FC = () => {
                         </td>
                         <td className="py-2.5 px-3.5">
                           {u.auth_type === 'local' ? (
-                            <span className="inline-flex items-center whitespace-nowrap border subtle-border bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded text-[10px] font-mono">
-                              {t('users.local_auth')}
-                            </span>
+                            <div className="inline-flex flex-wrap items-center gap-1.5">
+                              <span className="inline-flex items-center whitespace-nowrap border subtle-border bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                                {t('users.local_auth')}
+                              </span>
+                              {u.mfa_enabled && (
+                                <span className="inline-flex items-center whitespace-nowrap border border-emerald-500/30 bg-emerald-500/10 text-status-success px-1.5 py-0.5 rounded text-[10px] font-semibold">
+                                  {t('mfa.badge_2fa')}
+                                </span>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-subtle">{u.idp_provider?.name || 'OIDC'}</span>
                           )}
@@ -477,8 +503,26 @@ export const UsersPage: React.FC = () => {
                             data-tooltip={t(u.is_admin ? 'common.remove_admin' : 'common.grant_admin')}
                             aria-label={t(u.is_admin ? 'common.remove_admin' : 'common.grant_admin') + ' ' + u.name}
                           >
-                            <Shield className="w-3.5 h-3.5" />
+                            <Crown className="w-3.5 h-3.5" />
                           </button>
+                          {u.auth_type === 'local' && u.mfa_enabled && (
+                            <button
+                              type="button"
+                              onClick={() => requestConfirmation({
+                                title: t('confirm.reset_mfa_title'),
+                                description: t('confirm.reset_mfa_description', { name: u.name, email: u.email }),
+                                confirmLabel: t('mfa.reset_user_mfa'),
+                                tone: 'warning',
+                                onConfirm: () => resetMFAMutation.mutateAsync(u.id),
+                              })}
+                              className="p-1.5 rounded-md text-status-warning hover:bg-amber-500/10 transition-colors inline-block"
+                              title={t('mfa.reset_user_mfa')}
+                              data-tooltip={t('mfa.reset_user_mfa')}
+                              aria-label={t('mfa.reset_user_mfa') + ' ' + u.name}
+                            >
+                              <RotateCcwKey className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button type="button"
                             onClick={() => requestConfirmation({
                               title: t('confirm.delete_user_title'),
@@ -581,11 +625,32 @@ export const UsersPage: React.FC = () => {
         title={t('users.create_user_title')}
         error={(createUserMutation.error as Error)?.message}
       >
-        <div className="space-y-3 text-xs">
+        <form
+          method="post"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!userName || !userEmail || !userPassword || createUserMutation.isPending) return;
+            if (!userIsAdmin) {
+              createUserMutation.mutate();
+              return;
+            }
+            requestConfirmation({
+              title: t('confirm.create_admin_title'),
+              description: t('confirm.create_admin_description', { name: userName, email: userEmail }),
+              confirmLabel: t('common.grant_admin'),
+              onConfirm: () => createUserMutation.mutateAsync(),
+            });
+          }}
+          className="space-y-3 text-xs"
+        >
           <div>
-            <label className="text-subtle block mb-1">{t('common.name')}</label>
+            <label htmlFor="create-user-name" className="text-subtle block mb-1">{t('common.name')}</label>
             <input
+              id="create-user-name"
+              name="name"
               type="text"
+              autoComplete="name"
+              required
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
               placeholder={t('users.name_placeholder')}
@@ -594,9 +659,17 @@ export const UsersPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="text-subtle block mb-1">{t('common.email')}</label>
+            <label htmlFor="create-user-email" className="text-subtle block mb-1">{t('common.email')}</label>
             <input
+              id="create-user-email"
+              name="email"
               type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              required
               value={userEmail}
               onChange={(e) => setUserEmail(e.target.value)}
               placeholder={t('users.email_placeholder')}
@@ -605,9 +678,13 @@ export const UsersPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="text-subtle block mb-1">{t('common.password')}</label>
+            <label htmlFor="create-user-password" className="text-subtle block mb-1">{t('common.password')}</label>
             <input
+              id="create-user-password"
+              name="password"
               type="password"
+              autoComplete="new-password"
+              required
               value={userPassword}
               onChange={(e) => setUserPassword(e.target.value)}
               placeholder={t('users.password_placeholder')}
@@ -627,38 +704,28 @@ export const UsersPage: React.FC = () => {
               {t('users.admin_privilege_label')}
             </label>
           </div>
-        </div>
 
-        <div className="flex gap-2 pt-2 border-t subtle-border">
-          <button
-            onClick={() => {
-              if (!userIsAdmin) {
-                createUserMutation.mutate();
-                return;
-              }
-              requestConfirmation({
-                title: t('confirm.create_admin_title'),
-                description: t('confirm.create_admin_description', { name: userName, email: userEmail }),
-                confirmLabel: t('common.grant_admin'),
-                onConfirm: () => createUserMutation.mutateAsync(),
-              });
-            }}
-            disabled={!userName || !userEmail || !userPassword || createUserMutation.isPending}
-            className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
-          >
-            {createUserMutation.isPending ? t('common.saving') : t('common.save')}
-          </button>
-          <button
-            onClick={() => {
-              setIsAddUserOpen(false);
-              setUserIsAdmin(false);
-              createUserMutation.reset();
-            }}
-            className="px-3 py-1.5 border subtle-border rounded-lg hover:bg-slate-500/10 text-xs"
-          >
-            {t('common.cancel')}
-          </button>
-        </div>
+          <div className="flex gap-2 pt-2 border-t subtle-border">
+            <button
+              type="submit"
+              disabled={!userName || !userEmail || !userPassword || createUserMutation.isPending}
+              className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium py-1.5 rounded-lg shadow-xs transition-colors text-xs"
+            >
+              {createUserMutation.isPending ? t('common.saving') : t('common.save')}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsAddUserOpen(false);
+                setUserIsAdmin(false);
+                createUserMutation.reset();
+              }}
+              className="px-3 py-1.5 border subtle-border rounded-lg hover:bg-slate-500/10 text-xs"
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        </form>
       </Modal>
 
       {/* MODAL: CREATE USER GROUP */}

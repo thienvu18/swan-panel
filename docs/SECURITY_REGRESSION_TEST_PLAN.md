@@ -69,6 +69,18 @@ Go tests use native CGO SQLite on isolated SQLite files and test-mode offline da
 | UI-01 | SSE frames including multiline/CRLF; corrupted JSON/comment ignored | `ui/tests/transportSecurity.test.mjs` |
 | UI-02 | OIDC provider IDs encoded in URL; JWT not placed in URL | Same |
 | UI-03 | Profile download filename cannot inject directories/control characters | Same |
+| BAK-01 | Encrypted backup archive with Argon2id KDF and AES-256-GCM | `internal/api/backup_test.go:TestBackupAndRestoreRoundTrip` |
+| BAK-02 | Corrupted backup, wrong passphrase, invalid magic header fail closed with rollback | `internal/api/backup_test.go:TestBackupRestoreWrongPassphraseFails`, `TestBackupRestoreCorruptedArchiveRollback` |
+| BAK-03 | Restoring snapshot replaces SQLite state and resyncs VICI pools | `internal/backup/backup_test.go:TestRestoreArchive` |
+| AUD-01 | Append-only SHA-256 hash chaining with deterministic GenesisHash | `internal/audit/audit_test.go:TestAuditHashChainingAndVerification` |
+| AUD-02 | SQLite BEFORE UPDATE and BEFORE DELETE triggers prevent ledger tampering | `internal/audit/audit_test.go:TestAuditImmutabilityTriggers` |
+| AUD-03 | Brute-force threshold detection escalates warning/critical audit events | `internal/audit/audit_test.go:TestAuditBruteForceDetection` |
+| AUD-04 | Outbound webhook dispatcher enforces SSRF validation and blocks private IP targets | `internal/api/audit_webhook_test.go:TestWebhookSSRFValidation` |
+| AUD-05 | Generic webhook payloads signed with HMAC-SHA256 and ISO-8601 timestamps | `internal/api/audit_webhook_test.go:TestWebhookHMACSignature` |
+| MFA-01 | RFC 6238 TOTP verification with window drift (+/-1) and single-use step replay protection | `internal/mfa/mfa_test.go:TestTOTPReplayProtection` |
+| MFA-02 | AES-256-GCM encryption at rest for TOTP secret seeds and recovery codes | `internal/mfa/mfa_test.go:TestEncryptedMFASecretAtRest` |
+| MFA-03 | Single-use emergency recovery codes consumed and hashed | `internal/mfa/mfa_test.go:TestRecoveryCodeSingleUseConsumption` |
+| MFA-04 | Admin MFA reset safety clearance with audit logging | `internal/api/mfa_test.go:TestAdminResetMFA` |
 
 ## Manual integration cases (must run on a disposable Linux VM)
 

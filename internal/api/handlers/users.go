@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/policy"
 	"golang.org/x/crypto/bcrypt"
@@ -114,6 +115,14 @@ func (h *UsersHandler) CreateLocalUser(c *gin.Context) {
 	}
 
 	slog.Info("Local user account created successfully", "id", newUser.ID, "email", newUser.Email, "is_admin", newUser.IsAdmin)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "user.created",
+		Severity:   audit.SeverityInfo,
+		TargetType: "user",
+		TargetID:   newUser.ID,
+		Summary:    "Local user created: " + newUser.Email,
+		Details:    map[string]any{"is_admin": newUser.IsAdmin},
+	})
 	c.JSON(http.StatusCreated, gin.H{"user": newUser})
 }
 
@@ -152,6 +161,14 @@ func (h *UsersHandler) ToggleAdminRole(c *gin.Context) {
 		return
 	}
 	slog.Info("User admin privilege updated", "id", id, "email", user.Email, "is_admin", user.IsAdmin)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "user.role.updated",
+		Severity:   audit.SeverityWarning,
+		TargetType: "user",
+		TargetID:   user.ID,
+		Summary:    fmt.Sprintf("Administrator privilege updated for %s (is_admin=%t)", user.Email, user.IsAdmin),
+		Details:    map[string]any{"email": user.Email, "is_admin": user.IsAdmin},
+	})
 	c.JSON(http.StatusOK, gin.H{"user": user, "is_admin": user.IsAdmin})
 }
 
@@ -208,6 +225,13 @@ func (h *UsersHandler) ApproveUser(c *gin.Context) {
 		return
 	}
 	realtime.DefaultBroker.Broadcast("user_approved", map[string]any{"user_id": user.ID, "status": user.Status})
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "user.approved",
+		Severity:   audit.SeverityInfo,
+		TargetType: "user",
+		TargetID:   user.ID,
+		Summary:    "User approved: " + user.Email,
+	})
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		slog.Error("Approved user policy update pending", "user_id", user.ID, "error", err)
 		c.JSON(http.StatusAccepted, gin.H{"user": user, "runtime_status": "pending", "message": "User approved, gateway update pending"})
@@ -227,6 +251,13 @@ func (h *UsersHandler) RejectUser(c *gin.Context) {
 
 	slog.Info("Candidate rejected from approval queue", "id", id)
 	realtime.DefaultBroker.Broadcast("approval_queue_update", map[string]interface{}{"rejected_id": id})
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "user.rejected",
+		Severity:   audit.SeverityInfo,
+		TargetType: "user",
+		TargetID:   id,
+		Summary:    "Pending user candidate rejected: " + id,
+	})
 	c.JSON(http.StatusOK, gin.H{"message": "Candidate rejected"})
 }
 
@@ -302,6 +333,14 @@ func (h *UsersHandler) DeleteUser(c *gin.Context) {
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		enforcementErrors = append(enforcementErrors, err)
 	}
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "user.deleted",
+		Severity:   audit.SeverityWarning,
+		TargetType: "user",
+		TargetID:   id,
+		Summary:    "User deleted and certificates revoked: " + user.Email,
+		Details:    map[string]any{"email": user.Email, "revoked_devices": len(devices)},
+	})
 	if len(enforcementErrors) != 0 {
 		slog.Error("Deleted user revocations pending enforcement", "id", id, "error", errors.Join(enforcementErrors...))
 		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "message": "User deleted and revocations recorded; gateway enforcement pending"})
@@ -366,6 +405,13 @@ func (h *UsersHandler) CreateUserGroup(c *gin.Context) {
 	}
 
 	slog.Info("User group created", "id", grp.ID, "name", grp.Name)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "user_group.created",
+		Severity:   audit.SeverityInfo,
+		TargetType: "user_group",
+		TargetID:   grp.ID,
+		Summary:    "User group created: " + grp.Name,
+	})
 	c.JSON(http.StatusCreated, gin.H{"user_group": grp})
 }
 
@@ -393,6 +439,13 @@ func (h *UsersHandler) DeleteUserGroup(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "user_group.deleted",
+		Severity:   audit.SeverityInfo,
+		TargetType: "user_group",
+		TargetID:   id,
+		Summary:    "User group deleted: " + id,
+	})
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "error": "Group deleted but gateway policy is pending"})
 		return

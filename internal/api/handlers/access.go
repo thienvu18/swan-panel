@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/policy"
 	"gorm.io/gorm"
@@ -215,6 +216,14 @@ func (h *AccessHandler) CreateAccessRule(c *gin.Context) {
 	}
 
 	slog.Info("Access rule created", "id", rule.ID, "action", rule.Action, "nature", rule.RuleNature)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "access_rule.created",
+		Severity:   audit.SeverityInfo,
+		TargetType: "access_rule",
+		TargetID:   rule.ID,
+		Summary:    fmt.Sprintf("Access rule created: %s %s -> %s", rule.Action, rule.SubjectID, rule.TargetValue),
+		Details:    map[string]any{"rule_action": rule.Action, "subject_type": rule.SubjectType, "target_type": rule.TargetType},
+	})
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		slog.Error("Policy saved but could not be enforced", "rule", rule.ID, "error", err)
 		c.JSON(http.StatusAccepted, gin.H{"access_rule": rule, "runtime_status": "pending", "error": "Gateway policy reconciliation failed"})
@@ -238,6 +247,13 @@ func (h *AccessHandler) DeleteAccessRule(c *gin.Context) {
 		return
 	}
 	slog.Info("Access rule deleted", "id", id)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "access_rule.deleted",
+		Severity:   audit.SeverityInfo,
+		TargetType: "access_rule",
+		TargetID:   id,
+		Summary:    "Access rule deleted: " + id,
+	})
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		slog.Error("Policy deletion pending reconciliation", "rule", id, "error", err)
 		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "error": "Rule deleted but gateway policy not synchronized"})

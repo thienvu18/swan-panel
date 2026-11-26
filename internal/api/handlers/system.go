@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/logger"
 	"github.com/swan-panel/swan-panel/internal/policy"
@@ -121,6 +122,14 @@ func (h *SystemHandler) ControlDaemon(c *gin.Context) {
 			}
 		}
 		realtime.DefaultBroker.Broadcast("gateway_status", gin.H{"status": "inactive", "action": action})
+		audit.RecordFromContext(c, audit.EntryInput{
+			Action:     "gateway.daemon.controlled",
+			Severity:   audit.SeverityWarning,
+			TargetType: "gateway",
+			TargetID:   "charon",
+			Summary:    "strongSwan daemon stopped by administrator",
+			Details:    map[string]any{"action": action},
+		})
 		c.JSON(http.StatusOK, gin.H{"message": "Daemon stopped and verified", "status": "inactive", "action": action})
 		return
 	}
@@ -151,6 +160,14 @@ func (h *SystemHandler) ControlDaemon(c *gin.Context) {
 		return
 	}
 	realtime.DefaultBroker.Broadcast("gateway_status", gin.H{"status": runtime.Status, "action": action})
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "gateway.daemon.controlled",
+		Severity:   audit.SeverityWarning,
+		TargetType: "gateway",
+		TargetID:   "charon",
+		Summary:    fmt.Sprintf("strongSwan daemon %s completed", action),
+		Details:    map[string]any{"action": action, "status": runtime.Status},
+	})
 	c.JSON(http.StatusOK, gin.H{
 		"message": fmt.Sprintf("Daemon %s completed and verified", action),
 		"action":  action, "status": runtime.Status, "timestamp": time.Now().UTC().Format(time.RFC3339),
@@ -186,6 +203,13 @@ func (h *SystemHandler) RetryApply(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Data-plane reconciliation failed"})
 		return
 	}
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "gateway.apply.retried",
+		Severity:   audit.SeverityInfo,
+		TargetType: "gateway",
+		TargetID:   "1",
+		Summary:    "Gateway configuration reconciliation retried and applied",
+	})
 	c.JSON(http.StatusOK, gin.H{"runtime_status": "applied"})
 }
 

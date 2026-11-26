@@ -20,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/pki"
 	"github.com/swan-panel/swan-panel/internal/policy"
@@ -181,6 +182,14 @@ func (h *ResourcesHandler) CreateDevice(c *gin.Context) {
 		return
 	}
 	realtime.DefaultBroker.Broadcast("device_created", map[string]any{"device_id": newDevice.ID})
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "device.created",
+		Severity:   audit.SeverityInfo,
+		TargetType: "device",
+		TargetID:   newDevice.ID,
+		Summary:    fmt.Sprintf("Device enrolled: %s (%s)", newDevice.Hostname, newDevice.VirtualIP),
+		Details:    map[string]any{"hostname": newDevice.Hostname, "virtual_ip": newDevice.VirtualIP, "platform": newDevice.Platform},
+	})
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		slog.Error("Device enrolled but runtime cannot be enforced", "id", newDevice.ID, "error", err)
 		c.JSON(http.StatusAccepted, gin.H{"device": newDevice, "runtime_status": "pending", "message": "Identity persisted but gateway policy application failed"})
@@ -378,10 +387,26 @@ func (h *ResourcesHandler) RevokeDevice(c *gin.Context) {
 	}
 	if err := applyRevocation(c.Request.Context(), &dev); err != nil {
 		slog.Error("Device revoked in database; enforcement reconciliation pending", "id", dev.ID, "error", err)
+		audit.RecordFromContext(c, audit.EntryInput{
+			Action:     "device.revoked",
+			Severity:   audit.SeverityCritical,
+			TargetType: "device",
+			TargetID:   dev.ID,
+			Summary:    fmt.Sprintf("Device certificate revoked (gateway enforcement pending): %s", dev.Hostname),
+			Details:    map[string]any{"hostname": dev.Hostname, "cert_serial": dev.CertSerial, "runtime_status": "pending"},
+		})
 		c.JSON(503, gin.H{"error": "Device revocation recorded, but gateway enforcement is pending", "revocation_pending": true})
 		return
 	}
 	realtime.DefaultBroker.Broadcast("device_revoked", map[string]any{"device_id": dev.ID})
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "device.revoked",
+		Severity:   audit.SeverityCritical,
+		TargetType: "device",
+		TargetID:   dev.ID,
+		Summary:    "Device certificate revoked: " + dev.Hostname,
+		Details:    map[string]any{"hostname": dev.Hostname, "cert_serial": dev.CertSerial},
+	})
 	c.JSON(200, gin.H{"message": "Device certificate revoked and active sessions terminated"})
 }
 
@@ -399,6 +424,14 @@ func (h *ResourcesHandler) DeleteDevice(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "Failed to delete device"})
 		return
 	}
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "device.deleted",
+		Severity:   audit.SeverityWarning,
+		TargetType: "device",
+		TargetID:   dev.ID,
+		Summary:    "Device revoked and deleted: " + dev.Hostname,
+		Details:    map[string]any{"hostname": dev.Hostname, "cert_serial": dev.CertSerial},
+	})
 	c.JSON(200, gin.H{"message": "Device revoked and deleted"})
 }
 
@@ -496,6 +529,14 @@ func (h *ResourcesHandler) CreateResourceGroup(c *gin.Context) {
 	}
 
 	slog.Info("Resource group created", "id", rg.ID, "name", rg.Name, "cidr", rg.CIDRBlock)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "resource_group.created",
+		Severity:   audit.SeverityInfo,
+		TargetType: "resource_group",
+		TargetID:   rg.ID,
+		Summary:    fmt.Sprintf("Subnet created: %s (%s)", rg.Name, rg.CIDRBlock),
+		Details:    map[string]any{"cidr_block": rg.CIDRBlock},
+	})
 	c.JSON(http.StatusCreated, gin.H{"resource_group": rg})
 }
 
@@ -539,6 +580,13 @@ func (h *ResourcesHandler) DeleteResourceGroup(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Resource group deletion failed; no changes committed"})
 	default:
 		slog.Info("Resource group deleted", "id", id)
+		audit.RecordFromContext(c, audit.EntryInput{
+			Action:     "resource_group.deleted",
+			Severity:   audit.SeverityInfo,
+			TargetType: "resource_group",
+			TargetID:   id,
+			Summary:    "Subnet deleted: " + id,
+		})
 		c.JSON(http.StatusOK, gin.H{"message": "Resource group deleted successfully"})
 	}
 }

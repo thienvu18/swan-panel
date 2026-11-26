@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/swan-panel/swan-panel/internal/api/middleware"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
@@ -380,6 +381,17 @@ func (h *OIDCHandler) OIDCCallback(c *gin.Context) {
 			return
 		}
 		realtime.DefaultBroker.Broadcast("approval_queue_update", map[string]any{"user_id": user.ID, "status": "PENDING"})
+		audit.RecordFromContext(c, audit.EntryInput{
+			ActorID:    user.ID,
+			ActorEmail: user.Email,
+			ActorRole:  "user",
+			Action:     "oidc.user.pending",
+			Severity:   audit.SeverityInfo,
+			TargetType: "user",
+			TargetID:   user.ID,
+			Summary:    "New OIDC identity registered pending approval: " + user.Email,
+			Details:    map[string]any{"provider_id": p.ID},
+		})
 	} else if err != nil {
 		c.JSON(500, gin.H{"error": "Identity lookup failed"})
 		return
@@ -449,5 +461,19 @@ func (h *OIDCHandler) ExchangeTicket(c *gin.Context) {
 		return
 	}
 	c.Header("Cache-Control", "no-store")
+	role := "user"
+	if user.IsAdmin {
+		role = "admin"
+	}
+	audit.RecordFromContext(c, audit.EntryInput{
+		ActorID:    user.ID,
+		ActorEmail: user.Email,
+		ActorRole:  role,
+		Action:     "oidc.login.success",
+		Severity:   audit.SeverityInfo,
+		TargetType: "user",
+		TargetID:   user.ID,
+		Summary:    "User signed in via OIDC SSO: " + user.Email,
+	})
 	c.JSON(200, gin.H{"token": signed, "user": gin.H{"id": user.ID, "email": user.Email, "name": user.Name, "is_admin": user.IsAdmin, "status": user.Status}})
 }

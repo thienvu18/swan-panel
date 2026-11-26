@@ -2,8 +2,10 @@ export interface CurrentUser {
   id: string;
   email: string;
   name: string;
+  auth_type?: string;
   is_admin: boolean;
   status: string;
+  mfa_enabled?: boolean;
 }
 
 export interface Device {

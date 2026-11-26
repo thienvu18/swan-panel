@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/policy"
 	"github.com/swan-panel/swan-panel/internal/vici"
@@ -77,5 +78,12 @@ func (h *SessionsHandler) TerminateSession(c *gin.Context) {
 		return
 	}
 	realtime.DefaultBroker.Broadcast("session_terminated", map[string]any{"ike_name": req.IKEName})
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "session.terminated",
+		Severity:   audit.SeverityWarning,
+		TargetType: "session",
+		TargetID:   req.IKEName,
+		Summary:    "Active IKE session terminated: " + req.IKEName,
+	})
 	c.JSON(http.StatusOK, gin.H{"message": "Session terminated successfully", "ike_name": req.IKEName})
 }

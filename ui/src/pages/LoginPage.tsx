@@ -22,6 +22,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [adminName, setAdminName] = useState('');
   const [providers, setProviders] = useState<Array<{ id: string; name: string; provider_type: string }>>([]);
   const [pendingApproval, setPendingApproval] = useState(false);
+  const [mfaChallenge, setMfaChallenge] = useState<{ token: string; email: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const onLoginSuccessRef = useRef(onLoginSuccess);
@@ -99,6 +101,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         setShowPassword(false);
         setShowSetupToken(false);
         setSuccessMessage(t('auth.admin_created'));
+      } else if (data.mfa_required && data.mfa_token) {
+        setPassword('');
+        setShowPassword(false);
+        setMfaCode('');
+        setMfaChallenge({ token: data.mfa_token, email: data.user?.email || email.trim() });
       } else if (data.token && data.user) {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
@@ -106,6 +113,34 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       } else {
         setErrorMessage(t('auth.invalid_credentials'));
       }
+    } catch {
+      setErrorMessage(t('auth.network_error'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleMFAVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mfaChallenge || !mfaCode.trim() || isLoading) return;
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      const res = await fetch('/api/auth/mfa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mfa_token: mfaChallenge.token, code: mfaCode.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.token || !data.user) {
+        setErrorMessage(data.error || t('mfa.invalid_code'));
+        return;
+      }
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      setMfaChallenge(null);
+      setMfaCode('');
+      onLoginSuccess(data.token, data.user);
     } catch {
       setErrorMessage(t('auth.network_error'));
     } finally {
@@ -144,8 +179,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             <div className="w-12 h-12 mx-auto rounded-xl surface-header border subtle-border flex items-center justify-center p-2 mb-3 shadow-inner">
               <SwanLogo className="w-8 h-8" />
             </div>
-            <h1 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">{setupRequired ? t('auth.initial_setup_title') : t('auth.welcome_title')}</h1>
-            <p className="text-xs text-subtle">{setupRequired ? t('auth.initial_setup_description') : t('auth.welcome_subtitle')}</p>
+            <h1 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
+              {mfaChallenge ? t('mfa.challenge_title') : setupRequired ? t('auth.initial_setup_title') : t('auth.welcome_title')}
+            </h1>
+            <p className="text-xs text-subtle">
+              {mfaChallenge
+                ? t('mfa.challenge_subtitle', { email: mfaChallenge.email })
+                : setupRequired
+                ? t('auth.initial_setup_description')
+                : t('auth.welcome_subtitle')}
+            </p>
           </div>
 
           {/* Authentication and setup feedback */}
@@ -169,15 +212,79 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               {t('common.retry')}
             </button>
           )}
-          {/* Login or first-run setup form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Login, two-factor challenge, or first-run setup form */}
+          {mfaChallenge ? (
+            <form onSubmit={handleMFAVerify} method="post" className="space-y-4">
+              <input
+                type="email"
+                name="username"
+                autoComplete="username"
+                value={mfaChallenge.email}
+                readOnly
+                hidden
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-subtle block" htmlFor="mfa-code-input">
+                  {t('mfa.enter_code_label')}
+                </label>
+                <p id="mfa-login-hint" className="text-[11px] text-dim">
+                  {t('mfa.code_or_backup_hint')}
+                </p>
+                <input
+                  id="mfa-code-input"
+                  name="code"
+                  type="text"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoComplete="one-time-code"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  aria-describedby="mfa-login-hint"
+                  placeholder="123456"
+                  required
+                  autoFocus
+                  className="w-full surface-input border subtle-border rounded-lg px-3 py-2.5 text-sm font-mono tracking-widest text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading || !mfaCode.trim()}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-blue-900/20"
+              >
+                <span>{isLoading ? t('auth.submitting') : t('mfa.verify_and_sign_in')}</span>
+                {!isLoading && <ArrowRight className="w-3.5 h-3.5" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMfaChallenge(null);
+                  setMfaCode('');
+                  setErrorMessage('');
+                }}
+                className="w-full py-2 px-3 rounded-lg border subtle-border text-xs font-medium text-subtle hover:text-current hover:bg-slate-500/10 transition-colors"
+              >
+                {t('mfa.back_to_sign_in')}
+              </button>
+            </form>
+          ) : (
+          <form onSubmit={handleSubmit} method="post" className="space-y-4">
             {setupRequired && <>
               <label className="text-[11px] font-semibold text-subtle block" htmlFor="setup-token">{t('auth.initial_setup_token')}</label>
               <div className="relative">
                 <input
                   id="setup-token"
+                  name="setup_token"
                   type={showSetupToken ? 'text' : 'password'}
                   autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   value={setupToken}
                   onChange={e => setSetupToken(e.target.value)}
                   required
@@ -196,7 +303,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </button>
               </div>
               <label className="text-[11px] font-semibold text-subtle block" htmlFor="admin-name">{t('auth.initial_admin_name')}</label>
-              <input id="admin-name" value={adminName} onChange={e => setAdminName(e.target.value)} required className="w-full surface-input border subtle-border rounded-lg p-2 text-xs" />
+              <input
+                id="admin-name"
+                name="name"
+                type="text"
+                autoComplete="name"
+                value={adminName}
+                onChange={e => setAdminName(e.target.value)}
+                required
+                className="w-full surface-input border subtle-border rounded-lg p-2 text-xs"
+              />
             </>}
             <div className="space-y-1.5">
               <label className="text-[11px] font-semibold text-subtle block" htmlFor="email-input">
@@ -206,7 +322,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 <Mail className="w-4 h-4 text-dim absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   id="email-input"
+                  name="email"
                   type="email"
+                  inputMode="email"
+                  autoComplete={setupRequired ? 'email' : 'username'}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={t('auth.email_placeholder')}
@@ -225,6 +347,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 <Lock className="w-4 h-4 text-dim absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   id="password-input"
+                  name="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete={setupRequired ? 'new-password' : 'current-password'}
                   value={password}
@@ -256,8 +379,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               {!isLoading && <ArrowRight className="w-3.5 h-3.5" />}
             </button>
           </form>
+          )}
 
-          {setupStatusLoaded && !setupRequired && providers.length > 0 && (
+          {setupStatusLoaded && !setupRequired && !mfaChallenge && providers.length > 0 && (
             <div className="pt-3 border-t subtle-border space-y-2">
               <p className="text-[11px] text-subtle text-center">{t('auth.sign_in_with_organization')}</p>
               {providers.map(provider => <a key={provider.id}

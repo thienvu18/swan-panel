@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
 )
 
@@ -66,6 +67,14 @@ func (h *DNSHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	slog.Info("DNS engine settings updated", "magic_suffix", settings.MagicDNSSuffix, "upstreams", settings.UpstreamResolvers)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "dns.settings.updated",
+		Severity:   audit.SeverityInfo,
+		TargetType: "dns_settings",
+		TargetID:   "1",
+		Summary:    "DNS settings updated (suffix=" + settings.MagicDNSSuffix + ")",
+		Details:    map[string]any{"magic_dns_suffix": settings.MagicDNSSuffix, "enabled": settings.IsMagicDNSEnabled},
+	})
 	c.JSON(http.StatusOK, gin.H{"dns_settings": settings, "message": "DNS settings updated successfully"})
 }
 
@@ -144,6 +153,14 @@ func (h *DNSHandler) CreateOverride(c *gin.Context) {
 	}
 
 	slog.Info("Custom DNS override created", "id", override.ID, "hostname", override.Hostname, "target", override.TargetAddress)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "dns.override.created",
+		Severity:   audit.SeverityInfo,
+		TargetType: "dns_override",
+		TargetID:   override.ID,
+		Summary:    "DNS override created: " + override.Hostname + " -> " + override.TargetAddress,
+		Details:    map[string]any{"record_type": override.RecordType, "target": override.TargetAddress},
+	})
 	c.JSON(http.StatusCreated, gin.H{"dns_override": override})
 }
 
@@ -157,5 +174,12 @@ func (h *DNSHandler) DeleteOverride(c *gin.Context) {
 	}
 
 	slog.Info("DNS override deleted", "id", id)
+	audit.RecordFromContext(c, audit.EntryInput{
+		Action:     "dns.override.deleted",
+		Severity:   audit.SeverityInfo,
+		TargetType: "dns_override",
+		TargetID:   id,
+		Summary:    "DNS override deleted: " + id,
+	})
 	c.JSON(http.StatusOK, gin.H{"message": "DNS override deleted successfully"})
 }

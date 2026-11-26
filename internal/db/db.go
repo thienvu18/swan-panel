@@ -68,6 +68,7 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 		&BootstrapState{},
 		&OIDCLoginAttempt{},
 		&OIDCLoginTicket{},
+		&MFAChallenge{},
 		&CertificateRevocation{},
 		&User{},
 		&UserGroup{},
@@ -78,10 +79,22 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 		&DNSOverride{},
 		&StrongswanSettings{},
 		&RuntimeApplyState{},
+		&AuditLog{},
+		&AlertWebhook{},
 	)
 	if err != nil {
 		slog.Error("Auto-migration failed", "error", err)
 		return nil, fmt.Errorf("failed to auto-migrate schema: %w", err)
+	}
+	// Enforce append-only immutability on audit_logs at the SQLite engine level.
+	for _, triggerSQL := range []string{
+		`CREATE TRIGGER IF NOT EXISTS trg_audit_logs_no_update BEFORE UPDATE ON audit_logs BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only and immutable'); END;`,
+		`CREATE TRIGGER IF NOT EXISTS trg_audit_logs_no_delete BEFORE DELETE ON audit_logs BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only and immutable'); END;`,
+	} {
+		if err := db.Exec(triggerSQL).Error; err != nil {
+			_ = sqlDB.Close()
+			return nil, fmt.Errorf("create audit immutability trigger: %w", err)
+		}
 	}
 	// Remove the legacy global unique index only after the active-device partial
 	// unique index has been created. Retired identities keep their CRL ledger.

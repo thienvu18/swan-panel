@@ -2,7 +2,7 @@
 
 > **Document Version:** 3.0.0  
 > **Target Audience:** All Employees, Remote Contractors, Corporate Device Users  
-> **Platform Version:** SwanPanel v1.0 Enterprise  
+> **Platform Version:** SwanPanel v1.0.1
 > **Supported Client Operating Systems:** Apple macOS, Apple iOS / iPadOS, Microsoft Windows 11 / 10, Linux (Ubuntu, Debian, Fedora, Arch, Alpine), Android 12+
 
 ---
@@ -262,7 +262,42 @@ curl -I https://gitlab.internal.acme.net
 
 ---
 
-## 8. FREQUENTLY ASKED QUESTIONS (FAQ) & TROUBLESHOOTING
+## 8. ACCOUNT SECURITY: TWO-FACTOR AUTHENTICATION (MFA / TOTP)
+
+To protect your corporate account against credential stuffing and unauthorized access, SwanPanel supports hardware-grade Two-Factor Authentication (MFA / 2FA) using Time-Based One-Time Passwords (TOTP, RFC 6238).
+
+### 8.1. Enrolling Your Authenticator App
+1. Sign in to the SwanPanel web portal.
+2. In the bottom-left sidebar (user profile card), click the **Account Security** key icon.
+3. Under the **Two-Factor Authentication** section, enter your current account password and click **Start 2FA Setup**.
+4. Open your preferred authenticator app (**Google Authenticator**, **Apple Passwords / iCloud Keychain**, **1Password**, **Bitwarden**, or **Microsoft Authenticator**).
+5. Scan the displayed QR code, or manually copy the Base32 secret key into your app.
+6. Enter the 6-digit numeric verification code shown on your authenticator app and click **Enable 2FA**.
+
+![Account Security TOTP Enrollment](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/27_modal_account_security_setup.png)
+
+### 8.2. Saving Emergency Recovery Codes
+Upon activating 2FA, SwanPanel displays **8 single-use emergency recovery codes** (e.g. `A1B2-C3D4`):
+1. Click **Download Codes** to save them to a secure offline file, or click **Copy Codes** to store them in your password vault.
+2. Each recovery code can be used exactly once if your phone battery dies, your phone is misplaced, or you cannot access your authenticator app.
+3. Confirm that you have safely stored the codes to complete setup.
+
+![Account Security Emergency Recovery Codes](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/28_modal_account_security_backup_codes.png)
+
+### 8.3. Signing In with Two-Factor Verification
+* When signing in to SwanPanel, submit your primary email and password as normal.
+* The screen automatically transitions to the **Two-Factor Authentication** prompt.
+* Enter the current 6-digit code from your authenticator app, or enter any unused 8-character emergency recovery code, and click **Verify & Sign In**.
+
+![Two-Factor Authentication Login Challenge](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/01c_login_mfa_challenge.png)
+
+### 8.4. Regenerating Codes or Lost Device Recovery
+* **Regenerating Codes:** If you have used several recovery codes, open **Account Security** while logged in and click **Regenerate Recovery Codes** (requires entering your current password and a live TOTP code).
+* **Lost Authenticator Device:** If you lose your phone and have exhausted all recovery codes, contact your company's SwanPanel Administrator. The administrator can execute an emergency **Reset 2FA** on your user account so you can sign in with your password and re-enroll your new device.
+
+---
+
+## 9. FREQUENTLY ASKED QUESTIONS (FAQ) & TROUBLESHOOTING
 
 ### Q1: I am at a hotel or coffee shop and the VPN will not connect.
 > [!NOTE]

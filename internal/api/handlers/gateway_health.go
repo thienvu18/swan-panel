@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
 	"github.com/swan-panel/swan-panel/internal/policy"
 	"github.com/swan-panel/swan-panel/internal/vici"
@@ -98,6 +99,30 @@ func (m *GatewayMonitor) refresh(ctx context.Context) GatewayHealth {
 	m.mu.Unlock()
 	if status != previous {
 		slog.Info("Gateway health changed", "from", previous, "to", status)
+		if db.DB != nil && previous != "unknown" {
+			severity := audit.SeverityInfo
+			action := "gateway.online"
+			switch status {
+			case "offline":
+				severity = audit.SeverityCritical
+				action = "gateway.offline"
+			case "degraded":
+				severity = audit.SeverityWarning
+				action = "gateway.degraded"
+			case "unknown":
+				severity = audit.SeverityWarning
+				action = "gateway.unknown"
+			}
+			_, _ = audit.Record(ctx, db.DB, audit.EntryInput{
+				ActorRole:  "system",
+				Action:     action,
+				Severity:   severity,
+				TargetType: "gateway",
+				TargetID:   "charon",
+				Summary:    "Gateway health changed from " + previous + " to " + status,
+				Details:    map[string]any{"from": previous, "to": status},
+			})
+		}
 	} else {
 		slog.Debug("Gateway health checked", "status", status)
 	}

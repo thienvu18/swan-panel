@@ -257,6 +257,11 @@ Configure SwanPanel via environment variables or an `/etc/swan-panel/swan-panel.
 
 SwanPanel is actively maintained. Here is our prioritized engineering roadmap:
 
+* **In Development (`dev`):**
+  * **1-Click Encrypted Backup & Disaster Recovery:** Downloadable AES-256-GCM `.tar.enc` snapshots (Argon2id key derivation) bundling online-consistent SQLite backups and all Root CA / PKI files, with atomic verified restore, rollback protection, and gateway resynchronization in Server Settings.
+  * **Immutable Audit Trail & Alert Webhooks:** Append-only, SHA-256 hash-chained `audit_logs` table protected by SQLite triggers, integrity verification, CSV/JSONL export, brute-force sign-in escalation, and real-time webhook alerts for Slack, Telegram, Microsoft Teams, and HMAC-signed HTTP receivers.
+  * **Multi-Factor Authentication (MFA / TOTP) for Local Accounts:** Two-step RFC 6238 TOTP verification with AES-256-GCM encrypted seeds at rest, single-use step replay protection, 8 single-use recovery codes, self-service enrollment, and admin MFA reset.
+
 * **Stable v1.0.1:** Easier-to-read tables and forms, clearer settings and device actions, and Gateway status that distinguishes Online, Degraded, Offline and Unknown. Gateway health is rechecked every 15 seconds; old results expire after 45 seconds. The status stays visible in the mobile header. See [release notes](CHANGELOG.md).
 
 * **v1.0.0 — First stable release:**
@@ -272,14 +277,7 @@ SwanPanel is actively maintained. Here is our prioritized engineering roadmap:
 
 * **Upcoming Milestones:**
   * **High Availability (HA) & Clustering:** Active-Passive failover and state synchronization across multiple SwanPanel gateways for hardware redundancy.
-  * **Multi-Factor Authentication (MFA / TOTP):** Two-factor authentication support for Web Admin login and client profile self-service enrollment.
-  * **Immutable Audit Trail & SIEM Integration:**
-    * Comprehensive `audit_logs` table tracking administrator actions (who, what, when, source IP, e.g. User 'admin' revoked device 'laptop-dev').
-    * Instant webhook alerts to Slack, Telegram, and Microsoft Teams for anomalous events (repeated failed logins, gateway offline, cert revocation).
-    * Standard Syslog export compliant with RFC 5424 for external SIEM ingestion (Splunk, Elastic, Datadog).
-  * **1-Click Encrypted Backup & Disaster Recovery:**
-    * One-click backup in Server Settings: bundles SQLite database and Root CA private keys into an AES-256-GCM encrypted `.tar.enc` archive with a user-supplied passphrase.
-    * In-place 1-click restore mechanism to recover state immediately after server migrations or disk failures.
+  * **SIEM Syslog Export:** Standard Syslog export compliant with RFC 5424 for external SIEM ingestion (Splunk, Elastic, Datadog).
 
 ---
 

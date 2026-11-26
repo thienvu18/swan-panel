@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **1-Click Encrypted Backup & Disaster Recovery:** Export AES-256-GCM encrypted `.tar.enc` archives (Argon2id key derivation) bundling an online SQLite snapshot and PKI state via `POST /api/system/backup`, with verified atomic restore, rollback safety, gateway resynchronization, and Server Settings UI (`POST /api/system/restore`).
+- **Two-Factor Authentication (TOTP MFA):** RFC 6238 TOTP support for local accounts with AES-256-GCM encrypted secrets, single-use replay protection, 8 recovery codes, self-service Account Security settings, and admin MFA reset.
+- **Immutable Audit Trail:** Append-only, SHA-256 hash-chained `audit_logs` protected by SQLite immutability triggers, with integrity verification, severity/category/search filters, CSV (formula-neutralized) and JSONL export, and brute-force sign-in escalation.
+- **Alert Webhooks:** Configurable alert destinations for Slack, Telegram, Microsoft Teams, and HMAC-SHA256 signed generic HTTP endpoints with SSRF validation, redacted URL/secret display, and test delivery.
+- **Documentation Alignment:** Updated `ARCHITECTURE.md`, `wiki/API-Reference.md`, `wiki/Client-Provisioning.md`, `wiki/DNS-and-MagicDNS.md`, and admin/user guides to match the current schema, routes, and `v1.0.1` baseline.
+
 ## v1.0.1
 
 - **Easier to read:** Clearer forms, tables, dialogs and page layouts, including on smaller screens.

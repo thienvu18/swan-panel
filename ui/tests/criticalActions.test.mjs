@@ -8,14 +8,15 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 const read = (path) => readFileSync(join(root, path), 'utf8');
 
 const protectedPages = {
-  'UsersPage.tsx': ['confirm.grant_admin_title', 'confirm.remove_admin_title', 'confirm.create_admin_title', 'confirm.delete_user_title', 'confirm.delete_group_title', 'confirm.reject_user_title', 'confirm.approve_user_title'],
+  'UsersPage.tsx': ['confirm.grant_admin_title', 'confirm.remove_admin_title', 'confirm.create_admin_title', 'confirm.delete_user_title', 'confirm.delete_group_title', 'confirm.reject_user_title', 'confirm.approve_user_title', 'confirm.reset_mfa_title'],
   'ResourcesPage.tsx': ['confirm.revoke_title', 'confirm.delete_subnet_title'],
   'DashboardPage.tsx': ['confirm.disconnect_title', 'confirm.revoke_title'],
   'AccessRulesPage.tsx': ['confirm.delete_rule_title', 'confirm.create_rule_title'],
   'DNSEnginePage.tsx': ['confirm.delete_dns_title'],
   'OIDCPage.tsx': ['confirm.delete_provider_title'],
   'SystemLogsPage.tsx': ['confirm.stop_gateway_title', 'confirm.restart_gateway_title'],
-  'ServerSettingsPage.tsx': ['confirm.rotate_ca_title', 'confirm.apply_advanced_title'],
+  'ServerSettingsPage.tsx': ['confirm.rotate_ca_title', 'confirm.apply_advanced_title', 'confirm.restore_backup_title'],
+  'AuditTrailPage.tsx': ['confirm.delete_webhook_title'],
 };
 
 test('all high-impact actions require a shared confirmation dialog', () => {
@@ -85,7 +86,9 @@ test('dangerous actions cannot accidentally execute through old direct mutation 
     [/createRuleMutation\.mutate\(/, 'AccessRulesPage.tsx'],
     [/deleteOverrideMutation\.mutate\(/, 'DNSEnginePage.tsx'],
     [/deleteProviderMutation\.mutate\(/, 'OIDCPage.tsx'],
+    [/deleteWebhookMutation\.mutate\(/, 'AuditTrailPage.tsx'],
     [/toggleRoleMutation\.mutate\(/, 'UsersPage.tsx'],
+    [/resetMFAMutation\.mutate\(/, 'UsersPage.tsx'],
     [/revokeDeviceMutation\.mutate\(/, 'DashboardPage.tsx'],
     [/disconnectMutation\.mutate\(/, 'DashboardPage.tsx'],
     [/rotate\.mutate\(/, 'ServerSettingsPage.tsx'],

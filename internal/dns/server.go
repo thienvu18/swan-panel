@@ -63,6 +63,28 @@ func (s *Server) Stop() {
 	slog.Info("Embedded DNS server shutdown completed")
 }
 
+// db returns the active database connection. If s.database's connection has been
+// closed or replaced (for example, during atomic backup restoration), db transparently
+// updates to the live global db.DB handle.
+func (s *Server) db() *gorm.DB {
+	s.mu.RLock()
+	cur := s.database
+	s.mu.RUnlock()
+
+	if cur != nil {
+		if sqlDB, err := cur.DB(); err == nil && sqlDB.Ping() == nil {
+			return cur
+		}
+	}
+	if db.DB != nil {
+		s.mu.Lock()
+		s.database = db.DB
+		s.mu.Unlock()
+		return db.DB
+	}
+	return cur
+}
+
 // handleDNSQuery resolves queries using local MagicDNS, DNS Overrides, or upstream forwarders
 func (s *Server) handleDNSQuery(w dns.ResponseWriter, r *dns.Msg) {
 	msg := new(dns.Msg)
@@ -83,7 +105,7 @@ func (s *Server) handleDNSQuery(w dns.ResponseWriter, r *dns.Msg) {
 
 	// 1. Fetch current DNS settings from DB
 	var settings db.DNSSettings
-	if err := s.database.First(&settings, 1).Error; err != nil {
+	if err := s.db().First(&settings, 1).Error; err != nil {
 		settings = db.DNSSettings{
 			MagicDNSSuffix:    ".strongnet",
 			UpstreamResolvers: "1.1.1.1, 8.8.8.8",
@@ -98,7 +120,7 @@ func (s *Server) handleDNSQuery(w dns.ResponseWriter, r *dns.Msg) {
 		hostname := strings.TrimSuffix(qName, "."+magicSuffix)
 
 		var dev db.Device
-		if err := s.database.Where("hostname = ? AND is_revoked = ?", hostname, false).First(&dev).Error; err == nil {
+		if err := s.db().Where("hostname = ? AND is_revoked = ?", hostname, false).First(&dev).Error; err == nil {
 			if qType == dns.TypeA {
 				ip := net.ParseIP(dev.VirtualIP)
 				if ip != nil && ip.To4() != nil {
@@ -127,7 +149,7 @@ func (s *Server) handleDNSQuery(w dns.ResponseWriter, r *dns.Msg) {
 	// 3. Check Custom DNS Overrides (exact FQDN match or standard wildcard *.domain)
 	var override db.DNSOverride
 	found := false
-	if err := s.database.Where("hostname = ?", qName).First(&override).Error; err == nil {
+	if err := s.db().Where("hostname = ?", qName).First(&override).Error; err == nil {
 		found = true
 	} else {
 		// Standard wildcard matching: e.g. for "a.b.google.com", check "*.b.google.com", then "*.google.com"
@@ -138,7 +160,7 @@ func (s *Server) handleDNSQuery(w dns.ResponseWriter, r *dns.Msg) {
 				break
 			}
 			wildcardHost := "*" + curr[dotIdx:]
-			if err := s.database.Where("hostname = ?", wildcardHost).First(&override).Error; err == nil {
+			if err := s.db().Where("hostname = ?", wildcardHost).First(&override).Error; err == nil {
 				found = true
 				break
 			}
@@ -239,7 +261,7 @@ func (s *Server) forwardUpstream(r *dns.Msg, upstreams []string) *dns.Msg {
 // ResolveLocalQuery is a direct in-memory resolver function used for testing and local lookups
 func (s *Server) ResolveLocalQuery(ctx context.Context, hostname string) (string, error) {
 	var settings db.DNSSettings
-	if err := s.database.First(&settings, 1).Error; err != nil {
+	if err := s.db().First(&settings, 1).Error; err != nil {
 		settings = db.DNSSettings{
 			MagicDNSSuffix:    ".strongnet",
 			UpstreamResolvers: "1.1.1.1, 8.8.8.8",
@@ -253,13 +275,13 @@ func (s *Server) ResolveLocalQuery(ctx context.Context, hostname string) (string
 	if settings.IsMagicDNSEnabled && strings.HasSuffix(cleanHost, "."+magicSuffix) {
 		devName := strings.TrimSuffix(cleanHost, "."+magicSuffix)
 		var dev db.Device
-		if err := s.database.WithContext(ctx).Where("hostname = ? AND is_revoked = ?", devName, false).First(&dev).Error; err == nil {
+		if err := s.db().WithContext(ctx).Where("hostname = ? AND is_revoked = ?", devName, false).First(&dev).Error; err == nil {
 			return dev.VirtualIP, nil
 		}
 	}
 
 	var override db.DNSOverride
-	if err := s.database.WithContext(ctx).Where("hostname = ?", cleanHost).First(&override).Error; err == nil {
+	if err := s.db().WithContext(ctx).Where("hostname = ?", cleanHost).First(&override).Error; err == nil {
 		return override.TargetAddress, nil
 	}
 	// Check wildcard match
@@ -270,7 +292,7 @@ func (s *Server) ResolveLocalQuery(ctx context.Context, hostname string) (string
 			break
 		}
 		wildcardHost := "*" + curr[dotIdx:]
-		if err := s.database.WithContext(ctx).Where("hostname = ?", wildcardHost).First(&override).Error; err == nil {
+		if err := s.db().WithContext(ctx).Where("hostname = ?", wildcardHost).First(&override).Error; err == nil {
 			return override.TargetAddress, nil
 		}
 		curr = curr[dotIdx+1:]

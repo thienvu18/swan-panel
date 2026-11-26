@@ -54,12 +54,13 @@ func main() {
 	)
 
 	// 2. Initialize SQLite Database (WAL Mode)
-	_, err := db.InitDB(cfg.DBPath)
+	dbConn, err := db.InitDB(cfg.DBPath)
 	if err != nil {
 		slog.Error("Fatal: Failed to initialize SQLite database", "path", cfg.DBPath, "error", err)
 		os.Exit(1)
 	}
-	slog.Info("SQLite database connected successfully", "wal_mode", true, "tables", 8)
+	tables, _ := dbConn.Migrator().GetTables()
+	slog.Info("SQLite database connected successfully", "wal_mode", true, "tables", len(tables))
 
 	// 3. Initialize Router and embedded SPA filesystem
 	staticFS, err := swanpanel.StaticFS()

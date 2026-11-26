@@ -29,6 +29,14 @@ type OIDCLoginTicket struct {
 	ExpiresAt  time.Time
 }
 
+// MFAChallenge is a short-lived, single-use TOTP verification challenge issued after password verification.
+type MFAChallenge struct {
+	ChallengeHash string    `gorm:"primaryKey;size:64"`
+	UserID        string    `gorm:"size:64;index;not null"`
+	Attempts      int       `gorm:"default:0"`
+	ExpiresAt     time.Time `gorm:"index;not null"`
+}
+
 // CertificateRevocation is retained even when a device is deleted, so a CRL cannot lose old serials.
 type CertificateRevocation struct {
 	Serial    string    `gorm:"primaryKey;size:128"`
@@ -56,20 +64,25 @@ type OIDCProvider struct {
 
 // User represents an internal user (OIDC SSO or local admin/member)
 type User struct {
-	ID            string        `gorm:"primaryKey;size:64" json:"id"`
-	Email         string        `gorm:"size:256;uniqueIndex;not null" json:"email"`
-	Name          string        `gorm:"size:128;not null" json:"name"`
-	AuthType      string        `gorm:"size:16;default:'oidc'" json:"auth_type"` // 'oidc' or 'local'
-	PasswordHash  string        `gorm:"size:256" json:"-"`                       // Stored only for local users (bcrypt)
-	IDPProviderID *string       `gorm:"column:idp_provider_id;size:64;uniqueIndex:ux_oidc_provider_subject" json:"idp_provider_id,omitempty"`
-	IDPSubject    string        `gorm:"column:idp_subject;size:512;uniqueIndex:ux_oidc_provider_subject" json:"-"`
-	IDPProvider   *OIDCProvider `gorm:"foreignKey:IDPProviderID;constraint:OnDelete:SET NULL" json:"idp_provider,omitempty"`
-	IsAdmin       bool          `gorm:"default:false" json:"is_admin"`
-	Status        string        `gorm:"size:32;default:'PENDING'" json:"status"` // 'PENDING', 'ACTIVE', 'SUSPENDED'
-	UserGroups    []UserGroup   `gorm:"many2many:user_group_members;" json:"user_groups,omitempty"`
-	Devices       []Device      `gorm:"foreignKey:UserID" json:"devices,omitempty"`
-	CreatedAt     time.Time     `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt     time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
+	ID              string        `gorm:"primaryKey;size:64" json:"id"`
+	Email           string        `gorm:"size:256;uniqueIndex;not null" json:"email"`
+	Name            string        `gorm:"size:128;not null" json:"name"`
+	AuthType        string        `gorm:"size:16;default:'oidc'" json:"auth_type"` // 'oidc' or 'local'
+	PasswordHash    string        `gorm:"size:256" json:"-"`                       // Stored only for local users (bcrypt)
+	IDPProviderID   *string       `gorm:"column:idp_provider_id;size:64;uniqueIndex:ux_oidc_provider_subject" json:"idp_provider_id,omitempty"`
+	IDPSubject      string        `gorm:"column:idp_subject;size:512;uniqueIndex:ux_oidc_provider_subject" json:"-"`
+	IDPProvider     *OIDCProvider `gorm:"foreignKey:IDPProviderID;constraint:OnDelete:SET NULL" json:"idp_provider,omitempty"`
+	IsAdmin         bool          `gorm:"default:false" json:"is_admin"`
+	Status          string        `gorm:"size:32;default:'PENDING'" json:"status"` // 'PENDING', 'ACTIVE', 'SUSPENDED'
+	MFAEnabled      bool          `gorm:"default:false" json:"mfa_enabled"`
+	TOTPSecretEnc   string        `gorm:"size:512" json:"-"`
+	PendingTOTPEnc  string        `gorm:"size:512" json:"-"`
+	MFABackupCodes  string        `gorm:"type:text" json:"-"`
+	MFALastUsedStep int64         `gorm:"default:0" json:"-"`
+	UserGroups      []UserGroup   `gorm:"many2many:user_group_members;" json:"user_groups,omitempty"`
+	Devices         []Device      `gorm:"foreignKey:UserID" json:"devices,omitempty"`
+	CreatedAt       time.Time     `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt       time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 // UserGroup represents an organizational team or role (e.g., DevOps, Backend, Sales)
@@ -184,4 +197,40 @@ type StrongswanSettings struct {
 	ESPProposals       string         `gorm:"size:512;default:'aes256gcm16,aes128gcm16,chacha20poly1305'" json:"esp_proposals"`
 	MSSClamping        int            `gorm:"default:1360" json:"mss_clamping"`
 	UpdatedAt          time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+// AuditLog stores an append-only, hash-chained administrative and security audit record.
+type AuditLog struct {
+	ID         string    `gorm:"primaryKey;size:64" json:"id"`
+	Sequence   uint64    `gorm:"uniqueIndex;not null" json:"sequence"`
+	CreatedAt  time.Time `gorm:"index;not null" json:"created_at"`
+	ActorID    string    `gorm:"size:64;index" json:"actor_id"`
+	ActorEmail string    `gorm:"size:256;index" json:"actor_email"`
+	ActorRole  string    `gorm:"size:32" json:"actor_role"`
+	SourceIP   string    `gorm:"size:64" json:"source_ip"`
+	Action     string    `gorm:"size:64;index;not null" json:"action"`
+	Severity   string    `gorm:"size:16;index;not null" json:"severity"`
+	TargetType string    `gorm:"size:64;index" json:"target_type"`
+	TargetID   string    `gorm:"size:128;index" json:"target_id"`
+	Summary    string    `gorm:"size:512;not null" json:"summary"`
+	Details    string    `gorm:"type:text" json:"details,omitempty"`
+	PrevHash   string    `gorm:"size:64;not null" json:"prev_hash"`
+	EntryHash  string    `gorm:"size:64;uniqueIndex;not null" json:"entry_hash"`
+}
+
+// AlertWebhook configures an external webhook destination for audit and security alerts.
+type AlertWebhook struct {
+	ID              string     `gorm:"primaryKey;size:64" json:"id"`
+	Name            string     `gorm:"size:128;not null" json:"name"`
+	ProviderType    string     `gorm:"size:32;not null" json:"provider_type"`
+	WebhookURL      string     `gorm:"size:1024;not null" json:"-"`
+	TelegramChatID  string     `gorm:"size:128" json:"telegram_chat_id,omitempty"`
+	SigningSecret   string     `gorm:"size:256" json:"-"`
+	Events          string     `gorm:"type:text;not null" json:"events"`
+	IsActive        bool       `gorm:"default:true" json:"is_active"`
+	LastDeliveredAt *time.Time `json:"last_delivered_at,omitempty"`
+	LastStatusCode  int        `json:"last_status_code,omitempty"`
+	LastError       string     `gorm:"size:512" json:"last_error,omitempty"`
+	CreatedAt       time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt       time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }

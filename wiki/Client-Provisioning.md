@@ -23,29 +23,19 @@ SwanPanel delivers native operating system configuration profiles without requir
 ---
 
 ## 2. Windows 10 & 11
-- **Provisioning Method:** Idempotent PowerShell script.
+- **Provisioning Method:** Idempotent PowerShell script (`setup-<hostname>.ps1`, run as Administrator).
 - **Workflow:**
-  1. Exports the client `.p12` bundle to `cert:\CurrentUser\My` and installs the Root CA certificate into `cert:\CurrentUser\Root`.
-  2. Executes `Add-VpnConnection`:
-     ```powershell
-     Add-VpnConnection -Name "SwanPanel-VPN" `
-       -ServerAddress "<SERVER_ADDRESS>" `
-       -TunnelType IKEv2 `
-       -AuthenticationMethod MachineCertificate `
-       -SplitTunneling
-     ```
-  3. Configures IPsec cryptographic proposal parameters (`Set-VpnConnectionIPsecConfiguration`) with modern AES-256-GCM / SHA-384 / ECP-384 cipher suites.
-  4. Adds routing table entries (`Add-VpnConnectionRoute`) for assigned resource group CIDRs.
+  1. Imports the Root CA certificate into `Cert:\LocalMachine\Root` and the client `.p12` identity into `Cert:\LocalMachine\My`.
+  2. Executes `Add-VpnConnection` (`IKEv2`, `MachineCertificate` authentication, split-tunneling) and configures IPsec proposal parameters (`Set-VpnConnectionIPsecConfiguration`).
+  3. Adds split-tunnel routing table entries (`Add-VpnConnectionRoute`) for assigned resource group CIDRs.
 
 ---
 
-## 3. Linux (NetworkManager & swanctl)
-- **NetworkManager (`.nmconnection`):**
-  - Download the ready `.nmconnection` file to `/etc/NetworkManager/system-connections/`.
-  - Set permissions `chmod 600`.
-  - Reload connections: `nmcli connection reload && nmcli connection up SwanPanel`.
-- **swanctl CLI:**
-  - Provides a complete `swanctl.conf` connection block with client certificate and private key paths.
+## 3. Linux (`setup-<hostname>.sh` & `swanctl`)
+- **Automated Shell Script (`setup-<hostname>.sh`):**
+  - Installs strongSwan if needed, deploys Root CA and client certificate/key into `/etc/swanctl/`, writes `/etc/swanctl/conf.d/swanpanel.conf`, and loads connections via `swanctl --load-all`.
+- **swanctl Config (`?format=conf`):**
+  - Provides a standalone `swanctl-<hostname>.conf` connection block with client certificate and traffic selectors.
 
 ---
 
