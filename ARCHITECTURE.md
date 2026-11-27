@@ -1,7 +1,7 @@
 # ARCHITECTURE.md — System Architecture & Technical Specifications
 
 **Product:** SwanPanel (`swan-panel`)  
-**Version:** 1.0.1
+**Version:** 1.1.0
 **Scope:** Zero-Trust IKEv2 / strongSwan Modern Control Plane (Enterprise Grade)  
 **Standard:** Single-Binary Go Backend, Embedded React 19 SPA, 100% Native VPN Clients  
 

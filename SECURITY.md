@@ -30,8 +30,9 @@ Security fixes target the latest stable release. Operators should update to the 
 
 | Version | Supported | Security Notes |
 | :--- | :--- | :--- |
-| `v1.0.x` | Supported | First stable release line |
-| `v0.0.x` | Unsupported | Pre-stable builds; upgrade to v1.0.0 or later |
+| `v1.1.x` | Supported | Current stable release line |
+| `v1.0.x` | Maintenance | Upgrade to v1.1.0 or later |
+| `v0.0.x` | Unsupported | Pre-stable builds; upgrade to v1.1.0 or later |
 
 ---
 

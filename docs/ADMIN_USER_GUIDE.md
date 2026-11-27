@@ -2,7 +2,7 @@
 
 > **Document Version:** 3.0.0  
 > **Target Audience:** Network Engineers, DevOps / SRE Administrators, Security Operations Center (SOC)  
-> **Platform Version:** SwanPanel v1.0.1
+> **Platform Version:** SwanPanel v1.1.0
 > **Security Baseline:** NIST SP 800-207 Zero-Trust Architecture, FIPS 140-3 Cryptography, RFC 7296 (IKEv2), RFC 4555 (MOBIKE)
 
 ---
