@@ -2,7 +2,7 @@
 
 > **Document Version:** 3.0.0  
 > **Target Audience:** All Employees, Remote Contractors, Corporate Device Users  
-> **Platform Version:** SwanPanel v1.0.1
+> **Platform Version:** SwanPanel v1.1.0
 > **Supported Client Operating Systems:** Apple macOS, Apple iOS / iPadOS, Microsoft Windows 11 / 10, Linux (Ubuntu, Debian, Fedora, Arch, Alpine), Android 12+
 
 ---
