@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload verified frontend assets for release
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: swan-panel-ui-dist
           path: ui/dist/
