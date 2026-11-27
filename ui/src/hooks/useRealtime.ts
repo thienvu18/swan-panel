@@ -47,6 +47,8 @@ export function useRealtime(token?: string | null) {
       } else if (event.type === 'log_event' && Date.now() - lastLogsInvalidated >= 1000) {
         lastLogsInvalidated = Date.now();
         queryClient.invalidateQueries({ queryKey: ['system_logs'] });
+      } else if (event.type === 'audit_event') {
+        queryClient.invalidateQueries({ queryKey: ['audit_logs'] });
       }
     };
 

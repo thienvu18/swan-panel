@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
 	"gorm.io/gorm"
 )
 
@@ -24,15 +25,18 @@ type JWTClaims struct {
 	UserID  string `json:"user_id"`
 	Email   string `json:"email"`
 	IsAdmin bool   `json:"is_admin"`
+	Epoch   string `json:"epoch,omitempty"`
 	jwt.RegisteredClaims
 }
 
-// GenerateToken signs a new JWT token for an authenticated user
+// GenerateToken signs a new JWT token for an authenticated user bound to the active session epoch.
 func GenerateToken(user *db.User, secret string, duration time.Duration) (string, error) {
+	epoch, _ := db.CurrentSessionEpoch(db.DB)
 	claims := JWTClaims{
 		UserID:  user.ID,
 		Email:   user.Email,
 		IsAdmin: user.IsAdmin,
+		Epoch:   epoch,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -107,9 +111,50 @@ func RequireAuth(secret string) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Account suspended or pending approval"})
 			return
 		}
+		if currentEpoch, err := db.CurrentSessionEpoch(db.DB); err != nil {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "Session verification unavailable"})
+			return
+		} else if currentEpoch != "" && !SecureTokenCompare(claims.Epoch, currentEpoch) {
+			slog.Warn("Session token invalidated by session epoch rotation", "user_id", user.ID)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Session invalidated; sign in again"})
+			return
+		}
 		c.Set("user_id", user.ID)
 		c.Set("email", user.Email)
 		c.Set("is_admin", user.IsAdmin)
+		c.Next()
+	}
+}
+
+// MaintenanceGate rejects API traffic with HTTP 503 during backup restore maintenance
+// or fail-closed recovery states, while allowing /api/health to report runtime status.
+func MaintenanceGate(coord *maintenance.Coordinator) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if coord == nil || !strings.HasPrefix(c.Request.URL.Path, "/api") || c.Request.URL.Path == "/api/health" {
+			c.Next()
+			return
+		}
+		release, err := coord.BeginRequest()
+		if err != nil {
+			if errors.Is(err, maintenance.ErrFailedClosed) {
+				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+					"error":       "Control plane is locked in fail-closed recovery mode; manual recovery required",
+					"code":        "RECOVERY_FAILED_CLOSED",
+					"maintenance": true,
+				})
+				return
+			}
+			c.Header("Retry-After", "5")
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"error":               "System restore is in progress; control plane restarting",
+				"code":                "MAINTENANCE_MODE",
+				"maintenance":         true,
+				"retry_after_seconds": 5,
+			})
+			return
+		}
+		c.Set("maintenance_release", release)
+		defer release()
 		c.Next()
 	}
 }

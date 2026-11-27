@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
 )
 
@@ -37,6 +38,19 @@ func SetupAdmin(c *gin.Context) {
 	user, err := db.CreateInitialAdmin(req.Token, req.Name, req.Email, req.Password)
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	if err := audit.RecordFromContext(c, audit.EntryInput{
+		ActorID:    user.ID,
+		ActorEmail: user.Email,
+		ActorRole:  "admin",
+		Action:     "auth.setup.completed",
+		Severity:   audit.SeverityInfo,
+		TargetType: "user",
+		TargetID:   user.ID,
+		Summary:    "Initial administrator setup completed for " + user.Email,
+	}); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Setup audit trail unavailable"})
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"message": "Administrator created. Sign in to continue.", "user": gin.H{"id": user.ID, "email": user.Email, "name": user.Name}})

@@ -24,7 +24,7 @@
           <rect x="35" y="61" width="41" height="7" rx="3.5" fill="#60a5fa" />
         </svg>
         <span>SwanPanel</span>
-        <span class="logo-badge">v1.0.1</span>
+        <span class="logo-badge">v1.1.0</span>
       </a>
 
       <!-- Primary Navigation Landmark (Concise: 3 main links) -->
@@ -368,6 +368,44 @@
           <h3 class="feature-title" data-i18n="features.f6_title">Single Self-Contained Binary</h3>
           <p class="feature-desc" data-i18n="features.f6_desc">Go, SQLite, the web dashboard and DNS in one Linux control-plane binary; Docker Compose also bundles the strongSwan VPN gateway.</p>
         </div>
+
+        <!-- Feature 7: 1-Click Encrypted Backup -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 8v13H3V8"></path>
+              <path d="M1 3h22v5H1z"></path>
+              <path d="M10 12h4"></path>
+            </svg>
+          </div>
+          <h3 class="feature-title" data-i18n="features.f7_title">1-Click Encrypted Backup & Restore</h3>
+          <p class="feature-desc" data-i18n="features.f7_desc">Export and restore encrypted archives (up to 64 MiB encrypted / 256 MiB uncompressed) bundling SQLite, PKI, and the independent MFA key with controlled-restart activation.</p>
+        </div>
+
+        <!-- Feature 8: Immutable Audit Trail & Webhook Alerts -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+          </div>
+          <h3 class="feature-title" data-i18n="features.f8_title">Immutable Audit Trail & Webhook Alerts</h3>
+          <p class="feature-desc" data-i18n="features.f8_desc">Append-only SHA-256 hash-chained SQLite audit ledger (snapshot-scoped across restores) paired with SSRF-hardened HTTPS webhooks and a persistent at-least-once retry outbox.</p>
+        </div>
+
+        <!-- Feature 9: Two-Factor Authentication (TOTP MFA) -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+            </svg>
+          </div>
+          <h3 class="feature-title" data-i18n="features.f9_title">Two-Factor Authentication (TOTP MFA)</h3>
+          <p class="feature-desc" data-i18n="features.f9_desc">RFC 6238 time-based one-time password protection for local accounts with encrypted seeds at rest, single-use recovery codes, and self-service enrollment.</p>
+        </div>
       </div>
     </section>
 
@@ -526,7 +564,7 @@ docker compose ps</pre>
       <a href="https://github.com/thienvu18/swan-panel" target="_blank" rel="noopener" data-i18n="footer.github">GitHub Repository</a>
       <a href="guide.html" data-i18n="footer.guide">Docs & Guide</a>
       <a href="https://github.com/thienvu18/swan-panel/wiki" target="_blank" rel="noopener" data-i18n="footer.wiki">Wiki</a>
-      <a href="https://github.com/thienvu18/swan-panel/releases/tag/v1.0.1" target="_blank" rel="noopener" data-i18n="footer.releases">Release v1.0.1</a>
+      <a href="https://github.com/thienvu18/swan-panel/releases/tag/v1.1.0" target="_blank" rel="noopener" data-i18n="footer.releases">Release v1.1.0</a>
       <a href="https://github.com/thienvu18/swan-panel/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="footer.license">AGPL-3.0 License</a>
     </div>
     <p data-i18n="footer.credit">SwanPanel is an open-source project created by Thái Thiên Vũ. Licensed under GNU AGPL-3.0.</p>

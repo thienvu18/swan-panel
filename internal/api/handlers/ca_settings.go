@@ -8,9 +8,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
 	"github.com/swan-panel/swan-panel/internal/pki"
 	"github.com/swan-panel/swan-panel/internal/policy"
+	"gorm.io/gorm"
 )
 
 var countryCode = regexp.MustCompile(`^[A-Z]{2}$`)
@@ -84,17 +87,36 @@ func (h *SettingsHandler) RotateCAIdentity(c *gin.Context) {
 		Organization: []string{strings.TrimSpace(req.Organization)},
 		Country:      []string{req.Country}, Province: []string{strings.TrimSpace(req.Province)},
 		Locality: []string{strings.TrimSpace(req.Locality)}}
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
 	if err := manager.RotateRootCA(name); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": fmt.Sprintf("CA rotation failed: %v", err)})
 		return
 	}
 	// The CA is already rotated; a later apply failure cannot roll it back
-	// safely. Leave durable retry state and tell the UI the operation committed.
-	if err := db.DB.Model(&db.RuntimeApplyState{}).Where("id = ?", 1).Update("status", "pending").Error; err != nil {
+	// safely. Persist both runtime retry state and audit evidence in one transaction.
+	var auditEntry db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&db.RuntimeApplyState{}).Where("id = ?", 1).Update("status", "pending").Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "gateway.ca.rotated",
+			Severity:   audit.SeverityCritical,
+			TargetType: "ca",
+			TargetID:   manager.CAIdentity().Serial,
+			Summary:    "Root CA rotated: " + name.CommonName,
+			Details:    map[string]any{"common_name": name.CommonName, "organization": req.Organization, "country": req.Country},
+		}))
+		return recErr
+	}); err != nil {
 		c.JSON(http.StatusAccepted, gin.H{"ca": manager.CAIdentity(), "runtime_status": "pending", "message": "CA rotated; gateway state recording requires attention"})
 		return
 	}
-	if err := policy.ReconcileGateway(c.Request.Context(), db.DB); err != nil {
+	audit.NotifyCommitted(auditEntry)
+	if err := policy.ReconcileGatewayWithinMutation(c.Request.Context(), db.DB); err != nil {
 		c.JSON(http.StatusAccepted, gin.H{"ca": manager.CAIdentity(), "runtime_status": "pending", "message": "CA rotated; gateway reconciliation pending"})
 		return
 	}

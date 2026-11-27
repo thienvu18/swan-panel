@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronDown, Code2, FileJson2, RotateCcw, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import { ArchiveRestore, Check, ChevronDown, Code2, Download, Eye, EyeOff, FileJson2, RotateCcw, ShieldCheck, SlidersHorizontal, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { AdvancedJSONEditor } from '../components/AdvancedJSONEditor';
 import { apiJSON } from '../lib/api';
+import { downloadEncryptedBackup, RestoreOutcomeError, uploadRestoreBackup, waitForControlPlaneRestart } from '../lib/backupApi';
 import { checkGatewayJSON, diffGatewayJSON } from '../lib/gatewayJSON';
 
 interface ServerSettingsProps { onRegisterSaveButton?: (button: React.ReactNode) => void; }
-type SettingsTab = 'basic' | 'advanced' | 'ca';
+type SettingsTab = 'basic' | 'advanced' | 'ca' | 'backup';
 interface GatewaySettings {
   id?: number;
   vpn_name: string;
@@ -65,6 +66,23 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
   const [caForm, setCAForm] = useState({ common_name: '', organization: '', country: '', province: '', locality: '' });
   const [confirmation, setConfirmation] = useState('');
   const [notice, setNotice] = useState('');
+  const [exportPass, setExportPass] = useState('');
+  const [exportConfirmPass, setExportConfirmPass] = useState('');
+  const [showExportPass, setShowExportPass] = useState(false);
+  const [exportTouched, setExportTouched] = useState({ pass: false, confirm: false });
+  const [exportSubmitAttempted, setExportSubmitAttempted] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restorePass, setRestorePass] = useState('');
+  const [showRestorePass, setShowRestorePass] = useState(false);
+  const [restoreConfirmText, setRestoreConfirmText] = useState('');
+  const [restoreTouched, setRestoreTouched] = useState({ file: false, pass: false, confirm: false });
+  const [restoreSubmitAttempted, setRestoreSubmitAttempted] = useState(false);
+  const [restoreRestarting, setRestoreRestarting] = useState(false);
+  const exportPassRef = useRef<HTMLInputElement>(null);
+  const exportConfirmRef = useRef<HTMLInputElement>(null);
+  const restoreFileRef = useRef<HTMLInputElement>(null);
+  const restorePassRef = useRef<HTMLInputElement>(null);
+  const restoreConfirmRef = useRef<HTMLInputElement>(null);
 
   const settings = useQuery<GatewaySettings>({
     queryKey: ['strongswan_settings'], queryFn: () => getJSON('/api/settings/strongswan'),
@@ -132,6 +150,115 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
       await queryClient.invalidateQueries({ queryKey: ['ca_identity'] });
     },
   });
+  const exportBackup = useMutation({
+    mutationFn: (passphrase: string) => downloadEncryptedBackup(passphrase),
+    onMutate: () => setNotice(''),
+    onSuccess: filename => {
+      setExportPass('');
+      setExportConfirmPass('');
+      setExportTouched({ pass: false, confirm: false });
+      setExportSubmitAttempted(false);
+      setNotice(t('server.backup.export_success', { filename }));
+    },
+  });
+  const restoreBackup = useMutation({
+    mutationFn: ({ file, passphrase, confirm }: { file: File; passphrase: string; confirm: string }) =>
+      uploadRestoreBackup(file, passphrase, confirm),
+    onMutate: () => setNotice(''),
+    onSuccess: async result => {
+      setRestoreFile(null);
+      setRestorePass('');
+      setRestoreConfirmText('');
+      setRestoreTouched({ file: false, pass: false, confirm: false });
+      setRestoreSubmitAttempted(false);
+      if (restoreFileRef.current) restoreFileRef.current.value = '';
+      if (result.runtime_status === 'restarting') {
+        setRestoreRestarting(true);
+        setNotice(t('server.backup.restore_restarting'));
+        try {
+          await waitForControlPlaneRestart(30, 2000, fetch, result.restore_id);
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setNotice(t('server.backup.restore_restarted_reauth'));
+          window.setTimeout(() => {
+            window.location.reload();
+          }, 1200);
+        } catch (err) {
+          setRestoreRestarting(false);
+          if (err instanceof RestoreOutcomeError && err.outcome === 'rolled_back') {
+            setNotice(t('server.backup.restore_rolled_back', { reason: err.message }));
+            await queryClient.invalidateQueries();
+          } else if (err instanceof RestoreOutcomeError && err.outcome === 'failed_closed') {
+            setNotice(t('server.backup.restore_failed_closed'));
+          } else if (err instanceof RestoreOutcomeError && err.outcome === 'unverified') {
+            setNotice(t('server.backup.restore_outcome_unverified'));
+          } else {
+            setNotice(t('server.backup.restore_restart_timeout'));
+          }
+        }
+        return;
+      }
+      setNotice(result.runtime_status === 'applied'
+        ? t('server.backup.restore_applied')
+        : t('server.backup.restore_pending', { reason: result.message || t('server.status_unknown') }));
+      await queryClient.invalidateQueries();
+    },
+  });
+
+  const exportPassError = (exportTouched.pass || exportSubmitAttempted) && (exportPass.length < 12 || exportPass.length > 128)
+    ? t('server.backup.passphrase_length_error') : '';
+  const exportConfirmError = (exportTouched.confirm || exportSubmitAttempted) && exportConfirmPass !== exportPass
+    ? t('server.backup.passphrase_mismatch') : '';
+  const restoreFileError = (restoreTouched.file || restoreSubmitAttempted) && !restoreFile
+    ? t('server.backup.file_required') : '';
+  const restorePassError = (restoreTouched.pass || restoreSubmitAttempted) && (restorePass.length < 12 || restorePass.length > 128)
+    ? t('server.backup.passphrase_length_error') : '';
+  const restoreConfirmError = (restoreTouched.confirm || restoreSubmitAttempted) && restoreConfirmText.trim() !== 'RESTORE BACKUP'
+    ? t('server.backup.restore_confirm_error') : '';
+
+  const submitExportBackup = (e: React.FormEvent) => {
+    e.preventDefault();
+    setExportSubmitAttempted(true);
+    exportBackup.reset();
+    if (exportPass.length < 12 || exportPass.length > 128) {
+      exportPassRef.current?.focus();
+      return;
+    }
+    if (exportConfirmPass !== exportPass) {
+      exportConfirmRef.current?.focus();
+      return;
+    }
+    exportBackup.mutate(exportPass);
+  };
+
+  const submitRestoreBackup = (e: React.FormEvent) => {
+    e.preventDefault();
+    setRestoreSubmitAttempted(true);
+    restoreBackup.reset();
+    if (!restoreFile) {
+      restoreFileRef.current?.focus();
+      return;
+    }
+    if (restorePass.length < 12 || restorePass.length > 128) {
+      restorePassRef.current?.focus();
+      return;
+    }
+    if (restoreConfirmText.trim() !== 'RESTORE BACKUP') {
+      restoreConfirmRef.current?.focus();
+      return;
+    }
+    const targetFile = restoreFile;
+    requestConfirmation({
+      title: t('confirm.restore_backup_title'),
+      description: t('confirm.restore_backup_description', { name: targetFile.name }),
+      confirmLabel: t('server.backup.restore_action'),
+      onConfirm: () => restoreBackup.mutateAsync({
+        file: targetFile,
+        passphrase: restorePass,
+        confirm: restoreConfirmText.trim(),
+      }),
+    });
+  };
   const advanced = useMemo(() => {
     try {
       const value: unknown = JSON.parse(advancedText);
@@ -182,7 +309,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
 
   useEffect(() => {
     if (!onRegisterSaveButton) return;
-    if (!settings.data || tab === 'ca') {
+    if (!settings.data || tab === 'ca' || tab === 'backup') {
       onRegisterSaveButton(null);
       return;
     }
@@ -208,8 +335,18 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
           ['basic', SlidersHorizontal, t('server.settings.basic_tab')],
           ['advanced', FileJson2, t('server.settings.advanced_tab')],
           ['ca', ShieldCheck, t('server.settings.ca_tab')],
+          ['backup', ArchiveRestore, t('server.settings.backup_tab')],
         ] as const).map(([key, Icon, label]) => (
-          <button type="button" key={key} onClick={() => { setTab(key); setNotice(''); }}
+          <button type="button" key={key} onClick={() => {
+            setTab(key);
+            setNotice('');
+            if (key !== 'backup') {
+              setExportPass('');
+              setExportConfirmPass('');
+              setRestorePass('');
+              setRestoreConfirmText('');
+            }
+          }}
             aria-current={tab === key ? 'page' : undefined}
             className={'flex items-center gap-2 border rounded-lg px-3 py-2 text-xs font-medium ' +
               (tab === key ? 'border-blue-500 bg-blue-500/10 text-accent' : 'subtle-border text-subtle hover:text-current')}>
@@ -447,6 +584,232 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
             </>
           )}
         </section>
+      )}
+
+      {tab === 'backup' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-5xl">
+          <section className="surface-card border subtle-border rounded-xl p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold">{t('server.backup.export_title')}</h2>
+              <p className="text-xs text-dim mt-1">{t('server.backup.export_description')}</p>
+            </div>
+            <p className="text-xs text-subtle border subtle-border rounded-lg p-3">
+              {t('server.backup.export_includes_hint')}
+            </p>
+            <p className="text-[11px] text-dim">{t('server.backup.limits_hint')}</p>
+            <form onSubmit={submitExportBackup} noValidate className="space-y-3">
+              <div>
+                <label htmlFor="backup-export-passphrase" className={labelClass}>
+                  {t('server.backup.passphrase_label')}
+                </label>
+                <div className="relative">
+                  <input
+                    id="backup-export-passphrase"
+                    name="export_passphrase"
+                    ref={exportPassRef}
+                    type={showExportPass ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    className={inputClass + ' pr-9'}
+                    value={exportPass}
+                    maxLength={128}
+                    aria-invalid={Boolean(exportPassError)}
+                    aria-describedby={exportPassError ? 'backup-export-pass-err' : 'backup-export-pass-hint'}
+                    onChange={e => {
+                      setExportPass(e.target.value);
+                      if (exportSubmitAttempted) setExportSubmitAttempted(false);
+                      exportBackup.reset();
+                    }}
+                    onBlur={() => setExportTouched(s => ({ ...s, pass: true }))}
+                  />
+                  <button
+                    type="button"
+                    aria-pressed={showExportPass}
+                    aria-label={t('server.backup.toggle_passphrase')}
+                    onClick={() => setShowExportPass(v => !v)}
+                    className="absolute inset-y-0 right-0 px-2.5 text-dim hover:text-current"
+                  >
+                    {showExportPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <p id="backup-export-pass-hint" className="text-[11px] text-dim mt-1">
+                  {t('server.backup.passphrase_hint')}
+                </p>
+                {exportPassError && (
+                  <p id="backup-export-pass-err" role="alert" className="text-xs text-status-danger mt-1">
+                    {exportPassError}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="backup-export-confirm" className={labelClass}>
+                  {t('server.backup.confirm_passphrase_label')}
+                </label>
+                <input
+                  id="backup-export-confirm"
+                  name="export_passphrase_confirm"
+                  ref={exportConfirmRef}
+                  type={showExportPass ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  className={inputClass}
+                  value={exportConfirmPass}
+                  maxLength={128}
+                  aria-invalid={Boolean(exportConfirmError)}
+                  aria-describedby={exportConfirmError ? 'backup-export-confirm-err' : undefined}
+                  onChange={e => {
+                    setExportConfirmPass(e.target.value);
+                    if (exportSubmitAttempted) setExportSubmitAttempted(false);
+                    exportBackup.reset();
+                  }}
+                  onBlur={() => setExportTouched(s => ({ ...s, confirm: true }))}
+                />
+                {exportConfirmError && (
+                  <p id="backup-export-confirm-err" role="alert" className="text-xs text-status-danger mt-1">
+                    {exportConfirmError}
+                  </p>
+                )}
+              </div>
+
+              {exportBackup.isError && (
+                <p role="alert" className="text-xs text-status-danger">{exportBackup.error.message}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={exportBackup.isPending}
+                className="rounded-lg bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 text-xs font-semibold disabled:opacity-50 inline-flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                {exportBackup.isPending ? t('server.backup.exporting') : t('server.backup.export_action')}
+              </button>
+            </form>
+          </section>
+
+          <section className="surface-card border border-amber-500/40 rounded-xl p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold">{t('server.backup.restore_title')}</h2>
+              <p className="text-xs text-dim mt-1">{t('server.backup.restore_description')}</p>
+            </div>
+            <p className="text-xs text-status-warning border border-amber-500/30 bg-amber-500/10 rounded-lg p-3">
+              {t('server.backup.restore_warning')}
+            </p>
+            <form onSubmit={submitRestoreBackup} noValidate className="space-y-3">
+              <div>
+                <label htmlFor="backup-restore-file" className={labelClass}>
+                  {t('server.backup.file_label')}
+                </label>
+                <input
+                  id="backup-restore-file"
+                  ref={restoreFileRef}
+                  type="file"
+                  accept=".tar.enc,.enc"
+                  className={inputClass}
+                  aria-invalid={Boolean(restoreFileError)}
+                  aria-describedby={restoreFileError ? 'backup-restore-file-err' : 'backup-restore-file-hint'}
+                  onChange={e => {
+                    const selected = e.target.files?.[0] || null;
+                    setRestoreFile(selected);
+                    if (restoreSubmitAttempted) setRestoreSubmitAttempted(false);
+                    restoreBackup.reset();
+                  }}
+                  onBlur={() => setRestoreTouched(s => ({ ...s, file: true }))}
+                />
+                <p id="backup-restore-file-hint" className="text-[11px] text-dim mt-1">
+                  {restoreFile ? restoreFile.name : t('server.backup.file_hint')}
+                </p>
+                {restoreFileError && (
+                  <p id="backup-restore-file-err" role="alert" className="text-xs text-status-danger mt-1">
+                    {restoreFileError}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="backup-restore-passphrase" className={labelClass}>
+                  {t('server.backup.restore_passphrase_label')}
+                </label>
+                <div className="relative">
+                  <input
+                    id="backup-restore-passphrase"
+                    name="restore_passphrase"
+                    ref={restorePassRef}
+                    type={showRestorePass ? 'text' : 'password'}
+                    autoComplete="off"
+                    className={inputClass + ' pr-9'}
+                    value={restorePass}
+                    maxLength={128}
+                    aria-invalid={Boolean(restorePassError)}
+                    aria-describedby={restorePassError ? 'backup-restore-pass-err' : undefined}
+                    onChange={e => {
+                      setRestorePass(e.target.value);
+                      if (restoreSubmitAttempted) setRestoreSubmitAttempted(false);
+                      restoreBackup.reset();
+                    }}
+                    onBlur={() => setRestoreTouched(s => ({ ...s, pass: true }))}
+                  />
+                  <button
+                    type="button"
+                    aria-pressed={showRestorePass}
+                    aria-label={t('server.backup.toggle_passphrase')}
+                    onClick={() => setShowRestorePass(v => !v)}
+                    className="absolute inset-y-0 right-0 px-2.5 text-dim hover:text-current"
+                  >
+                    {showRestorePass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {restorePassError && (
+                  <p id="backup-restore-pass-err" role="alert" className="text-xs text-status-danger mt-1">
+                    {restorePassError}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="backup-restore-confirm" className={labelClass}>
+                  {t('server.backup.restore_confirm_type')}
+                </label>
+                <input
+                  id="backup-restore-confirm"
+                  name="restore_confirm"
+                  ref={restoreConfirmRef}
+                  className={inputClass}
+                  value={restoreConfirmText}
+                  placeholder="RESTORE BACKUP"
+                  aria-invalid={Boolean(restoreConfirmError)}
+                  aria-describedby={restoreConfirmError ? 'backup-restore-confirm-err' : undefined}
+                  onChange={e => {
+                    setRestoreConfirmText(e.target.value);
+                    if (restoreSubmitAttempted) setRestoreSubmitAttempted(false);
+                    restoreBackup.reset();
+                  }}
+                  onBlur={() => setRestoreTouched(s => ({ ...s, confirm: true }))}
+                />
+                {restoreConfirmError && (
+                  <p id="backup-restore-confirm-err" role="alert" className="text-xs text-status-danger mt-1">
+                    {restoreConfirmError}
+                  </p>
+                )}
+              </div>
+
+              {restoreBackup.isError && (
+                <p role="alert" className="text-xs text-status-danger">{restoreBackup.error.message}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={restoreBackup.isPending || restoreRestarting}
+                className="rounded-lg border border-red-500 text-status-danger px-4 py-2 text-xs font-semibold disabled:opacity-50 inline-flex items-center gap-2"
+              >
+                <Upload className="h-4 w-4" />
+                {restoreRestarting
+                  ? t('server.backup.restore_restarting_btn')
+                  : restoreBackup.isPending
+                    ? t('server.backup.restoring')
+                    : t('server.backup.restore_action')}
+              </button>
+            </form>
+          </section>
+        </div>
       )}
     </div>
   );

@@ -2,7 +2,7 @@
 
 > **Document Version:** 3.0.0  
 > **Target Audience:** Network Engineers, DevOps / SRE Administrators, Security Operations Center (SOC)  
-> **Platform Version:** SwanPanel v1.0 Enterprise  
+> **Platform Version:** SwanPanel v1.0.1
 > **Security Baseline:** NIST SP 800-207 Zero-Trust Architecture, FIPS 140-3 Cryptography, RFC 7296 (IKEv2), RFC 4555 (MOBIKE)
 
 ---
@@ -70,6 +70,13 @@ OIDC is configured separately after initial setup; SSO candidates must be approv
 * **Theme Switching:** Toggle between **Dark Mode** (zinc-950 background `#0b0f17`) and **Light Mode** (slate-50 background `#f8fafc`) via the moon/sun icon.
 
 ![SwanPanel Login Screen (Light Mode)](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/01_login_page.png)
+
+### 2.4. Multi-Factor Authentication (MFA / TOTP) Challenge
+For accounts with two-factor authentication enabled, the login screen seamlessly transitions to a secondary verification challenge after primary credential verification:
+* **Standard Verification:** Enter the 6-digit rolling time-based one-time password (TOTP) from an authenticator app (Google Authenticator, Apple Passwords, 1Password, Bitwarden).
+* **Emergency Recovery:** When an authenticator device is lost or discharged, administrators and users can enter any unused 8-character emergency recovery code (e.g. `A1B2-C3D4`). Each recovery code is single-use and consumed atomically.
+
+![SwanPanel Two-Factor Authentication Login Challenge](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/01c_login_mfa_challenge.png)
 
 ---
 
@@ -140,7 +147,7 @@ SwanPanel treats devices as first-class cryptographic identities.
    * **Ownership Type:** Choose between **Company Resource** (servers, gateways, bastions) or **User Device** (employee laptops, mobile devices).
    * **Subnet:** Select the destination Resource Group from the dropdown.
    * **IP Allocation:**
-     * **Dynamic:** Leased automatically on connect via RADIUS/IKEv2 configuration attributes.
+     * **Dynamic:** Allocated automatically from the subnet pool and enforced via per-device strongSwan VICI IP pools.
      * **Static:** Reserve a fixed VIP within the assigned subnet (e.g. `10.150.0.10`).
    * **Platform:** Select destination OS (`macOS`, `Windows`, `Linux`, `iOS`, `Android`).
 3. Click **Create Device**. SwanPanel's internal PKI generates a 2048-bit RSA key pair, signs the X.509 client certificate, computes its SHA-256 fingerprint, and stores the record securely. If gateway reconciliation is **pending**, verify the apply status before using the new profile.
@@ -191,7 +198,7 @@ SwanPanel implements a **Default-Deny** microsegmentation engine.
 1. Navigate to **Access Rules** in the sidebar.
 2. Click **+ Add Rule**.
 3. Specify:
-   * **Subject Type:** Choose `user_group` or `user`.
+   * **Subject Type:** Choose `user_group`, `user`, or `device`.
    * **Subject Name:** Select or enter the user group (e.g. `Site Reliability Engineers`).
    * **Policy Action:** Toggle between `ALLOW` (Emerald) or `DENY` (Rose).
    * **Target Type:** Choose `resource_group` or specific `cidr_ip`.
@@ -283,6 +290,27 @@ Group users logically (e.g. `DevOps Engineers`, `External Auditors`, `Finance Te
 
 ![Modal Add User Group](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/10_modal_add_group.png)
 
+### 9.3. Multi-Factor Authentication (MFA / TOTP) & Account Security
+SwanPanel enforces zero-trust identity verification with native RFC 6238 TOTP support for local accounts:
+* **Enabling 2FA:** Authenticated users click the **Account Security** key icon in the sidebar footer to open the security modal. Scanning the displayed QR code or copying the Base32 secret key into an authenticator app initiates enrollment.
+* **Enrollment Confirmation:** Submitting a valid 6-digit TOTP code commits enrollment and displays 8 single-use emergency recovery codes.
+* **Emergency Recovery Codes:** Users must securely archive these codes (via 1-click text file download or clipboard copy). Each code allows one-time emergency sign-in without a TOTP device.
+* **Self-Service Code Regeneration:** Active users can regenerate their 8 recovery codes at any time by verifying their current password and an active TOTP code.
+
+![Account Security TOTP Setup](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/27_modal_account_security_setup.png)
+
+![Account Security Emergency Recovery Codes](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/28_modal_account_security_backup_codes.png)
+
+![Account Security Active Two-Factor State](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/29_modal_account_security_active.png)
+
+### 9.4. Administrator 2FA Reset & Emergency Recovery
+If an employee or contractor loses their authenticator device and has exhausted all emergency recovery codes, administrators can reset their 2FA enrollment directly from the **Users Directory**:
+* **2FA Status Indicators:** The Users table displays a green `2FA` badge next to users with active two-factor protection.
+* **Admin Reset Action:** Clicking the amber **Reset 2FA** button (`ShieldOff`) on the user row prompts for confirmation.
+* **Atomic Disenrollment:** Confirming the reset permanently removes the user's stored TOTP secret and backup codes, allowing them to sign in with password only and re-enroll their new authenticator device.
+
+![Administrator Reset 2FA Confirmation Dialog](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/30_confirm_reset_mfa.png)
+
 ---
 
 ## 10. STRONGSWAN ENGINE & SERVER SETTINGS
@@ -332,34 +360,82 @@ Under the **Certificate Authority (CA)** tab, administrators can inspect and man
 
 ![CA Rotation Confirmation Dialog](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/21_ca_rotate_confirm.png)
 
+### 10.7. 1-Click Encrypted Backup & Disaster Recovery
+Under the **Backup & Restore** tab, administrators can generate encrypted point-in-time recovery archives and restore gateway state with single-click simplicity:
+* **Authenticated Encryption:** Backups are serialized into a v2 `.tar` archive comprising an online-consistent SQLite database snapshot, the PKI authority directory (`ca.crt`, `ca.key`, certificates), and the persistent MFA encryption key (`secrets/mfa.key`) so TOTP 2FA remains portable across fresh-host restores without exporting `JWT_SECRET`. Enforced limits are `64 MiB` encrypted archive upload, `256 MiB` uncompressed archive size, `200 MiB` per entry, and `4,096` entries.
+* **Argon2id Key Derivation:** The administrator passphrase (12–128 characters) is stretched into a 256-bit symmetric key using memory-hard Argon2id parameters (time=3, memory=64MB, threads=4) resistant to GPU brute-force attacks.
+* **AES-256-GCM Protection:** The archive is encrypted using AES-256-GCM with a cryptographically random 96-bit nonce and appended 128-bit authentication tag, producing a tamper-proof `.tar.enc` backup file.
+* **Safe Controlled-Restart Recovery:** Uploading a `.tar.enc` archive verifies the archive, persists staged files and a `prepared` restore journal, enters HTTP `503` maintenance mode to drain in-flight requests and background workers, returns HTTP `202` (`restarting` with a `restore_id` correlation token), and triggers a controlled control-plane restart (requires a supervisor such as systemd `Restart=always` or Docker `restart: unless-stopped`). On startup before opening listeners, SwanPanel snapshots post-drain rollback state, transitions through `applying`, activates and validates the restored DB/PKI/MFA key, rotates session epochs so pre-restore JWTs require fresh sign-in, cancels queued webhook deliveries from before the backup, persists the correlated `applied` or `rolled_back` status (and locks fail-closed on corrupt/unrecoverable recovery states), and reconciles strongSwan VICI/CRL/nftables (keeping control-plane access available in `pending` state if VICI is temporarily unavailable).
+* **Restore Snapshot Semantics & Recovery Codes:** Restoring an archive restores database state to the point-in-time captured in the backup. Audit log entries recorded after that backup timestamp are replaced by the restored snapshot. Existing single-use MFA recovery codes preserved inside the backup remain valid after restore; administrators who used recovery codes after the backup timestamp should regenerate fresh recovery codes once signed back in.
+* **Two-Step Confirmation Safeguard:** Because restoring replaces all gateway policies, certificates, and user credentials, the administrator must explicitly type `"RESTORE BACKUP"` into the safety dialog before restoration executes.
+
+![Server Settings Encrypted Backup and Restore Tab](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17d_server_settings_backup.png)
+
+![Confirm Encrypted Disaster Recovery Restore Dialog](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/26_confirm_restore_backup.png)
+
 ---
 
-## 11. REAL-TIME OBSERVABILITY & SYSTEM LOGS TERMINAL
+## 11. IMMUTABLE AUDIT TRAIL & ALERT WEBHOOKS
+
+SwanPanel includes an append-only security audit ledger and real-time security alert dispatching engine for administrative accountability and incident detection.
+
+![Immutable Audit Trail Ledger](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/22_audit_trail.png)
+
+### 11.1. Cryptographic Append-Only Ledger & SHA-256 Hash Chaining
+Every auditable management action, authentication attempt, device lifecycle change, policy update, and security exception is permanently recorded in SQLite:
+* **Engine-Level Immutability:** SQLite triggers (`trg_audit_logs_no_update`, `trg_audit_logs_no_delete`) abort any SQL `UPDATE` or `DELETE` attempt at the database engine level, ensuring records cannot be tampered with even by compromised application components.
+* **Tamper-Evident Hash Chaining:** Each audit entry calculates a deterministic SHA-256 digest over its canonical JSON representation combined with the previous entry's digest (`prev_hash`). The first record chains from `GenesisHash` (`0000...0000`), forming an unbroken cryptographic blockchain.
+* **Rich Contextual Metadata:** Records capture Sequence number, Timestamp, Actor ID & Email, Actor Role (`admin`, `user`, `system`), Source IP, Action verb (`auth.login.success`, `device.created`, `access_rule.created`, `gateway.reconciled`), Severity (`info`, `warning`, `critical`), Target Type & ID, Human Summary, and JSON Details.
+
+### 11.2. Cryptographic Chain Verification & Evidence Export
+* **1-Click Chain Verification:** Clicking **Verify Chain Integrity** in the page header causes the server to sequentially walk the entire audit table from sequence #1 to latest, recomputing every SHA-256 hash and verifying `prev_hash` linkage. A green **Chain Intact** badge confirms zero records have been altered, skipped, or deleted.
+* **Compliance Evidence Export:** Security officers can export filtered audit trails as **CSV** or **JSON Lines (JSONL)**. CSV exports automatically sanitize formula characters (`=`, `+`, `-`, `@`) to protect against Spreadsheet Formula Injection attacks (CWE-1236).
+
+![Audit Hash Chain Cryptographically Verified](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/23_audit_chain_verified.png)
+
+### 11.3. Real-Time Security Alert Webhooks & Persistent Outbox
+Under the **Alert Webhooks** tab, administrators configure outbound notification endpoints backed by a persistent SQLite delivery outbox (`webhook_deliveries`) with bounded worker concurrency, lease claims, and capped exponential backoff on transient failures:
+* **Supported Platforms:** Native formatting for **Slack Incoming Webhooks**, **Telegram Bot API**, **Microsoft Teams**, and **Generic HTTPS / SIEM** (Splunk HEC, Datadog, Elastic). Delivery uses **at-least-once** semantics during transient retries; consumers can deduplicate using `delivery_id` / `X-SwanPanel-Delivery` (`failed` / `retrying` / `pending` counts appear in the UI and `GET /api/webhooks/deliveries`).
+* **Fail-Safe SSRF Protection:** Outbound requests default strictly to public HTTPS endpoints with DNS dial-time IP checks, disabled proxies, and blocked HTTP redirects. Loopback, link-local metadata (`169.254.169.254`), multicast, and unspecified addresses are always blocked. To permit internal SIEM destinations over HTTPS, configure `WEBHOOK_ALLOWED_DESTINATIONS`.
+* **Event Filters:** Granular subscription patterns: `*` (All events), `severity:critical` (High-priority alerts), `auth.*` (Logins & MFA events), `device.*` (Enrollments & revocations), `gateway.*` (Policy reconciliations), and `auth.bruteforce.suspected` (Automated brute-force threshold detection).
+* **Instant Delivery Testing:** The **Test Webhook** button dispatches an authenticated test payload and displays sanitized HTTP status telemetry without exposing URL tokens or secrets.
+
+![Configured Alert Webhooks Overview](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/24_alert_webhooks.png)
+
+![Modal Add Alert Webhook](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/25_modal_add_webhook.png)
+
+### 11.4. Webhook Security & Tamper-Proof Signing
+* **HMAC-SHA256 Signatures:** Webhook payloads sent to generic HTTPS endpoints include an `X-SwanPanel-Signature` header containing a hex-encoded HMAC-SHA256 signature calculated with the shared secret token, allowing upstream SIEM collectors to verify request authenticity.
+* **Timestamp Replay Protection:** Payloads include an `X-SwanPanel-Timestamp` header and ISO-8601 timestamp in the payload body to mitigate replay attacks.
+
+---
+
+## 12. REAL-TIME OBSERVABILITY & SYSTEM LOGS TERMINAL
 
 Monitor low-level daemon events and debug client connectivity in real time.
 
 ![System Logs Page](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/18_system_logs.png)
 
-### 11.1. SwanPanel Application Log Stream
+### 12.1. SwanPanel Application Log Stream
 The terminal displays SwanPanel's in-memory structured application logs (up to the most recent 1,000 entries), delivered through authenticated HTTP and refreshed on **SSE log notifications**. No browser polling is used. This view is **not** a raw strongSwan/charon journal or a durable audit archive; use the gateway's system journal for full daemon diagnostics.
 * **Timestamp & Severity:** `INFO`, `WARN`, `ERROR`.
 * **Search & Scope:** Filter by the available device/user tags or search text.
 * **Connection State:** The UI distinguishes live SSE connectivity from reconnecting; manually refresh if disconnected.
 * **Pause/Clear:** Pause freezes the current view. Clear hides displayed entries but does not erase server logs.
 
-### 11.2. Smart Auto-Scroll Control
+### 12.2. Smart Auto-Scroll Control
 * **Auto-Scroll Active:** Terminal automatically scrolls to the bottom as new lines arrive.
 * **Auto-Scroll Paused:** When an administrator scrolls up to inspect an error line, auto-scroll pauses and displays an animated floating badge: *"Auto-scroll paused (Click to resume)"*.
 * **Resume:** Click the floating pill or scroll back to the bottom to resume live trailing.
 
-### 11.3. Faceted Severity Filters
+### 12.3. Faceted Severity Filters
 Filter the live stream by clicking the chips: `ALL`, `INFO`, `WARN`, or `ERROR` to eliminate noise during security audits.
 
 ---
 
-## 12. ADMINISTRATIVE TROUBLESHOOTING & FAQ
+## 13. ADMINISTRATIVE TROUBLESHOOTING & FAQ
 
-### 12.1. Gateway Health Check
+### 13.1. Gateway Health Check
 First check whether the SwanPanel web service is reachable. The unauthenticated endpoint below checks the application, **not** VPN readiness:
 ```bash
 curl -i http://localhost:8080/api/health
@@ -368,13 +444,13 @@ curl -i http://localhost:8080/api/health
 
 Sign in to SwanPanel to check the Gateway indicator and its last verified time. If it is **Degraded**, inspect **Server Settings > Gateway apply status** and retry a pending apply when appropriate. If it is **Unknown**, check connectivity and wait for a fresh verification rather than assuming the VPN is stopped. **Offline** means the VPN service has been confirmed stopped. The authenticated `GET /api/gateway/health` endpoint provides the same evidence-based state for diagnostics.
 
-### 12.2. Checking strongSwan Daemon Status via VICI
+### 13.2. Checking strongSwan Daemon Status via VICI
 Verify that the strongSwan daemon is active inside the container or host:
 ```bash
 docker exec swan-panel swanctl --stats
 ```
 
-### 12.3. Emergency Database Backup
+### 13.3. Emergency Database Backup
 All configuration, certificates, and user records are stored in the single SQLite database:
 ```bash
 # Live backup of SQLite database
@@ -383,7 +459,7 @@ sqlite3 /data/swanpanel.db ".backup '/backup/swanpanel-backup-$(date +%F).db'"
 
 ---
 
-## 13. UI THEME & LANGUAGE MATRIX
+## 14. UI THEME & LANGUAGE MATRIX
 
 SwanPanel provides 100% parity across both languages and color schemes:
 
@@ -391,6 +467,7 @@ SwanPanel provides 100% parity across both languages and color schemes:
 | :--- | :---: | :---: | :---: | :---: |
 | **Setup Token Screen** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/01b_setup_token.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/01b_setup_token.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/01b_setup_token.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/01b_setup_token.png) |
 | **Login Screen** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/01_login_page.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/01_login_page.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/01_login_page.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/01_login_page.png) |
+| **Login 2FA Challenge** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/01c_login_mfa_challenge.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/01c_login_mfa_challenge.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/01c_login_mfa_challenge.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/01c_login_mfa_challenge.png) |
 | **Dashboard** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/02_dashboard.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/02_dashboard.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/02_dashboard.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/02_dashboard.png) |
 | **Dashboard (User View)** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/02b_dashboard_user_view.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/02b_dashboard_user_view.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/02b_dashboard_user_view.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/02b_dashboard_user_view.png) |
 | **Subnets** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/03_resources_subnets.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/03_resources_subnets.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/03_resources_subnets.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/03_resources_subnets.png) |
@@ -399,7 +476,11 @@ SwanPanel provides 100% parity across both languages and color schemes:
 | **Add Device Modal** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/06_modal_add_device.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/06_modal_add_device.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/06_modal_add_device.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/06_modal_add_device.png) |
 | **Android Native Setup** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/19_modal_android_setup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/19_modal_android_setup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/19_modal_android_setup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/19_modal_android_setup.png) |
 | **Confirm Action Dialog** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/20_confirm_dialog.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/20_confirm_dialog.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/20_confirm_dialog.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/20_confirm_dialog.png) |
-| **Users Directory** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/07_users_directory.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/07_users_directory.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/07_users_directory.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/07_users_directory.png) |
+| **Users Directory (with 2FA Badges)** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/07_users_directory.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/07_users_directory.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/07_users_directory.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/07_users_directory.png) |
+| **Reset 2FA Confirmation** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/30_confirm_reset_mfa.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/30_confirm_reset_mfa.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/30_confirm_reset_mfa.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/30_confirm_reset_mfa.png) |
+| **Account Security Setup** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/27_modal_account_security_setup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/27_modal_account_security_setup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/27_modal_account_security_setup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/27_modal_account_security_setup.png) |
+| **Account Security Recovery Codes** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/28_modal_account_security_backup_codes.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/28_modal_account_security_backup_codes.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/28_modal_account_security_backup_codes.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/28_modal_account_security_backup_codes.png) |
+| **Account Security Active State** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/29_modal_account_security_active.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/29_modal_account_security_active.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/29_modal_account_security_active.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/29_modal_account_security_active.png) |
 | **Add User Modal** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/08_modal_add_user.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/08_modal_add_user.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/08_modal_add_user.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/08_modal_add_user.png) |
 | **User Groups** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/09_user_groups.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/09_user_groups.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/09_user_groups.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/09_user_groups.png) |
 | **Add Group Modal** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/10_modal_add_group.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/10_modal_add_group.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/10_modal_add_group.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/10_modal_add_group.png) |
@@ -413,11 +494,17 @@ SwanPanel provides 100% parity across both languages and color schemes:
 | **Advanced JSON Settings** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/17c_server_settings_advanced.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17c_server_settings_advanced.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/17c_server_settings_advanced.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/17c_server_settings_advanced.png) |
 | **Certificate Authority (CA)** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/17b_server_settings_ca.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17b_server_settings_ca.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/17b_server_settings_ca.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/17b_server_settings_ca.png) |
 | **CA Rotate Confirmation** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/21_ca_rotate_confirm.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/21_ca_rotate_confirm.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/21_ca_rotate_confirm.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/21_ca_rotate_confirm.png) |
+| **Encrypted Backup & Restore** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/17d_server_settings_backup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17d_server_settings_backup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/17d_server_settings_backup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/17d_server_settings_backup.png) |
+| **Restore Confirmation Dialog** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/26_confirm_restore_backup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/26_confirm_restore_backup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/26_confirm_restore_backup.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/26_confirm_restore_backup.png) |
+| **Immutable Audit Trail** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/22_audit_trail.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/22_audit_trail.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/22_audit_trail.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/22_audit_trail.png) |
+| **Audit Chain Verified** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/23_audit_chain_verified.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/23_audit_chain_verified.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/23_audit_chain_verified.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/23_audit_chain_verified.png) |
+| **Alert Webhooks** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/24_alert_webhooks.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/24_alert_webhooks.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/24_alert_webhooks.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/24_alert_webhooks.png) |
+| **Add Alert Webhook Modal** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/25_modal_add_webhook.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/25_modal_add_webhook.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/25_modal_add_webhook.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/25_modal_add_webhook.png) |
 | **System Logs** | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/light/18_system_logs.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/18_system_logs.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/light/18_system_logs.png) | [View](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/vi/dark/18_system_logs.png) |
 
 ---
 
-## 14. ADVANCED ADMINISTRATIVE WORKFLOWS: INTERACTIVE ACTIONS AUDIT
+## 15. ADVANCED ADMINISTRATIVE WORKFLOWS: INTERACTIVE ACTIONS AUDIT
 
 To verify and document operations as an actual network security administrator, SwanPanel underwent extensive interactive browser execution covering search-as-you-type, faceted filter chips, instant kill-switches, and end-to-end CRUD resource lifecycles.
 

@@ -10,7 +10,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
 	"github.com/swan-panel/swan-panel/internal/policy"
 	"gorm.io/gorm"
 )
@@ -175,6 +177,10 @@ func (h *AccessHandler) CreateAccessRule(c *gin.Context) {
 		RuleNature:  ruleNature,
 	}
 
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var auditEntry db.AuditLog
 	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		subject := any(&db.User{})
 		switch req.SubjectType {
@@ -199,7 +205,19 @@ func (h *AccessHandler) CreateAccessRule(c *gin.Context) {
 				return errMissingRuleTarget
 			}
 		}
-		return tx.Create(&rule).Error
+		if err := tx.Create(&rule).Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "access_rule.created",
+			Severity:   audit.SeverityInfo,
+			TargetType: "access_rule",
+			TargetID:   rule.ID,
+			Summary:    fmt.Sprintf("Access rule created: %s %s -> %s", rule.Action, rule.SubjectID, rule.TargetValue),
+			Details:    map[string]any{"rule_action": rule.Action, "subject_type": rule.SubjectType, "target_type": rule.TargetType},
+		}))
+		return recErr
 	})
 	switch {
 	case errors.Is(err, errMissingRuleSubject):
@@ -215,6 +233,7 @@ func (h *AccessHandler) CreateAccessRule(c *gin.Context) {
 	}
 
 	slog.Info("Access rule created", "id", rule.ID, "action", rule.Action, "nature", rule.RuleNature)
+	audit.NotifyCommitted(auditEntry)
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		slog.Error("Policy saved but could not be enforced", "rule", rule.ID, "error", err)
 		c.JSON(http.StatusAccepted, gin.H{"access_rule": rule, "runtime_status": "pending", "error": "Gateway policy reconciliation failed"})
@@ -226,18 +245,39 @@ func (h *AccessHandler) CreateAccessRule(c *gin.Context) {
 // DeleteAccessRule deletes an access rule
 func (h *AccessHandler) DeleteAccessRule(c *gin.Context) {
 	id := c.Param("id")
-	result := db.DB.Where("id = ?", id).Delete(&db.AccessRule{})
-	if err := result.Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var auditEntry db.AuditLog
+	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("id = ?", id).Delete(&db.AccessRule{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "access_rule.deleted",
+			Severity:   audit.SeverityInfo,
+			TargetType: "access_rule",
+			TargetID:   id,
+			Summary:    "Access rule deleted: " + id,
+		}))
+		return recErr
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Access rule not found"})
+		return
+	}
+	if err != nil {
 		slog.Error("Failed to delete access rule", "id", id, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete access rule"})
 		return
 	}
-
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Access rule not found"})
-		return
-	}
 	slog.Info("Access rule deleted", "id", id)
+	audit.NotifyCommitted(auditEntry)
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		slog.Error("Policy deletion pending reconciliation", "rule", id, "error", err)
 		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "error": "Rule deleted but gateway policy not synchronized"})

@@ -7,9 +7,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/swan-panel/swan-panel/internal/api/middleware"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/config"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type LoginRequest struct {
@@ -43,17 +46,20 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// GORM Parameterized Query: strict immunity against SQL injection
 	if err := db.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		slog.Warn("Login failed: email address not found in identity directory", "email", req.Email, "ip", c.ClientIP())
+		audit.TrackFailedLogin(c, req.Email, "unknown_email")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
 
 	if user.Status != "ACTIVE" {
 		slog.Warn("Login rejected: account is not active", "email", req.Email, "status", user.Status, "ip", c.ClientIP())
+		audit.TrackFailedLogin(c, req.Email, "account_inactive")
 		c.JSON(http.StatusForbidden, gin.H{"error": "Account is pending approval or suspended"})
 		return
 	}
 
 	if user.AuthType != "local" || user.PasswordHash == "" {
+		audit.TrackFailedLogin(c, req.Email, "oidc_required")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Use your identity provider to sign in"})
 		return
 	}
@@ -61,7 +67,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Verify Bcrypt password hash
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		slog.Warn("Login failed: password verification mismatch", "email", req.Email, "ip", c.ClientIP())
+		audit.TrackFailedLogin(c, req.Email, "invalid_password")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
+
+	if user.MFAEnabled && user.TOTPSecretEnc != "" {
+		h.issueMFAChallenge(c, &user)
 		return
 	}
 
@@ -74,15 +86,32 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	slog.Info("User authenticated successfully", "user_id", user.ID, "email", user.Email, "is_admin", user.IsAdmin, "ip", c.ClientIP())
+	role := "user"
+	if user.IsAdmin {
+		role = "admin"
+	}
+	if auditErr := audit.RecordFromContext(c, audit.EntryInput{
+		ActorID:    user.ID,
+		ActorEmail: user.Email,
+		ActorRole:  role,
+		Action:     "auth.login.success",
+		Severity:   audit.SeverityInfo,
+		TargetType: "user",
+		TargetID:   user.ID,
+		Summary:    "User signed in via local credentials: " + user.Email,
+	}); auditErr != nil {
+		slog.Warn("Failed to record login audit event", "user_id", user.ID, "error", auditErr)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"user": gin.H{
-			"id":       user.ID,
-			"email":    user.Email,
-			"name":     user.Name,
-			"is_admin": user.IsAdmin,
-			"status":   user.Status,
+			"id":          user.ID,
+			"email":       user.Email,
+			"name":        user.Name,
+			"is_admin":    user.IsAdmin,
+			"status":      user.Status,
+			"mfa_enabled": user.MFAEnabled,
 		},
 	})
 }
@@ -151,12 +180,33 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if err := db.DB.Model(&user).Update("password_hash", string(newHash)).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var auditEntry db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&user).Updates(map[string]any{
+			"password_hash":    string(newHash),
+			"pending_totp_enc": "",
+		}).Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "auth.password.changed",
+			Severity:   audit.SeverityInfo,
+			TargetType: "user",
+			TargetID:   user.ID,
+			Summary:    "Password changed for account " + user.Email,
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to persist updated password", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to persist password change"})
 		return
 	}
 
 	slog.Info("User password updated successfully", "user_id", user.ID, "email", user.Email)
+	audit.NotifyCommitted(auditEntry)
 	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
 }

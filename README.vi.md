@@ -238,6 +238,8 @@ Cấu hình SwanPanel qua biến môi trường hoặc tệp `/etc/swan-panel/sw
 | `ENABLE_DNS` | `true` | Kích hoạt máy chủ Split-DNS nội bộ |
 | `DNS_PORT` | `5353` | Cổng của DNS server (`53` nếu chạy quyền root ở production) |
 | `APP_ENV` | `development` | Chế độ môi trường (`development` hoặc `production`) |
+| `MFA_KEY_FILE` | `DB_PATH + ".mfa-key"` | Tệp khóa bền vững quyền `0600` dùng mã hóa TOTP MFA độc lập với `JWT_SECRET` |
+| `WEBHOOK_ALLOWED_DESTINATIONS` | *(Rỗng — chỉ public HTTPS)* | Danh sách đích HTTPS nội bộ được phép (CIDR, hostname hoặc `host:port`, phân cách dấu phẩy) |
 
 ### Tiêu chuẩn Kỹ thuật & Bảo mật Nghiêm ngặt
 * **Không có SQL Injection:** 100% truy vấn tham số hóa qua GORM ORM; tuyệt đối nghiêm cấm nối chuỗi raw SQL.
@@ -250,6 +252,11 @@ Cấu hình SwanPanel qua biến môi trường hoặc tệp `/etc/swan-panel/sw
 ## Lộ trình Phát triển (Roadmap)
 
 SwanPanel được duy trì và phát triển liên tục. Dưới đây là lộ trình kỹ thuật ưu tiên:
+
+* **Phiên bản v1.1.0:**
+  * **Sao lưu & Khôi phục Dữ liệu Mã hóa 1-Click:** Xuất gói `.tar.enc` mã hóa AES-256-GCM (khóa dẫn xuất Argon2id) đóng gói ảnh chụp SQLite nhất quán, toàn bộ CA / chứng chỉ PKI và khóa mã hóa MFA (`secrets/mfa.key`), hỗ trợ khôi phục qua nhật ký giao dịch, hoàn nguyên tự động khi lỗi, đối chiếu kết quả sau khởi động lại và đồng bộ lại VPN gateway tại mục Cài đặt Máy chủ.
+  * **Nhật ký Kiểm toán Bất biến & Webhook Cảnh báo:** Bảng `audit_logs` chỉ nối thêm (append-only) liên kết chuỗi mã băm SHA-256 được bảo vệ bằng trigger SQLite, kiểm tra toàn vẹn, xuất CSV/JSONL, phát hiện đăng nhập sai liên tiếp và hàng đợi gửi cảnh báo bền vững qua Slack, Telegram, Microsoft Teams hoặc HTTP webhook ký HMAC có bảo vệ chống SSRF.
+  * **Xác thực Đa Yếu tố (MFA / TOTP) cho Tài khoản Cục bộ:** Xác thực hai bước chuẩn RFC 6238 với khóa TOTP mã hóa AES-256-GCM bằng kho khóa `0600` độc lập (`MFA_KEY_FILE`), chống replay cùng khung 30 giây, 8 mã khôi phục, tự cấu hình trong Tài khoản và nút đặt lại 2FA cho quản trị viên. Xem [nhật ký thay đổi](CHANGELOG.md).
 
 * **Bản ổn định v1.0.1:** Bảng và biểu mẫu dễ đọc hơn, thiết lập nâng cao gọn hơn, thao tác rõ ràng hơn. Trạng thái Gateway phân biệt Online, Degraded, Offline và Unknown, được kiểm tra lại mỗi 15 giây và tự hết hiệu lực sau 45 giây. Trên điện thoại, trạng thái luôn hiện ở thanh đầu trang. Xem [nhật ký thay đổi](CHANGELOG.md).
 
@@ -266,16 +273,7 @@ SwanPanel được duy trì và phát triển liên tục. Dưới đây là l�
 
 * **Các Mốc Phát triển Tiếp theo:**
   * **Cụm Sẵn Sàng Cao & Dự Phòng (High Availability & Clustering):** Cơ chế chuyển đổi dự phòng Active-Passive và đồng bộ trạng thái kết nối giữa nhiều gateway SwanPanel để chịu lỗi phần cứng.
-  * **Xác thực Đa Yếu tố (Multi-Factor Authentication - MFA / TOTP):** Tích hợp xác thực 2 bước cho trang quản trị Web Admin và cổng đăng ký thiết bị tự phục vụ của người dùng.
-  * **Nhật Ký Kiểm Toán Bất Biến & Tích Hợp SIEM (Audit Trail & SIEM Export):**
-    * Đáp ứng tiêu chuẩn tuân thủ an toàn thông tin (ISO 27001, SOC 2).
-    * Bảng `audit_logs` ghi nhận mọi hành vi quản trị (ai thực hiện, thao tác gì, lúc nào, từ IP nào, ví dụ: User 'admin' đã thu hồi thiết bị 'laptop-dev').
-    * Tích hợp Webhook đẩy cảnh báo tức thì về Slack / Telegram / Microsoft Teams khi có sự kiện bất thường (đăng nhập thất bại liên tục, gateway offline, chứng chỉ bị thu hồi).
-    * Hỗ trợ xuất nhật ký ra chuẩn Syslog (RFC 5424) để tích hợp vào các hệ thống SIEM doanh nghiệp (Splunk, Elastic, Datadog).
-  * **Sao Lưu & Khôi Phục Dữ Liệu Mã Hóa 1-Click (Backup & Disaster Recovery):**
-    * Bảo vệ dữ liệu cấu hình và khóa bí mật CA trước rủi ro hỏng ổ cứng hoặc nâng cấp máy chủ.
-    * Nút sao lưu tại Server Settings: Đóng gói toàn bộ SQLite DB + Root CA vào một file `.tar.enc` mã hóa bằng AES-256-GCM với mật khẩu người dùng chỉ định.
-    * Hỗ trợ nút khôi phục hệ thống (Restore) tức thì từ file sao lưu.
+  * **Xuất Nhật Ký SIEM Syslog (RFC 5424):** Hỗ trợ xuất nhật ký ra chuẩn Syslog (RFC 5424) để tích hợp vào các hệ thống SIEM doanh nghiệp (Splunk, Elastic, Datadog).
 
 ---
 

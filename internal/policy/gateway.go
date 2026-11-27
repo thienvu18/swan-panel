@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
 	"github.com/swan-panel/swan-panel/internal/pki"
 	"gorm.io/gorm"
 )
@@ -16,7 +17,15 @@ var ErrGatewayCAUnavailable = errors.New("initialize gateway CA")
 // ReconcileGateway also restores credentials and the signed CRL, not only
 // connections and firewall. This supports failed CA rotations and daemon
 // restarts via both the manual retry endpoint and the background worker.
-func ReconcileGateway(ctx context.Context, database *gorm.DB) (retErr error) {
+func ReconcileGateway(ctx context.Context, database *gorm.DB) error {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+	return ReconcileGatewayWithinMutation(ctx, database)
+}
+
+// ReconcileGatewayWithinMutation performs full gateway reconciliation when the caller
+// already holds maintenance.DefaultCoordinator.BeginMutation(), avoiding recursive RWMutex RLock deadlocks.
+func ReconcileGatewayWithinMutation(ctx context.Context, database *gorm.DB) (retErr error) {
 	defer func() {
 		if retErr == nil {
 			return

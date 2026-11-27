@@ -8,8 +8,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/config"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
+	"gorm.io/gorm"
 )
 
 // OIDCHandler manages OpenID Connect identity providers and SSO flows
@@ -85,13 +88,32 @@ func (h *OIDCHandler) CreateProvider(c *gin.Context) {
 		IsActive:         true,
 	}
 
-	if err := db.DB.Create(&provider).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var createIDPAudit db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&provider).Error; err != nil {
+			return err
+		}
+		var recErr error
+		createIDPAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "oidc.provider.created",
+			Severity:   audit.SeverityInfo,
+			TargetType: "oidc_provider",
+			TargetID:   provider.ID,
+			Summary:    "OIDC provider created: " + provider.Name,
+			Details:    map[string]any{"provider_type": provider.ProviderType},
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to persist OIDC provider", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create provider"})
 		return
 	}
 
 	slog.Info("New OIDC provider configured successfully", "id", provider.ID, "name", provider.Name)
+	audit.NotifyCommitted(createIDPAudit)
 	c.JSON(http.StatusCreated, gin.H{"provider": provider})
 }
 
@@ -180,13 +202,32 @@ func (h *OIDCHandler) UpdateProvider(c *gin.Context) {
 			return
 		}
 	}
-	if err := db.DB.Save(&provider).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var updIDPAudit db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&provider).Error; err != nil {
+			return err
+		}
+		var recErr error
+		updIDPAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "oidc.provider.updated",
+			Severity:   audit.SeverityInfo,
+			TargetType: "oidc_provider",
+			TargetID:   provider.ID,
+			Summary:    "OIDC provider updated: " + provider.Name,
+			Details:    map[string]any{"is_active": provider.IsActive},
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to update OIDC provider", "id", id, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update provider"})
 		return
 	}
 
 	slog.Info("OIDC provider updated", "id", id)
+	audit.NotifyCommitted(updIDPAudit)
 	c.JSON(http.StatusOK, gin.H{"provider": provider})
 }
 
@@ -202,13 +243,31 @@ func (h *OIDCHandler) DeleteProvider(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "Provider has linked identities; disable it instead of deleting it"})
 		return
 	}
-	if err := db.DB.Where("id = ?", id).Delete(&db.OIDCProvider{}).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var delIDPAudit db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ?", id).Delete(&db.OIDCProvider{}).Error; err != nil {
+			return err
+		}
+		var recErr error
+		delIDPAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "oidc.provider.deleted",
+			Severity:   audit.SeverityWarning,
+			TargetType: "oidc_provider",
+			TargetID:   id,
+			Summary:    "OIDC provider deleted: " + id,
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to delete OIDC provider", "id", id, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete provider"})
 		return
 	}
 
 	slog.Info("OIDC provider deleted", "id", id)
+	audit.NotifyCommitted(delIDPAudit)
 	c.JSON(http.StatusOK, gin.H{"message": "Provider deleted successfully"})
 }
 

@@ -175,3 +175,38 @@ func TestDeviceSoftDeletionFailurePreservesRecordedCertificateRevocation(t *test
 		t.Fatalf("revocation audit record missing: %d %v", count, err)
 	}
 }
+
+func TestUserAndUserGroupDeleteFailuresRollbackAtomically(t *testing.T) {
+	t.Run("user delete failure preserves user", func(t *testing.T) {
+		router, cleanup := setupTestRouter(t)
+		defer cleanup()
+		admin := getAdminToken(t, router)
+		uid := createAdminFixture(t, router, admin, "delete-trigger-user")
+		if err := db.DB.Exec("CREATE TRIGGER block_user_delete BEFORE DELETE ON users BEGIN SELECT RAISE(ABORT, 'user delete blocked'); END").Error; err != nil {
+			t.Fatal(err)
+		}
+		mustStatus(t, router, "DELETE", "/api/users/"+uid, admin, nil, http.StatusServiceUnavailable)
+		var stored db.User
+		if err := db.DB.First(&stored, "id = ?", uid).Error; err != nil {
+			t.Fatalf("expected user preserved on rolled-back delete: %v", err)
+		}
+	})
+
+	t.Run("user group delete failure preserves group", func(t *testing.T) {
+		router, cleanup := setupTestRouter(t)
+		defer cleanup()
+		admin := getAdminToken(t, router)
+		grp := db.UserGroup{ID: "ug-delete-trigger", Name: "Trigger Protected Group"}
+		if err := db.DB.Create(&grp).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.DB.Exec("CREATE TRIGGER block_group_delete BEFORE DELETE ON user_groups BEGIN SELECT RAISE(ABORT, 'group delete blocked'); END").Error; err != nil {
+			t.Fatal(err)
+		}
+		mustStatus(t, router, "DELETE", "/api/user-groups/"+grp.ID, admin, nil, http.StatusConflict)
+		var stored db.UserGroup
+		if err := db.DB.First(&stored, "id = ?", grp.ID).Error; err != nil {
+			t.Fatalf("expected group preserved on rolled-back delete: %v", err)
+		}
+	})
+}

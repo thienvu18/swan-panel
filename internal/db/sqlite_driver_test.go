@@ -183,4 +183,30 @@ func TestSQLiteNativeDriverConcurrentWritesAreSerialized(t *testing.T) {
 	if count != workers {
 		t.Fatalf("expected %d persisted users, got %d", workers, count)
 	}
+
+	// Verify SystemState / SessionEpoch lifecycle including nil-DB guards and rotation.
+	if err := EnsureSystemState(nil); err == nil {
+		t.Fatal("expected nil-DB EnsureSystemState error")
+	}
+	if got, _ := CurrentSessionEpoch(nil); got != "" {
+		t.Fatalf("expected empty epoch for nil DB, got %q", got)
+	}
+	epoch1, err := CurrentSessionEpoch(database)
+	if err != nil || epoch1 == "" {
+		t.Fatalf("expected initialized session epoch, err=%v", err)
+	}
+	var epoch2 string
+	if err := database.Transaction(func(tx *gorm.DB) error {
+		var rErr error
+		epoch2, rErr = RotateSessionEpochTx(tx)
+		return rErr
+	}); err != nil {
+		t.Fatalf("RotateSessionEpochTx failed: %v", err)
+	}
+	if epoch2 == "" || epoch2 == epoch1 {
+		t.Fatalf("expected rotated session epoch, before=%q after=%q", epoch1, epoch2)
+	}
+	if _, err := RotateSessionEpochTx(nil); err == nil {
+		t.Fatal("expected nil DB RotateSessionEpochTx error")
+	}
 }

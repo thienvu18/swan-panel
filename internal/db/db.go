@@ -1,8 +1,14 @@
 package db
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"log"
 	"log/slog"
+	"os"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -15,8 +21,15 @@ var DB *gorm.DB
 func InitDB(dbPath string) (*gorm.DB, error) {
 	slog.Debug("Opening SQLite database connection", "path", dbPath)
 
+	gormLog := logger.New(log.New(os.Stderr, "\r\n", log.LstdFlags), logger.Config{
+		SlowThreshold:             200 * time.Millisecond,
+		LogLevel:                  logger.Warn,
+		IgnoreRecordNotFoundError: true,
+		ParameterizedQueries:      true,
+		Colorful:                  false,
+	})
 	config := &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Warn),
+		Logger: gormLog,
 	}
 
 	db, err := gorm.Open(sqlite.Open(dbPath), config)
@@ -68,6 +81,7 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 		&BootstrapState{},
 		&OIDCLoginAttempt{},
 		&OIDCLoginTicket{},
+		&MFAChallenge{},
 		&CertificateRevocation{},
 		&User{},
 		&UserGroup{},
@@ -78,10 +92,24 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 		&DNSOverride{},
 		&StrongswanSettings{},
 		&RuntimeApplyState{},
+		&AuditLog{},
+		&AlertWebhook{},
+		&SystemState{},
+		&WebhookDelivery{},
 	)
 	if err != nil {
 		slog.Error("Auto-migration failed", "error", err)
 		return nil, fmt.Errorf("failed to auto-migrate schema: %w", err)
+	}
+	// Enforce append-only immutability on audit_logs at the SQLite engine level.
+	for _, triggerSQL := range []string{
+		`CREATE TRIGGER IF NOT EXISTS trg_audit_logs_no_update BEFORE UPDATE ON audit_logs BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only and immutable'); END;`,
+		`CREATE TRIGGER IF NOT EXISTS trg_audit_logs_no_delete BEFORE DELETE ON audit_logs BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only and immutable'); END;`,
+	} {
+		if err := db.Exec(triggerSQL).Error; err != nil {
+			_ = sqlDB.Close()
+			return nil, fmt.Errorf("create audit immutability trigger: %w", err)
+		}
 	}
 	// Remove the legacy global unique index only after the active-device partial
 	// unique index has been created. Retired identities keep their CRL ledger.
@@ -100,8 +128,85 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 	}
 	// Seed non-credential defaults only.
 	seedDefaults(db)
+	if err := EnsureSystemState(db); err != nil {
+		return nil, fmt.Errorf("initialize system security state: %w", err)
+	}
 
 	return db, nil
+}
+
+func newSessionEpoch() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// EnsureSystemState creates the singleton SystemState record with an active session epoch if absent.
+func EnsureSystemState(database *gorm.DB) error {
+	if database == nil {
+		return errors.New("database is nil")
+	}
+	var st SystemState
+	err := database.First(&st, 1).Error
+	if err == nil && st.SessionEpoch != "" {
+		return nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	epoch, genErr := newSessionEpoch()
+	if genErr != nil {
+		return genErr
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return database.Create(&SystemState{ID: 1, SessionEpoch: epoch, RestoreGeneration: 0}).Error
+	}
+	return database.Model(&SystemState{}).Where("id = ?", 1).Update("session_epoch", epoch).Error
+}
+
+// CurrentSessionEpoch reads the active JWT revocation epoch from SQLite.
+func CurrentSessionEpoch(database *gorm.DB) (string, error) {
+	if database == nil {
+		return "", nil
+	}
+	var st SystemState
+	if err := database.Select("id", "session_epoch").First(&st, 1).Error; err != nil {
+		return "", err
+	}
+	return st.SessionEpoch, nil
+}
+
+// RotateSessionEpochTx generates a fresh random session epoch and bumps restore generation
+// inside tx, immediately invalidating all previously minted JWT session tokens.
+func RotateSessionEpochTx(tx *gorm.DB) (string, error) {
+	if tx == nil {
+		return "", errors.New("transaction is nil")
+	}
+	epoch, err := newSessionEpoch()
+	if err != nil {
+		return "", err
+	}
+	var st SystemState
+	err = tx.First(&st, 1).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		st = SystemState{ID: 1, SessionEpoch: epoch, RestoreGeneration: 1}
+		if err := tx.Create(&st).Error; err != nil {
+			return "", err
+		}
+		return epoch, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := tx.Model(&SystemState{}).Where("id = ?", 1).Updates(map[string]any{
+		"session_epoch":      epoch,
+		"restore_generation": st.RestoreGeneration + 1,
+	}).Error; err != nil {
+		return "", err
+	}
+	return epoch, nil
 }
 
 func seedDefaults(db *gorm.DB) {

@@ -66,7 +66,7 @@ jobs:
           cache: true
 
       - name: Download verified frontend assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.verify.outputs.ui_artifact_id }}
           path: ui/dist/
@@ -89,7 +89,7 @@ jobs:
         run: sh scripts/build-linux-static.sh
 
       - name: Upload release binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: swan-panel-linux-${{ matrix.arch }}
           path: dist/swan-panel-linux-${{ matrix.arch }}
@@ -104,7 +104,7 @@ jobs:
       contents: write
     steps:
       - name: Download all architecture artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: swan-panel-linux-*
           path: dist/

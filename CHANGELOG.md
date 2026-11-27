@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.1.0 — 2026-11-27
+
+SwanPanel `v1.1.0` adds encrypted disaster recovery backups, tamper-evident audit logging with a persistent alert outbox, and two-factor authentication for local accounts:
+
+- **1-Click Encrypted Backup & Disaster Recovery:** Export v2 AES-256-GCM encrypted `.tar.enc` archives (Argon2id key derivation; enforced limits of `64 MiB` encrypted upload, `256 MiB` uncompressed archive, `200 MiB` per entry, `4,096` entries) bundling an online SQLite snapshot, PKI state, and the independent persistent MFA encryption key (`secrets/mfa.key`) via `POST /api/system/backup`. Restores stage and verify all payloads before entering maintenance mode (HTTP 503), persisting a durable restore journal, triggering a controlled control-plane restart (`POST /api/system/restore` HTTP `202` `restarting` with correlated `restore_id`), capturing rollback snapshots strictly post-drain, activating DB/PKI/MFA state exclusively on startup with rollback/fail-closed protection, rotating session epochs to invalidate pre-restore JWTs, and resynchronizing strongSwan pools/CRL/nftables.
+- **Two-Factor Authentication (TOTP MFA):** RFC 6238 TOTP support for local accounts with AES-256-GCM encrypted secrets protected by an independent `0600` persistent key (`MFA_KEY_FILE`, safely migrated from legacy `JWT_SECRET` on startup without bundling `JWT_SECRET` in backups), single-use step replay protection, 8 recovery codes, self-service Account Security settings, and admin MFA reset.
+- **Immutable Audit Trail:** Append-only, SHA-256 hash-chained `audit_logs` protected by SQLite immutability triggers and fail-closed transactional audit persistence across security mutations, with integrity verification, severity/category/search filters, CSV (formula-neutralized) and JSONL export, and brute-force sign-in escalation.
+- **Alert Webhooks & Persistent Outbox:** Configurable alert destinations for Slack, Telegram, Microsoft Teams, and HMAC-SHA256 signed generic HTTP endpoints with fail-safe public HTTPS SSRF protection (dial-time IP verification blocking reserved/non-routable/metadata ranges, redirect/proxy blocking, and explicit `WEBHOOK_ALLOWED_DESTINATIONS` private allowlist), sanitized error/redacted URL display, and a persistent SQLite retry outbox (`GET /api/webhooks/deliveries`) with bounded claim batches, exponential backoff retries, and automatic cancellation across backup restores.
+- **Documentation & Verification Alignment:** Synchronized `README.md`, `README.vi.md`, `ARCHITECTURE.md`, `deploy/README.md`, `docs/SECURITY_REGRESSION_TEST_PLAN.md`, `.env.example`, Compose templates, landing/guide pages, wiki pages, and refreshed UI screenshots for `v1.1.0`.
+
 ## v1.0.1
 
 - **Easier to read:** Clearer forms, tables, dialogs and page layouts, including on smaller screens.

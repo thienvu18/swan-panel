@@ -23,6 +23,7 @@ type Broker struct {
 	clients        map[chan Event]bool
 	newClients     chan chan Event
 	closingClients chan chan Event
+	closeAllCh     chan chan struct{}
 	broadcast      chan Event
 	mu             sync.RWMutex
 }
@@ -34,10 +35,22 @@ func NewBroker() *Broker {
 		clients:        make(map[chan Event]bool),
 		newClients:     make(chan chan Event),
 		closingClients: make(chan chan Event),
+		closeAllCh:     make(chan chan struct{}),
 		broadcast:      make(chan Event, 100),
 	}
 	go b.listen()
 	return b
+}
+
+// CloseAll terminates all currently connected SSE subscriber streams safely
+// (used when entering maintenance mode during restore or system shutdown).
+func (b *Broker) CloseAll() {
+	if b == nil {
+		return
+	}
+	done := make(chan struct{})
+	b.closeAllCh <- done
+	<-done
 }
 
 func (b *Broker) listen() {
@@ -51,11 +64,22 @@ func (b *Broker) listen() {
 			slog.Debug("New SSE client subscribed to event stream", "active_subscribers", total)
 		case s := <-b.closingClients:
 			b.mu.Lock()
-			delete(b.clients, s)
-			close(s)
+			if b.clients[s] {
+				delete(b.clients, s)
+				close(s)
+			}
 			total := len(b.clients)
 			b.mu.Unlock()
 			slog.Debug("SSE client unsubscribed from event stream", "active_subscribers", total)
+		case ack := <-b.closeAllCh:
+			b.mu.Lock()
+			for s := range b.clients {
+				delete(b.clients, s)
+				close(s)
+			}
+			b.mu.Unlock()
+			slog.Info("Closed all active SSE subscriber streams")
+			close(ack)
 		case event := <-b.broadcast:
 			b.mu.RLock()
 			for clientChan := range b.clients {

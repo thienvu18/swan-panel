@@ -44,3 +44,8 @@ SwanPanel integrates five primary subsystem modules into a single self-contained
 ## 4. Dynamic Policy Compiler
 - Evaluates relationships between User Groups, Users, Devices, and Resource Groups.
 - Computes granular CIDR routing policies and exclusion rules (`DROP` filters) for fine-grained zero-trust segmentation.
+
+## 5. Disaster Recovery, Audit Trail & Local MFA Hardening
+- **Crash-Safe Encrypted Backups:** Online SQLite snapshots, Root CA/PKI material, and the independent persistent MFA encryption key (`secrets/mfa.key`) are archived using Argon2id + AES-256-GCM. Restores validate archives into staging, enter HTTP `503` maintenance mode to drain active requests, capture rollback snapshots post-drain, activate DB/PKI/MFA exclusively on startup via `journal.json`, rotate `session_epoch`, and expose correlated restore outcomes on `/api/health`.
+- **Immutable Audit Trail & Outbox:** `audit_logs` records form an append-only SHA-256 hash chain guarded by SQLite triggers and transactional persistence. Alert webhooks dispatch through the `webhook_deliveries` SQLite outbox with strict public HTTPS SSRF checks and explicit `WEBHOOK_ALLOWED_DESTINATIONS` allowlisting.
+- **Local Account MFA / TOTP:** RFC 6238 TOTP secrets are encrypted at rest with AES-256-GCM using an independent `0600` keystore (`MFA_KEY_FILE`) rather than deriving storage keys from `JWT_SECRET`.

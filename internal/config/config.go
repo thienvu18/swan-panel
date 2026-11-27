@@ -9,16 +9,18 @@ import (
 
 // Config holds all operational configuration parameters for SwanPanel
 type Config struct {
-	Port           int
-	DBPath         string
-	JWTSecret      string
-	VICISocket     string
-	DNSPort        int
-	EnableDNS      bool
-	Environment    string
-	LogLevel       string
-	AllowedOrigins []string
-	PKIDataDir     string
+	Port                       int
+	DBPath                     string
+	JWTSecret                  string
+	MFAKeyFile                 string
+	VICISocket                 string
+	DNSPort                    int
+	EnableDNS                  bool
+	Environment                string
+	LogLevel                   string
+	AllowedOrigins             []string
+	WebhookAllowedDestinations string
+	PKIDataDir                 string
 }
 
 // Load reads configuration from environment variables or falls back to safe defaults
@@ -72,17 +74,22 @@ func Load() *Config {
 		pkiDataDir = "/var/lib/swan-panel"
 	}
 
+	mfaKeyFile := strings.TrimSpace(os.Getenv("MFA_KEY_FILE"))
+	webhookAllowed := strings.TrimSpace(os.Getenv("WEBHOOK_ALLOWED_DESTINATIONS"))
+
 	cfg := &Config{
-		Port:           port,
-		DBPath:         dbPath,
-		JWTSecret:      jwtSecret,
-		VICISocket:     viciSocket,
-		DNSPort:        dnsPort,
-		EnableDNS:      enableDNS,
-		Environment:    env,
-		LogLevel:       logLevel,
-		AllowedOrigins: allowedOrigins,
-		PKIDataDir:     pkiDataDir,
+		Port:                       port,
+		DBPath:                     dbPath,
+		JWTSecret:                  jwtSecret,
+		MFAKeyFile:                 mfaKeyFile,
+		VICISocket:                 viciSocket,
+		DNSPort:                    dnsPort,
+		EnableDNS:                  enableDNS,
+		Environment:                env,
+		LogLevel:                   logLevel,
+		AllowedOrigins:             allowedOrigins,
+		WebhookAllowedDestinations: webhookAllowed,
+		PKIDataDir:                 pkiDataDir,
 	}
 
 	return cfg

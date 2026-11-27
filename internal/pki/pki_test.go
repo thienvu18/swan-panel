@@ -77,4 +77,19 @@ func TestPKIManager(t *testing.T) {
 	if !strings.Contains(androidProfile, "test-laptop") {
 		t.Errorf("Android profile missing device hostname")
 	}
+
+	// 6. Test Linux shell installer generation and nil-bundle guards
+	linuxScript := pki.GenerateLinuxInstallerScript("vpn.company.com", "test-laptop", clientBundle)
+	if !strings.Contains(linuxScript, "swanctl") || !strings.Contains(linuxScript, "vpn.company.com") {
+		t.Errorf("Linux installer script missing expected configuration")
+	}
+	if _, err := pki.GenerateAppleMobileconfig("vpn.company.com", "test-laptop", nil); err == nil {
+		t.Error("expected nil certBundle error for mobileconfig")
+	}
+	if got := pki.GenerateWindowsPowerShellScript("vpn.company.com", "test-laptop", nil); got != "" {
+		t.Errorf("expected empty PowerShell script for nil bundle, got %q", got)
+	}
+	if got := pki.GenerateAndroidProfile("vpn.company.com", "test-laptop", nil); got != "" {
+		t.Errorf("expected empty Android profile for nil bundle, got %q", got)
+	}
 }

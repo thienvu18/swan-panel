@@ -106,6 +106,53 @@ func parseRSAPrivateKeyFromPEM(pemBytes []byte) (*rsa.PrivateKey, error) {
 	return nil, fmt.Errorf("unsupported private key format")
 }
 
+// DataDir returns the directory holding persisted PKI certificates and keys.
+func (m *PKIManager) DataDir() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.dataDir
+}
+
+// ReloadFromDisk reloads the Root CA certificate and key from DataDir after a restore.
+func (m *PKIManager) ReloadFromDisk() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.dataDir == "" {
+		m.dataDir = resolvePKIDataDir()
+	}
+	caCertPath := filepath.Join(m.dataDir, "ca.crt")
+	caKeyPath := filepath.Join(m.dataDir, "ca.key")
+	certData, err := os.ReadFile(caCertPath)
+	if err != nil {
+		return fmt.Errorf("read restored CA certificate: %w", err)
+	}
+	keyData, err := os.ReadFile(caKeyPath)
+	if err != nil {
+		return fmt.Errorf("read restored CA private key: %w", err)
+	}
+	certBlock, _ := pem.Decode(certData)
+	if certBlock == nil {
+		return fmt.Errorf("decode restored CA certificate PEM")
+	}
+	parsedCA, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return fmt.Errorf("parse restored CA certificate: %w", err)
+	}
+	parsedKey, err := parseRSAPrivateKeyFromPEM(keyData)
+	if err != nil {
+		return fmt.Errorf("parse restored CA private key: %w", err)
+	}
+	pub, ok := parsedCA.PublicKey.(*rsa.PublicKey)
+	if !ok || pub.N.Cmp(parsedKey.N) != 0 {
+		return fmt.Errorf("restored CA certificate and private key do not match")
+	}
+	m.caCert = parsedCA
+	m.caKey = parsedKey
+	m.caCertPEM = string(certData)
+	m.caKeyPEM = string(keyData)
+	return nil
+}
+
 // initCA generates or loads the Root CA from persistent storage
 func (m *PKIManager) initCA() error {
 	return m.initCAWithSubject(defaultCASubject())

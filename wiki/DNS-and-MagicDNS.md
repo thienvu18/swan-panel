@@ -27,8 +27,7 @@ In corporate or homelab environments, you often need to route specific domain na
    - **Hostname:** e.g. `gitlab.company.internal` or `monitoring.prod`
    - **Record Type:** `A` or `CNAME`
    - **Target IP / Host:** e.g. `10.60.0.50`
-   - **TTL:** (Default 300 seconds)
-4. Click **Create Override**.
+4. Click **Add Override**.
 
 The rule activates immediately in the DNS engine without requiring a server reboot.
 
