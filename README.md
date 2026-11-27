@@ -244,6 +244,8 @@ Configure SwanPanel via environment variables or an `/etc/swan-panel/swan-panel.
 | `ENABLE_DNS` | `true` | Enable built-in Split-DNS engine |
 | `DNS_PORT` | `5353` | Port for the DNS server (`53` for production root binding) |
 | `APP_ENV` | `development` | Environment mode (`development` or `production`) |
+| `MFA_KEY_FILE` | `DB_PATH + ".mfa-key"` | Persistent `0600` file holding the independent TOTP encryption key |
+| `WEBHOOK_ALLOWED_DESTINATIONS` | *(Empty — public HTTPS only)* | Optional comma-separated private HTTPS CIDRs, hosts, or `host:port` entries allowed for alert webhooks |
 
 ### Strict Engineering & Security Invariants
 * **Zero SQL Injection:** 100% parameterized queries via GORM ORM; dynamic string concatenation in queries is strictly prohibited.
@@ -257,12 +259,12 @@ Configure SwanPanel via environment variables or an `/etc/swan-panel/swan-panel.
 
 SwanPanel is actively maintained. Here is our prioritized engineering roadmap:
 
-* **In Development (`dev`):**
-  * **1-Click Encrypted Backup & Disaster Recovery:** Downloadable AES-256-GCM `.tar.enc` snapshots (Argon2id key derivation) bundling online-consistent SQLite backups and all Root CA / PKI files, with atomic verified restore, rollback protection, and gateway resynchronization in Server Settings.
-  * **Immutable Audit Trail & Alert Webhooks:** Append-only, SHA-256 hash-chained `audit_logs` table protected by SQLite triggers, integrity verification, CSV/JSONL export, brute-force sign-in escalation, and real-time webhook alerts for Slack, Telegram, Microsoft Teams, and HMAC-signed HTTP receivers.
-  * **Multi-Factor Authentication (MFA / TOTP) for Local Accounts:** Two-step RFC 6238 TOTP verification with AES-256-GCM encrypted seeds at rest, single-use step replay protection, 8 single-use recovery codes, self-service enrollment, and admin MFA reset.
+* **SwanPanel v1.1.0:**
+  * **1-Click Encrypted Backup & Disaster Recovery:** Downloadable AES-256-GCM `.tar.enc` snapshots (Argon2id key derivation) bundling online-consistent SQLite backups, Root CA / PKI files, and portable MFA encryption keys (`secrets/mfa.key`), with crash-safe journaled restore, automatic rollback, correlated restart outcome verification, and gateway resynchronization in Server Settings.
+  * **Immutable Audit Trail & Alert Webhooks:** Append-only, SHA-256 hash-chained `audit_logs` table protected by SQLite triggers, integrity verification, CSV/JSONL export, brute-force sign-in escalation, and real-time webhook alerts via a persistent retry outbox for Slack, Telegram, Microsoft Teams, and HMAC-signed HTTP receivers with SSRF safeguards.
+  * **Multi-Factor Authentication (MFA / TOTP) for Local Accounts:** Two-step RFC 6238 TOTP verification with AES-256-GCM encrypted seeds protected by an independent `0600` keystore (`MFA_KEY_FILE`), single-use step replay protection, 8 recovery codes, self-service enrollment, and admin MFA reset. See [release notes](CHANGELOG.md).
 
-* **Stable v1.0.1:** Easier-to-read tables and forms, clearer settings and device actions, and Gateway status that distinguishes Online, Degraded, Offline and Unknown. Gateway health is rechecked every 15 seconds; old results expire after 45 seconds. The status stays visible in the mobile header. See [release notes](CHANGELOG.md).
+* **v1.0.1:** Easier-to-read tables and forms, clearer settings and device actions, and Gateway status that distinguishes Online, Degraded, Offline and Unknown. Gateway health is rechecked every 15 seconds; old results expire after 45 seconds. The status stays visible in the mobile header. See [release notes](CHANGELOG.md).
 
 * **v1.0.0 — First stable release:**
   * Single-binary Linux delivery with embedded React 19 UI and native SQLite WAL (CGO compiled, statically linked).

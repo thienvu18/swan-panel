@@ -13,8 +13,10 @@ import (
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
 	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
 	"github.com/swan-panel/swan-panel/internal/pki"
 	"github.com/swan-panel/swan-panel/internal/policy"
+	"gorm.io/gorm"
 )
 
 type SettingsHandler struct{}
@@ -121,8 +123,26 @@ func (h *SettingsHandler) UpdateStrongswanSettings(c *gin.Context) {
 	if strings.TrimSpace(req.VPNName) == "" {
 		req.VPNName = "SwanPanel VPN"
 	}
-	// Parameterized Update: GORM updates by primary key
-	if err := db.DB.Save(&req).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	// Parameterized Update + immutable audit in one transaction.
+	var auditEntry db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&req).Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "gateway.settings.updated",
+			Severity:   audit.SeverityInfo,
+			TargetType: "gateway",
+			TargetID:   "1",
+			Summary:    "Gateway settings updated (endpoint=" + req.ServerEndpoint + ")",
+			Details:    map[string]any{"server_endpoint": req.ServerEndpoint, "cipher_preset": req.CipherPreset},
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to persist strongSwan configuration", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to persist configuration"})
 		return
@@ -134,14 +154,7 @@ func (h *SettingsHandler) UpdateStrongswanSettings(c *gin.Context) {
 		"mobike", req.MobikeEnabled,
 		"force_encap_natt", req.ForceEncapNATT,
 	)
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "gateway.settings.updated",
-		Severity:   audit.SeverityInfo,
-		TargetType: "gateway",
-		TargetID:   "1",
-		Summary:    "Gateway settings updated (endpoint=" + req.ServerEndpoint + ")",
-		Details:    map[string]any{"server_endpoint": req.ServerEndpoint, "cipher_preset": req.CipherPreset},
-	})
+	audit.NotifyCommitted(auditEntry)
 
 	// Reissue a gateway certificate only when its identity changes/approaches expiry,
 	// and synchronize device-specific connections, never the old wildcard tunnel.

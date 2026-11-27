@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
 	"golang.org/x/time/rate"
 )
 
@@ -107,5 +108,48 @@ func TestCORSPolicyAllowsOnlyConfiguredOriginsAndDevLoopback(t *testing.T) {
 				t.Fatalf("CORS origin %q allowed=%v want %v", tc.origin, allowed, tc.allow)
 			}
 		})
+	}
+}
+
+func TestMaintenanceGateAndAuthHeaderRejections(t *testing.T) {
+	coord := maintenance.NewCoordinator()
+	router := gin.New()
+	router.Use(MaintenanceGate(coord))
+	router.Use(RequireAuth("secret-key-1234567890"))
+	router.GET("/api/ping", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	// Non-Bearer or invalid JWT rejected 401.
+	reqBadScheme := httptest.NewRequest(http.MethodGet, "/api/ping", nil)
+	reqBadScheme.Header.Set("Authorization", "Basic abc")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, reqBadScheme)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for non-Bearer scheme, got %d", w.Code)
+	}
+
+	reqBadJWT := httptest.NewRequest(http.MethodGet, "/api/ping", nil)
+	reqBadJWT.Header.Set("Authorization", "Bearer invalid.jwt.token")
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, reqBadJWT)
+	if w2.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for invalid JWT, got %d", w2.Code)
+	}
+
+	// Entering maintenance returns 503 with Retry-After: 5.
+	if err := coord.EnterMaintenance("test maintenance", 50*time.Millisecond); err != nil {
+		t.Fatalf("enter maintenance: %v", err)
+	}
+	w3 := httptest.NewRecorder()
+	router.ServeHTTP(w3, httptest.NewRequest(http.MethodGet, "/api/ping", nil))
+	if w3.Code != http.StatusServiceUnavailable || w3.Header().Get("Retry-After") != "5" {
+		t.Fatalf("expected 503 + Retry-After in maintenance, got %d", w3.Code)
+	}
+
+	// Fail-closed returns 503 too.
+	coord.EnterFailedClosed("broken rollback")
+	w4 := httptest.NewRecorder()
+	router.ServeHTTP(w4, httptest.NewRequest(http.MethodGet, "/api/ping", nil))
+	if w4.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 in fail-closed mode, got %d", w4.Code)
 	}
 }

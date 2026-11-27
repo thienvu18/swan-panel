@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -11,12 +12,21 @@ import (
 	"github.com/swan-panel/swan-panel/internal/api/handlers"
 	"github.com/swan-panel/swan-panel/internal/api/middleware"
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
+	"github.com/swan-panel/swan-panel/internal/backup"
 	"github.com/swan-panel/swan-panel/internal/config"
+	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
+	"github.com/swan-panel/swan-panel/internal/mfa"
 	"golang.org/x/time/rate"
 )
 
 // SetupRouter configures the HTTP router, enterprise security layers, and REST/SSE endpoints
-func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
+func SetupRouter(cfg *config.Config, staticFS fs.FS, onRequestRestart ...func()) *gin.Engine {
+	if db.DB != nil && cfg.DBPath != "" && cfg.Environment == "test" {
+		if mfa.ActiveKeyPath() != mfa.ResolveKeyFilePath(cfg.DBPath) {
+			_, _, _ = mfa.InitActiveKey(db.DB, cfg.DBPath, cfg.JWTSecret)
+		}
+	}
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 		slog.Info("Gin router operating in release mode")
@@ -53,6 +63,7 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 
 	// Global DDoS Rate Limiter (50 req/sec, burst 100)
 	r.Use(middleware.RateLimit(rate.Limit(50), 100))
+	r.Use(middleware.MaintenanceGate(maintenance.DefaultCoordinator))
 
 	authH := handlers.NewAuthHandler(cfg)
 	settingsH := handlers.NewSettingsHandler()
@@ -65,14 +76,48 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 	sessH := handlers.NewSessionsHandler()
 	sysH := handlers.NewSystemHandler()
 	auditH := handlers.NewAuditHandler()
-	backupH := handlers.NewBackupHandler(cfg)
+	backupH := handlers.NewBackupHandler(cfg, onRequestRestart...)
 
 	// 1. Public API
 	api := r.Group("/api")
 	{
 		api.GET("/health", func(c *gin.Context) {
 			slog.Debug("Health check endpoint invoked", "ip", c.ClientIP())
-			c.JSON(http.StatusOK, gin.H{"status": "healthy", "service": "SwanPanel"})
+			attachCorrelatedRestoreStatus := func(payload gin.H) gin.H {
+				reqID := strings.TrimSpace(c.Query("restore_id"))
+				if reqID == "" || cfg.DBPath == "" {
+					return payload
+				}
+				st, err := backup.ReadRestoreStatus(cfg.DBPath)
+				if err != nil || st == nil || st.RestoreID == "" {
+					return payload
+				}
+				if subtle.ConstantTimeCompare([]byte(reqID), []byte(st.RestoreID)) == 1 {
+					payload["restore_status"] = st.Outcome
+					if st.Message != "" {
+						payload["restore_error"] = st.Message
+					}
+					if st.CompletedAt != "" {
+						payload["restore_completed_at"] = st.CompletedAt
+					}
+				}
+				return payload
+			}
+			st := maintenance.DefaultCoordinator.CurrentStatus()
+			if st.Mode != maintenance.ModeNormal {
+				if st.RetryAfterSeconds > 0 {
+					c.Header("Retry-After", "5")
+				}
+				c.JSON(http.StatusServiceUnavailable, attachCorrelatedRestoreStatus(gin.H{
+					"status":              "maintenance",
+					"mode":                st.Mode,
+					"maintenance":         true,
+					"retry_after_seconds": st.RetryAfterSeconds,
+					"service":             "SwanPanel",
+				}))
+				return
+			}
+			c.JSON(http.StatusOK, attachCorrelatedRestoreStatus(gin.H{"status": "healthy", "maintenance": false, "service": "SwanPanel"}))
 		})
 
 		// Login endpoint with strict brute-force rate limiter (5 req/sec, burst 10)
@@ -178,6 +223,7 @@ func SetupRouter(cfg *config.Config, staticFS fs.FS) *gin.Engine {
 				adminOnly.GET("/audit-logs/verify", auditH.VerifyAuditChain)
 				adminOnly.GET("/audit-logs/export", auditH.ExportAuditLogs)
 				adminOnly.GET("/webhooks", auditH.ListWebhooks)
+				adminOnly.GET("/webhooks/deliveries", auditH.ListWebhookDeliveries)
 				adminOnly.POST("/webhooks", auditH.CreateWebhook)
 				adminOnly.PUT("/webhooks/:id", auditH.UpdateWebhook)
 				adminOnly.DELETE("/webhooks/:id", auditH.DeleteWebhook)

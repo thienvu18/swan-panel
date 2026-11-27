@@ -362,11 +362,11 @@ Under the **Certificate Authority (CA)** tab, administrators can inspect and man
 
 ### 10.7. 1-Click Encrypted Backup & Disaster Recovery
 Under the **Backup & Restore** tab, administrators can generate encrypted point-in-time recovery archives and restore gateway state with single-click simplicity:
-* **Authenticated Encryption:** Backups are serialized into a `.tar` archive comprising the complete SQLite database snapshot (taken via atomic `VACUUM INTO` to prevent SQLite WAL concurrency anomalies) and the `/data/pki` certificate authority directory (`ca.crt`, `ca.key`).
+* **Authenticated Encryption:** Backups are serialized into a v2 `.tar` archive comprising an online-consistent SQLite database snapshot, the PKI authority directory (`ca.crt`, `ca.key`, certificates), and the persistent MFA encryption key (`secrets/mfa.key`) so TOTP 2FA remains portable across fresh-host restores without exporting `JWT_SECRET`. Enforced limits are `64 MiB` encrypted archive upload, `256 MiB` uncompressed archive size, `200 MiB` per entry, and `4,096` entries.
 * **Argon2id Key Derivation:** The administrator passphrase (12–128 characters) is stretched into a 256-bit symmetric key using memory-hard Argon2id parameters (time=3, memory=64MB, threads=4) resistant to GPU brute-force attacks.
 * **AES-256-GCM Protection:** The archive is encrypted using AES-256-GCM with a cryptographically random 96-bit nonce and appended 128-bit authentication tag, producing a tamper-proof `.tar.enc` backup file.
-* **Safe Disaster Recovery:** Restoring an archive performs pre-flight decryption, validates the database and PKI manifests, stages a rollback snapshot before replacement, restores files atomically, and signals the strongSwan VICI daemon to reconcile all connection pools without orphaned state.
-* **Restore Snapshot Semantics:** Restoring an archive restores database state to the point-in-time captured in the backup. Audit log entries and activity recorded after that backup timestamp are replaced by the restored database snapshot.
+* **Safe Controlled-Restart Recovery:** Uploading a `.tar.enc` archive verifies the archive, persists staged files and a `prepared` restore journal, enters HTTP `503` maintenance mode to drain in-flight requests and background workers, returns HTTP `202` (`restarting` with a `restore_id` correlation token), and triggers a controlled control-plane restart (requires a supervisor such as systemd `Restart=always` or Docker `restart: unless-stopped`). On startup before opening listeners, SwanPanel snapshots post-drain rollback state, transitions through `applying`, activates and validates the restored DB/PKI/MFA key, rotates session epochs so pre-restore JWTs require fresh sign-in, cancels queued webhook deliveries from before the backup, persists the correlated `applied` or `rolled_back` status (and locks fail-closed on corrupt/unrecoverable recovery states), and reconciles strongSwan VICI/CRL/nftables (keeping control-plane access available in `pending` state if VICI is temporarily unavailable).
+* **Restore Snapshot Semantics & Recovery Codes:** Restoring an archive restores database state to the point-in-time captured in the backup. Audit log entries recorded after that backup timestamp are replaced by the restored snapshot. Existing single-use MFA recovery codes preserved inside the backup remain valid after restore; administrators who used recovery codes after the backup timestamp should regenerate fresh recovery codes once signed back in.
 * **Two-Step Confirmation Safeguard:** Because restoring replaces all gateway policies, certificates, and user credentials, the administrator must explicitly type `"RESTORE BACKUP"` into the safety dialog before restoration executes.
 
 ![Server Settings Encrypted Backup and Restore Tab](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/17d_server_settings_backup.png)
@@ -393,11 +393,12 @@ Every auditable management action, authentication attempt, device lifecycle chan
 
 ![Audit Hash Chain Cryptographically Verified](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/23_audit_chain_verified.png)
 
-### 11.3. Real-Time Security Alert Webhooks
-Under the **Alert Webhooks** tab, administrators configure outbound notification endpoints that receive instant HTTP webhook alerts when critical security events occur:
-* **Supported Platforms:** Native formatting for **Slack Incoming Webhooks**, **Telegram Bot API**, **Microsoft Teams**, and **Generic HTTPS / SIEM** (Splunk HEC, Datadog, Elastic).
+### 11.3. Real-Time Security Alert Webhooks & Persistent Outbox
+Under the **Alert Webhooks** tab, administrators configure outbound notification endpoints backed by a persistent SQLite delivery outbox (`webhook_deliveries`) with bounded worker concurrency, lease claims, and capped exponential backoff on transient failures:
+* **Supported Platforms:** Native formatting for **Slack Incoming Webhooks**, **Telegram Bot API**, **Microsoft Teams**, and **Generic HTTPS / SIEM** (Splunk HEC, Datadog, Elastic). Delivery uses **at-least-once** semantics during transient retries; consumers can deduplicate using `delivery_id` / `X-SwanPanel-Delivery` (`failed` / `retrying` / `pending` counts appear in the UI and `GET /api/webhooks/deliveries`).
+* **Fail-Safe SSRF Protection:** Outbound requests default strictly to public HTTPS endpoints with DNS dial-time IP checks, disabled proxies, and blocked HTTP redirects. Loopback, link-local metadata (`169.254.169.254`), multicast, and unspecified addresses are always blocked. To permit internal SIEM destinations over HTTPS, configure `WEBHOOK_ALLOWED_DESTINATIONS`.
 * **Event Filters:** Granular subscription patterns: `*` (All events), `severity:critical` (High-priority alerts), `auth.*` (Logins & MFA events), `device.*` (Enrollments & revocations), `gateway.*` (Policy reconciliations), and `auth.bruteforce.suspected` (Automated brute-force threshold detection).
-* **Instant Delivery Testing:** The **Test Webhook** button dispatches an authenticated test payload and displays the HTTP response code (e.g. `200 OK`) and latency.
+* **Instant Delivery Testing:** The **Test Webhook** button dispatches an authenticated test payload and displays sanitized HTTP status telemetry without exposing URL tokens or secrets.
 
 ![Configured Alert Webhooks Overview](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/24_alert_webhooks.png)
 
@@ -504,10 +505,6 @@ SwanPanel provides 100% parity across both languages and color schemes:
 ---
 
 ## 15. ADVANCED ADMINISTRATIVE WORKFLOWS: INTERACTIVE ACTIONS AUDIT
-
----
-
-## 14. ADVANCED ADMINISTRATIVE WORKFLOWS: INTERACTIVE ACTIONS AUDIT
 
 To verify and document operations as an actual network security administrator, SwanPanel underwent extensive interactive browser execution covering search-as-you-type, faceted filter chips, instant kill-switches, and end-to-end CRUD resource lifecycles.
 

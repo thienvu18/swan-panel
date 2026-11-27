@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
 	"gorm.io/gorm"
 )
 
@@ -40,11 +40,15 @@ type WebhookDTO struct {
 	LastDeliveredAt   *time.Time `json:"last_delivered_at,omitempty"`
 	LastStatusCode    int        `json:"last_status_code,omitempty"`
 	LastError         string     `json:"last_error,omitempty"`
+	PendingCount      int64      `json:"pending_count"`
+	RetryingCount     int64      `json:"retrying_count"`
+	DeliveredCount    int64      `json:"delivered_count"`
+	FailedCount       int64      `json:"failed_count"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
-func toWebhookDTO(hook db.AlertWebhook) WebhookDTO {
+func toWebhookDTO(hook db.AlertWebhook, counts map[string]int64) WebhookDTO {
 	return WebhookDTO{
 		ID:                hook.ID,
 		Name:              hook.Name,
@@ -56,7 +60,11 @@ func toWebhookDTO(hook db.AlertWebhook) WebhookDTO {
 		IsActive:          hook.IsActive,
 		LastDeliveredAt:   hook.LastDeliveredAt,
 		LastStatusCode:    hook.LastStatusCode,
-		LastError:         hook.LastError,
+		LastError:         audit.SanitizeStoredError(hook.LastError, hook.WebhookURL, hook.SigningSecret),
+		PendingCount:      counts[audit.DeliveryPending],
+		RetryingCount:     counts[audit.DeliveryRetrying],
+		DeliveredCount:    counts[audit.DeliveryDelivered],
+		FailedCount:       counts[audit.DeliveryFailed],
 		CreatedAt:         hook.CreatedAt,
 		UpdatedAt:         hook.UpdatedAt,
 	}
@@ -231,7 +239,7 @@ func (h *AuditHandler) ExportAuditLogs(c *gin.Context) {
 	c.Data(http.StatusOK, "text/csv; charset=utf-8", buf.Bytes())
 }
 
-// ListWebhooks returns all configured alert webhooks with redacted URLs and no secrets.
+// ListWebhooks returns all configured alert webhooks with redacted URLs and delivery summary counts.
 func (h *AuditHandler) ListWebhooks(c *gin.Context) {
 	var hooks []db.AlertWebhook
 	if err := db.DB.WithContext(c.Request.Context()).Order("created_at asc").Find(&hooks).Error; err != nil {
@@ -239,15 +247,63 @@ func (h *AuditHandler) ListWebhooks(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch webhooks"})
 		return
 	}
+	type aggRow struct {
+		WebhookID string
+		Status    string
+		Cnt       int64
+	}
+	var agg []aggRow
+	_ = db.DB.WithContext(c.Request.Context()).Model(&db.WebhookDelivery{}).
+		Select("webhook_id, status, COUNT(*) as cnt").
+		Group("webhook_id, status").
+		Scan(&agg).Error
+	byHook := make(map[string]map[string]int64, len(hooks))
+	for _, r := range agg {
+		if byHook[r.WebhookID] == nil {
+			byHook[r.WebhookID] = make(map[string]int64)
+		}
+		byHook[r.WebhookID][r.Status] = r.Cnt
+	}
+
 	out := make([]WebhookDTO, 0, len(hooks))
 	for _, hook := range hooks {
-		out = append(out, toWebhookDTO(hook))
+		out = append(out, toWebhookDTO(hook, byHook[hook.ID]))
 	}
 	c.JSON(http.StatusOK, gin.H{"webhooks": out})
 }
 
-func webhookAllowsLocalhost() bool {
-	return os.Getenv("APP_ENV") != "production" && os.Getenv("ENVIRONMENT") != "production"
+// ListWebhookDeliveries returns recent persistent outbox delivery states for observability.
+func (h *AuditHandler) ListWebhookDeliveries(c *gin.Context) {
+	limit := 50
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 200 {
+			limit = v
+		}
+	}
+	query := db.DB.WithContext(c.Request.Context()).Model(&db.WebhookDelivery{})
+	if webhookID := strings.TrimSpace(c.Query("webhook_id")); webhookID != "" {
+		query = query.Where("webhook_id = ?", webhookID)
+	}
+	if status := strings.ToLower(strings.TrimSpace(c.Query("status"))); status != "" && status != "all" {
+		query = query.Where("status = ?", status)
+	}
+	var rows []db.WebhookDelivery
+	if err := query.Order("created_at desc").Limit(limit).Find(&rows).Error; err != nil {
+		slog.Error("Failed to query webhook deliveries", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch webhook deliveries"})
+		return
+	}
+	var hooks []db.AlertWebhook
+	var scrubSecrets []string
+	if err := db.DB.WithContext(c.Request.Context()).Select("webhook_url", "signing_secret").Find(&hooks).Error; err == nil {
+		for _, hk := range hooks {
+			scrubSecrets = append(scrubSecrets, hk.WebhookURL, hk.SigningSecret)
+		}
+	}
+	for i := range rows {
+		rows[i].LastError = audit.SanitizeStoredError(rows[i].LastError, scrubSecrets...)
+	}
+	c.JSON(http.StatusOK, gin.H{"deliveries": rows})
 }
 
 // CreateWebhook configures a new alert webhook endpoint.
@@ -275,8 +331,8 @@ func (h *AuditHandler) CreateWebhook(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := audit.ValidateWebhookURL(req.WebhookURL, webhookAllowsLocalhost()); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := audit.ValidateWebhookURL(req.WebhookURL, false); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": audit.SanitizeWebhookError(err, req.WebhookURL)})
 		return
 	}
 	chatID := strings.TrimSpace(req.TelegramChatID)
@@ -308,21 +364,32 @@ func (h *AuditHandler) CreateWebhook(c *gin.Context) {
 		Events:         eventsJSON,
 		IsActive:       active,
 	}
-	if err := db.DB.WithContext(c.Request.Context()).Create(&hook).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var auditEntry db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&hook).Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "webhook.created",
+			Severity:   audit.SeverityInfo,
+			TargetType: "webhook",
+			TargetID:   hook.ID,
+			Summary:    "Alert webhook created: " + hook.Name,
+			Details:    map[string]any{"provider_type": hook.ProviderType, "events": audit.DecodeEvents(hook.Events)},
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to persist alert webhook", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create webhook"})
 		return
 	}
 
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "webhook.created",
-		Severity:   audit.SeverityInfo,
-		TargetType: "webhook",
-		TargetID:   hook.ID,
-		Summary:    "Alert webhook created: " + hook.Name,
-		Details:    map[string]any{"provider_type": hook.ProviderType, "events": audit.DecodeEvents(hook.Events)},
-	})
-	c.JSON(http.StatusCreated, gin.H{"webhook": toWebhookDTO(hook)})
+	audit.NotifyCommitted(auditEntry)
+	c.JSON(http.StatusCreated, gin.H{"webhook": toWebhookDTO(hook, nil)})
 }
 
 // UpdateWebhook updates an existing alert webhook endpoint.
@@ -366,8 +433,8 @@ func (h *AuditHandler) UpdateWebhook(c *gin.Context) {
 		hook.ProviderType = provider
 	}
 	if req.WebhookURL != nil && strings.TrimSpace(*req.WebhookURL) != "" {
-		if err := audit.ValidateWebhookURL(*req.WebhookURL, webhookAllowsLocalhost()); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if err := audit.ValidateWebhookURL(*req.WebhookURL, false); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": audit.SanitizeWebhookError(err, *req.WebhookURL)})
 			return
 		}
 		hook.WebhookURL = strings.TrimSpace(*req.WebhookURL)
@@ -400,21 +467,32 @@ func (h *AuditHandler) UpdateWebhook(c *gin.Context) {
 		hook.IsActive = *req.IsActive
 	}
 
-	if err := db.DB.WithContext(c.Request.Context()).Save(&hook).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var auditEntry db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&hook).Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "webhook.updated",
+			Severity:   audit.SeverityInfo,
+			TargetType: "webhook",
+			TargetID:   hook.ID,
+			Summary:    "Alert webhook updated: " + hook.Name,
+			Details:    map[string]any{"provider_type": hook.ProviderType, "is_active": hook.IsActive},
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to update alert webhook", "id", id, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update webhook"})
 		return
 	}
 
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "webhook.updated",
-		Severity:   audit.SeverityInfo,
-		TargetType: "webhook",
-		TargetID:   hook.ID,
-		Summary:    "Alert webhook updated: " + hook.Name,
-		Details:    map[string]any{"provider_type": hook.ProviderType, "is_active": hook.IsActive},
-	})
-	c.JSON(http.StatusOK, gin.H{"webhook": toWebhookDTO(hook)})
+	audit.NotifyCommitted(auditEntry)
+	c.JSON(http.StatusOK, gin.H{"webhook": toWebhookDTO(hook, nil)})
 }
 
 // DeleteWebhook deletes an alert webhook.
@@ -425,18 +503,32 @@ func (h *AuditHandler) DeleteWebhook(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Webhook not found"})
 		return
 	}
-	if err := db.DB.WithContext(c.Request.Context()).Where("id = ?", id).Delete(&db.AlertWebhook{}).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var auditEntry db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ?", id).Delete(&db.AlertWebhook{}).Error; err != nil {
+			return err
+		}
+		_ = tx.Model(&db.WebhookDelivery{}).
+			Where("webhook_id = ? AND status IN ?", id, []string{audit.DeliveryPending, audit.DeliveryRetrying}).
+			Updates(map[string]any{"status": audit.DeliveryCancelled, "last_error": "Webhook deleted"}).Error
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "webhook.deleted",
+			Severity:   audit.SeverityWarning,
+			TargetType: "webhook",
+			TargetID:   id,
+			Summary:    "Alert webhook deleted: " + hook.Name,
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to delete alert webhook", "id", id, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete webhook"})
 		return
 	}
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "webhook.deleted",
-		Severity:   audit.SeverityWarning,
-		TargetType: "webhook",
-		TargetID:   id,
-		Summary:    "Alert webhook deleted: " + hook.Name,
-	})
+	audit.NotifyCommitted(auditEntry)
 	c.JSON(http.StatusOK, gin.H{"message": "Webhook deleted successfully"})
 }
 
@@ -466,7 +558,7 @@ func (h *AuditHandler) TestWebhook(c *gin.Context) {
 	testEntry.EntryHash = audit.ComputeEntryHash(testEntry)
 
 	statusCode, err := audit.DeliverWebhook(c.Request.Context(), db.DB, hook, testEntry)
-	audit.RecordFromContext(c, audit.EntryInput{
+	_ = audit.RecordFromContext(c, audit.EntryInput{
 		Action:     "webhook.tested",
 		Severity:   audit.SeverityInfo,
 		TargetType: "webhook",
@@ -478,7 +570,7 @@ func (h *AuditHandler) TestWebhook(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"success":     false,
 			"status_code": statusCode,
-			"error":       "Webhook test delivery failed: " + err.Error(),
+			"error":       "Webhook test delivery failed: " + audit.SanitizeWebhookError(err, hook.WebhookURL, hook.SigningSecret),
 		})
 		return
 	}

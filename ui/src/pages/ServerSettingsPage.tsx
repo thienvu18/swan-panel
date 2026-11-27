@@ -6,7 +6,7 @@ import { useConfirmAction } from '../components/ConfirmDialog';
 import { CopyButton } from '../components/CopyButton';
 import { AdvancedJSONEditor } from '../components/AdvancedJSONEditor';
 import { apiJSON } from '../lib/api';
-import { downloadEncryptedBackup, uploadRestoreBackup } from '../lib/backupApi';
+import { downloadEncryptedBackup, RestoreOutcomeError, uploadRestoreBackup, waitForControlPlaneRestart } from '../lib/backupApi';
 import { checkGatewayJSON, diffGatewayJSON } from '../lib/gatewayJSON';
 
 interface ServerSettingsProps { onRegisterSaveButton?: (button: React.ReactNode) => void; }
@@ -77,6 +77,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
   const [restoreConfirmText, setRestoreConfirmText] = useState('');
   const [restoreTouched, setRestoreTouched] = useState({ file: false, pass: false, confirm: false });
   const [restoreSubmitAttempted, setRestoreSubmitAttempted] = useState(false);
+  const [restoreRestarting, setRestoreRestarting] = useState(false);
   const exportPassRef = useRef<HTMLInputElement>(null);
   const exportConfirmRef = useRef<HTMLInputElement>(null);
   const restoreFileRef = useRef<HTMLInputElement>(null);
@@ -171,6 +172,32 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
       setRestoreTouched({ file: false, pass: false, confirm: false });
       setRestoreSubmitAttempted(false);
       if (restoreFileRef.current) restoreFileRef.current.value = '';
+      if (result.runtime_status === 'restarting') {
+        setRestoreRestarting(true);
+        setNotice(t('server.backup.restore_restarting'));
+        try {
+          await waitForControlPlaneRestart(30, 2000, fetch, result.restore_id);
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setNotice(t('server.backup.restore_restarted_reauth'));
+          window.setTimeout(() => {
+            window.location.reload();
+          }, 1200);
+        } catch (err) {
+          setRestoreRestarting(false);
+          if (err instanceof RestoreOutcomeError && err.outcome === 'rolled_back') {
+            setNotice(t('server.backup.restore_rolled_back', { reason: err.message }));
+            await queryClient.invalidateQueries();
+          } else if (err instanceof RestoreOutcomeError && err.outcome === 'failed_closed') {
+            setNotice(t('server.backup.restore_failed_closed'));
+          } else if (err instanceof RestoreOutcomeError && err.outcome === 'unverified') {
+            setNotice(t('server.backup.restore_outcome_unverified'));
+          } else {
+            setNotice(t('server.backup.restore_restart_timeout'));
+          }
+        }
+        return;
+      }
       setNotice(result.runtime_status === 'applied'
         ? t('server.backup.restore_applied')
         : t('server.backup.restore_pending', { reason: result.message || t('server.status_unknown') }));
@@ -569,6 +596,7 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
             <p className="text-xs text-subtle border subtle-border rounded-lg p-3">
               {t('server.backup.export_includes_hint')}
             </p>
+            <p className="text-[11px] text-dim">{t('server.backup.limits_hint')}</p>
             <form onSubmit={submitExportBackup} noValidate className="space-y-3">
               <div>
                 <label htmlFor="backup-export-passphrase" className={labelClass}>
@@ -769,11 +797,15 @@ export const ServerSettingsPage: React.FC<ServerSettingsProps> = ({ onRegisterSa
 
               <button
                 type="submit"
-                disabled={restoreBackup.isPending}
+                disabled={restoreBackup.isPending || restoreRestarting}
                 className="rounded-lg border border-red-500 text-status-danger px-4 py-2 text-xs font-semibold disabled:opacity-50 inline-flex items-center gap-2"
               >
                 <Upload className="h-4 w-4" />
-                {restoreBackup.isPending ? t('server.backup.restoring') : t('server.backup.restore_action')}
+                {restoreRestarting
+                  ? t('server.backup.restore_restarting_btn')
+                  : restoreBackup.isPending
+                    ? t('server.backup.restoring')
+                    : t('server.backup.restore_action')}
               </button>
             </form>
           </section>

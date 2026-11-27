@@ -179,8 +179,8 @@ curl -fsS -H "Authorization: Bearer $SWANPANEL_TOKEN" \
 - `POST /api/system/daemon` (Administrator): Controls the strongSwan daemon (`start`, `stop`, `restart`; unavailable when running against external host strongSwan).
 - `GET /api/system/apply-status`, `POST /api/system/apply` (Administrator): Inspect saved vs. active generation state or retry pending synchronization.
 - `GET /api/system/logs` (Administrator): Filter recent in-memory structured application logs (`scope`, `level`, `search`).
-- `POST /api/system/backup` (Administrator): Streams an AES-256-GCM encrypted `.tar.enc` snapshot of the SQLite database and PKI directory derived from the supplied passphrase (12–128 bytes) with `Cache-Control: no-store, private`.
-- `POST /api/system/restore` (Administrator): Verifies and atomically restores a `.tar.enc` archive (`backup_file`, `passphrase`, `confirm: "RESTORE BACKUP"`), reloads the internal CA, and triggers gateway policy/CRL reconciliation.
+- `POST /api/system/backup` (Administrator): Streams a v2 AES-256-GCM encrypted `.tar.enc` snapshot (`64 MiB` encrypted limit, `256 MiB` uncompressed, `4,096` entries) of the SQLite database, PKI directory, and independent MFA keystore derived from the supplied passphrase (12–128 bytes) with `Cache-Control: no-store, private`.
+- `POST /api/system/restore` (Administrator): Verifies the `.tar.enc` archive (`backup_file`, `passphrase`, `confirm: "RESTORE BACKUP"`), stages rollback snapshots, persists a restore journal, enters HTTP `503` maintenance mode, returns HTTP `202` (`runtime_status: "restarting"`), and triggers controlled control-plane restart so exclusive startup recovery activates DB/PKI/MFA state, rotates session epochs, and reconciles gateway policies/CRL.
 
 ---
 
@@ -189,5 +189,6 @@ curl -fsS -H "Authorization: Bearer $SWANPANEL_TOKEN" \
 - `GET /api/audit-logs`: Paginated immutable audit log query (`limit`, `offset`, `severity`, `action`, `target_type`, `actor`, `search`, `from`, `to`).
 - `GET /api/audit-logs/verify`: Verifies sequential ordering and SHA-256 hash-chain linkage across all stored audit entries.
 - `GET /api/audit-logs/export?format=csv|jsonl`: Exports filtered audit entries as CSV (formula-injection safe) or JSON Lines (`Cache-Control: no-store, private`).
-- `GET /api/webhooks`, `POST /api/webhooks`, `PUT /api/webhooks/:id`, `DELETE /api/webhooks/:id`: Manage alert destinations (`slack`, `telegram`, `teams`, `generic`) with SSRF validation and redacted URL/secret output.
-- `POST /api/webhooks/:id/test`: Dispatches a synthetic test alert and reports HTTP delivery status.
+- `GET /api/webhooks`, `POST /api/webhooks`, `PUT /api/webhooks/:id`, `DELETE /api/webhooks/:id`: Manage alert destinations (`slack`, `telegram`, `teams`, `generic`) with fail-safe public HTTPS SSRF validation (or explicit `WEBHOOK_ALLOWED_DESTINATIONS`), redacted URL/secret output, and persistent outbox counters (`pending_count`, `retrying_count`, `failed_count`).
+- `GET /api/webhooks/deliveries`: Paginated inspection of persistent alert outbox delivery attempts and sanitized failure summaries (`webhook_id`, `status`, `limit`).
+- `POST /api/webhooks/:id/test`: Dispatches a synthetic test alert and reports sanitized HTTP delivery status.

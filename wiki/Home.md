@@ -2,7 +2,7 @@
 
 **SwanPanel** is a modern, enterprise-grade, zero-trust web control plane for **strongSwan** Remote Access VPNs.
 
-**SwanPanel v1.0.1:** Native VPN on supported devices, clear access decisions, verified Gateway health and visible configuration apply status. [Release notes](https://github.com/thienvu18/swan-panel/blob/main/CHANGELOG.md).
+**SwanPanel v1.1.0:** Native VPN on supported devices, clear access decisions, verified Gateway health, 1-click AES-256-GCM encrypted backup and disaster recovery, immutable hash-chained audit trail with persistent webhook alerts, and local TOTP two-factor authentication. [Release notes](https://github.com/thienvu18/swan-panel/blob/main/CHANGELOG.md).
 
 ![SwanPanel Dashboard](https://raw.githubusercontent.com/thienvu18/swan-panel/main/docs/assets/images/user-guide/en/dark/02_dashboard.png)
 

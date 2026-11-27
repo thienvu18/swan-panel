@@ -589,6 +589,7 @@
       "export_title": "Xuất bản sao lưu mã hóa",
       "export_description": "Tải về bản chụp được mã hóa chứa cấu hình hệ thống, danh tính người dùng và chứng chỉ VPN.",
       "export_includes_hint": "Bao gồm tài khoản người dùng, luật truy cập, bản ghi DNS, cấu hình gateway, webhook, nhật ký kiểm toán và khóa CA.",
+      "limits_hint": "Giới hạn bản sao lưu: tối đa 64 MiB tệp mã hóa, 256 MiB sau giải nén và 4.096 tệp.",
       "passphrase_label": "Mật khẩu mã hóa",
       "confirm_passphrase_label": "Xác nhận mật khẩu mã hóa",
       "toggle_passphrase": "Hiện hoặc ẩn mật khẩu",
@@ -610,7 +611,14 @@
       "restore_action": "Khôi phục sao lưu",
       "restoring": "Đang khôi phục…",
       "restore_applied": "Đã xác thực, khôi phục bản sao lưu và đồng bộ lên VPN gateway.",
-      "restore_pending": "Đã khôi phục dữ liệu, nhưng đồng bộ gateway đang chờ xử lý: {{reason}}"
+      "restore_pending": "Đã khôi phục dữ liệu, nhưng đồng bộ gateway đang chờ xử lý: {{reason}}",
+      "restore_restarting": "Đã xác thực và chuẩn bị bản sao lưu. Hệ thống đang chuyển sang chế độ bảo trì và khởi động lại để kích hoạt dữ liệu khôi phục…",
+      "restore_restarting_btn": "Đang khởi động lại hệ thống…",
+      "restore_restarted_reauth": "Hệ thống đã khởi động lại xong. Các phiên cũ đã bị hủy—đang chuyển về màn hình đăng nhập.",
+      "restore_rolled_back": "Khôi phục thất bại và hệ thống đã hoàn nguyên an toàn về dữ liệu trước đó: {{reason}}",
+      "restore_failed_closed": "Cả khôi phục và hoàn nguyên đều thất bại. Hệ thống đã khóa ở chế độ fail-closed; vui lòng kiểm tra restore journal trên máy chủ.",
+      "restore_outcome_unverified": "Hệ thống đã hoạt động lại nhưng chưa xác minh được kết quả khôi phục. Vui lòng đăng nhập lại và kiểm tra Nhật ký kiểm toán.",
+      "restore_restart_timeout": "Quá trình khởi động lại kéo dài hơn dự kiến. Vui lòng tải lại trang và đăng nhập lại."
     }
   },
   "logs": {
@@ -704,6 +712,9 @@
     "telegram_chat_label": "Chat ID",
     "delivery_ok": "Đã gửi (HTTP {{code}})",
     "delivery_never": "Chưa từng gửi",
+    "outbox_pending": "{{count}} chờ gửi",
+    "outbox_retrying": "{{count}} thử lại",
+    "outbox_failed": "{{count}} lỗi",
     "webhook_test_ok": "Đã gửi cảnh báo thử thành công (HTTP {{status}}).",
     "field_name": "Tên webhook",
     "field_name_placeholder": "Slack Bảo mật",

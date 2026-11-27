@@ -29,6 +29,9 @@ services:
     environment:
       VICI_SOCKET: /host-run/charon.vici
       SWANPANEL_EXTERNAL_STRONGSWAN: "1"
+      # Optional: override persisted MFA encryption key path or restricted private webhook HTTPS allowlist.
+      # MFA_KEY_FILE: /var/lib/swan-panel/swanpanel.db.mfa-key
+      # WEBHOOK_ALLOWED_DESTINATIONS: 10.20.0.0/16
       # Optional: pin NAT egress if multiple host default routes exist.
       # SWANPANEL_HOST_EGRESS_INTERFACE: wlan0
       # IPv6 host forwarding is opt-in (can change Router Advertisement/default routes).

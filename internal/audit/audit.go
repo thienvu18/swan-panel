@@ -118,15 +118,39 @@ func truncateField(v string, max int) string {
 	return v[:max]
 }
 
-// Record appends an immutable, hash-chained audit entry and triggers matching webhook alerts.
-func Record(ctx context.Context, database *gorm.DB, input EntryInput) (db.AuditLog, error) {
-	if database == nil {
-		return db.AuditLog{}, errors.New("audit database is nil")
+// EnrichFromContext populates actor identity and client IP fields from a Gin request context.
+func EnrichFromContext(c *gin.Context, input EntryInput) EntryInput {
+	if c == nil {
+		return input
 	}
-	if ctx == nil {
-		ctx = context.Background()
+	if input.ActorID == "" {
+		input.ActorID = c.GetString("user_id")
 	}
+	if input.ActorEmail == "" {
+		input.ActorEmail = c.GetString("email")
+	}
+	if input.ActorRole == "" {
+		if input.ActorID == "" {
+			input.ActorRole = "anonymous"
+		} else if c.GetBool("is_admin") {
+			input.ActorRole = "admin"
+		} else {
+			input.ActorRole = "user"
+		}
+	}
+	if input.SourceIP == "" {
+		input.SourceIP = c.ClientIP()
+	}
+	return input
+}
 
+// RecordTx appends an immutable hash-chained audit record and enqueues matching
+// persistent webhook outbox deliveries inside the caller's existing database transaction.
+// Call NotifyCommitted(entry) after the transaction commits.
+func RecordTx(tx *gorm.DB, input EntryInput) (db.AuditLog, error) {
+	if tx == nil {
+		return db.AuditLog{}, errors.New("audit transaction is nil")
+	}
 	detailsJSON := ""
 	if len(input.Details) > 0 {
 		encoded, err := json.Marshal(input.Details)
@@ -136,100 +160,108 @@ func Record(ctx context.Context, database *gorm.DB, input EntryInput) (db.AuditL
 		detailsJSON = string(encoded)
 	}
 
+	var latest db.AuditLog
+	var seq uint64 = 1
+	prevHash := GenesisHash
+
+	err := tx.Order("sequence desc").Limit(1).First(&latest).Error
+	if err == nil {
+		seq = latest.Sequence + 1
+		prevHash = latest.EntryHash
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return db.AuditLog{}, fmt.Errorf("query latest audit sequence: %w", err)
+	}
+
+	created := db.AuditLog{
+		ID:         "aud_" + uuid.New().String()[:12],
+		Sequence:   seq,
+		CreatedAt:  time.Now().UTC().Truncate(time.Millisecond),
+		ActorID:    truncateField(input.ActorID, 64),
+		ActorEmail: truncateField(input.ActorEmail, 256),
+		ActorRole:  truncateField(input.ActorRole, 32),
+		SourceIP:   truncateField(input.SourceIP, 64),
+		Action:     truncateField(input.Action, 64),
+		Severity:   normalizeSeverity(input.Severity),
+		TargetType: truncateField(input.TargetType, 64),
+		TargetID:   truncateField(input.TargetID, 128),
+		Summary:    truncateField(input.Summary, 512),
+		Details:    detailsJSON,
+		PrevHash:   prevHash,
+	}
+	if created.ActorRole == "" {
+		created.ActorRole = "system"
+	}
+	if created.Summary == "" {
+		created.Summary = created.Action
+	}
+	created.EntryHash = ComputeEntryHash(created)
+	if err := tx.Create(&created).Error; err != nil {
+		return db.AuditLog{}, err
+	}
+	if err := enqueueWebhookDeliveriesTx(tx, created); err != nil {
+		return db.AuditLog{}, fmt.Errorf("enqueue alert webhook outbox: %w", err)
+	}
+	return created, nil
+}
+
+// NotifyCommitted publishes SSE invalidations and wakes outbox workers after commit.
+func NotifyCommitted(entry db.AuditLog) {
+	slog.Info("Audit event recorded",
+		"sequence", entry.Sequence,
+		"action", entry.Action,
+		"severity", entry.Severity,
+		"actor", entry.ActorEmail,
+		"target_type", entry.TargetType,
+		"target_id", entry.TargetID,
+	)
+
+	if realtime.DefaultBroker != nil {
+		realtime.DefaultBroker.Broadcast("audit_event", map[string]any{
+			"id":       entry.ID,
+			"sequence": entry.Sequence,
+			"action":   entry.Action,
+			"severity": entry.Severity,
+		})
+	}
+	NotifyOutbox()
+}
+
+// Record appends an immutable, hash-chained audit entry in its own transaction and notifies outbox workers.
+func Record(ctx context.Context, database *gorm.DB, input EntryInput) (db.AuditLog, error) {
+	if database == nil {
+		return db.AuditLog{}, errors.New("audit database is nil")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	var created db.AuditLog
 	err := database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var latest db.AuditLog
-		var seq uint64 = 1
-		prevHash := GenesisHash
-
-		err := tx.Order("sequence desc").Limit(1).First(&latest).Error
-		if err == nil {
-			seq = latest.Sequence + 1
-			prevHash = latest.EntryHash
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("query latest audit sequence: %w", err)
-		}
-
-		created = db.AuditLog{
-			ID:         "aud_" + uuid.New().String()[:12],
-			Sequence:   seq,
-			CreatedAt:  time.Now().UTC().Truncate(time.Millisecond),
-			ActorID:    truncateField(input.ActorID, 64),
-			ActorEmail: truncateField(input.ActorEmail, 256),
-			ActorRole:  truncateField(input.ActorRole, 32),
-			SourceIP:   truncateField(input.SourceIP, 64),
-			Action:     truncateField(input.Action, 64),
-			Severity:   normalizeSeverity(input.Severity),
-			TargetType: truncateField(input.TargetType, 64),
-			TargetID:   truncateField(input.TargetID, 128),
-			Summary:    truncateField(input.Summary, 512),
-			Details:    detailsJSON,
-			PrevHash:   prevHash,
-		}
-		if created.ActorRole == "" {
-			created.ActorRole = "system"
-		}
-		if created.Summary == "" {
-			created.Summary = created.Action
-		}
-		created.EntryHash = ComputeEntryHash(created)
-		return tx.Create(&created).Error
+		var recErr error
+		created, recErr = RecordTx(tx, input)
+		return recErr
 	})
 	if err != nil {
 		slog.Error("Failed to persist immutable audit entry", "action", input.Action, "error", err)
 		return db.AuditLog{}, err
 	}
 
-	slog.Info("Audit event recorded",
-		"sequence", created.Sequence,
-		"action", created.Action,
-		"severity", created.Severity,
-		"actor", created.ActorEmail,
-		"target_type", created.TargetType,
-		"target_id", created.TargetID,
-	)
-
-	if realtime.DefaultBroker != nil {
-		realtime.DefaultBroker.Broadcast("audit_event", map[string]any{
-			"id":       created.ID,
-			"sequence": created.Sequence,
-			"action":   created.Action,
-			"severity": created.Severity,
-		})
-	}
-
-	DispatchAsync(database, created)
+	NotifyCommitted(created)
 	return created, nil
 }
 
 // RecordFromContext records an audit event using actor metadata from the Gin HTTP context.
-func RecordFromContext(c *gin.Context, input EntryInput) {
+func RecordFromContext(c *gin.Context, input EntryInput) error {
 	if db.DB == nil {
-		return
+		return errors.New("audit database unavailable")
 	}
-	if c != nil {
-		if input.ActorID == "" {
-			input.ActorID = c.GetString("user_id")
-		}
-		if input.ActorEmail == "" {
-			input.ActorEmail = c.GetString("email")
-		}
-		if input.ActorRole == "" {
-			if input.ActorID == "" {
-				input.ActorRole = "anonymous"
-			} else if c.GetBool("is_admin") {
-				input.ActorRole = "admin"
-			} else {
-				input.ActorRole = "user"
-			}
-		}
-		if input.SourceIP == "" {
-			input.SourceIP = c.ClientIP()
-		}
-		_, _ = Record(c.Request.Context(), db.DB, input)
-		return
+	enriched := EnrichFromContext(c, input)
+	ctx := context.Background()
+	if c != nil && c.Request != nil {
+		ctx = c.Request.Context()
 	}
-	_, _ = Record(context.Background(), db.DB, input)
+	_, err := Record(ctx, db.DB, enriched)
+	return err
 }
 
 // VerifyChain validates sequential ordering, previous-hash linkage, and entry hashes.
@@ -309,7 +341,7 @@ func TrackFailedLogin(c *gin.Context, email, reason string) {
 		ip = c.ClientIP()
 	}
 	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
-	RecordFromContext(c, EntryInput{
+	if err := RecordFromContext(c, EntryInput{
 		ActorEmail: normalizedEmail,
 		ActorRole:  "anonymous",
 		SourceIP:   ip,
@@ -319,14 +351,16 @@ func TrackFailedLogin(c *gin.Context, email, reason string) {
 		TargetID:   normalizedEmail,
 		Summary:    "Failed sign-in attempt for " + normalizedEmail,
 		Details:    map[string]any{"reason": reason},
-	})
+	}); err != nil {
+		slog.Warn("Failed to record failed login audit entry", "email", normalizedEmail, "error", err)
+	}
 
 	key := ip + "|" + normalizedEmail
 	now := time.Now().UTC()
 	cutoff := now.Add(-bruteforceWindow)
 
 	loginFailureTracker.mu.Lock()
-	if len(loginFailureTracker.attempts) > bruteforceMaxTracked {
+	if len(loginFailureTracker.attempts) >= bruteforceMaxTracked {
 		loginFailureTracker.attempts = make(map[string][]time.Time)
 		loginFailureTracker.lastEmit = make(map[string]time.Time)
 	}
@@ -349,7 +383,7 @@ func TrackFailedLogin(c *gin.Context, email, reason string) {
 	loginFailureTracker.mu.Unlock()
 
 	if shouldEscalate {
-		RecordFromContext(c, EntryInput{
+		if err := RecordFromContext(c, EntryInput{
 			ActorEmail: normalizedEmail,
 			ActorRole:  "anonymous",
 			SourceIP:   ip,
@@ -359,6 +393,8 @@ func TrackFailedLogin(c *gin.Context, email, reason string) {
 			TargetID:   normalizedEmail,
 			Summary:    fmt.Sprintf("Repeated failed sign-in attempts (%d in 5m) for %s from %s", count, normalizedEmail, ip),
 			Details:    map[string]any{"attempts": count, "window_seconds": int(bruteforceWindow.Seconds())},
-		})
+		}); err != nil {
+			slog.Warn("Failed to record brute-force escalation audit entry", "email", normalizedEmail, "error", err)
+		}
 	}
 }

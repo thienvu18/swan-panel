@@ -22,6 +22,7 @@ import (
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
 	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
 	"github.com/swan-panel/swan-panel/internal/pki"
 	"github.com/swan-panel/swan-panel/internal/policy"
 	"github.com/swan-panel/swan-panel/internal/vici"
@@ -133,6 +134,9 @@ func (h *ResourcesHandler) CreateDevice(c *gin.Context) {
 	}
 	// Certificates can be generated before the DB transaction, then persisted
 	// exactly once. Never derive any client IKE ID from an unverified email.
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
 	manager, err := pki.GetPKIManager()
 	if err != nil {
 		c.JSON(503, gin.H{"error": "CA unavailable"})
@@ -149,6 +153,7 @@ func (h *ResourcesHandler) CreateDevice(c *gin.Context) {
 		c.JSON(503, gin.H{"error": "Failed to persist client identity"})
 		return
 	}
+	var createDevAudit db.AuditLog
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		var group db.ResourceGroup
 		if err := tx.Where("id = ?", req.ResourceGroupID).First(&group).Error; err != nil {
@@ -174,7 +179,19 @@ func (h *ResourcesHandler) CreateDevice(c *gin.Context) {
 			}
 			newDevice.VirtualIP = ip
 		}
-		return tx.Create(&newDevice).Error // Unique virtual_ip prevents parallel duplicate assignment.
+		if err := tx.Create(&newDevice).Error; err != nil { // Unique virtual_ip prevents parallel duplicate assignment.
+			return err
+		}
+		var recErr error
+		createDevAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "device.created",
+			Severity:   audit.SeverityInfo,
+			TargetType: "device",
+			TargetID:   newDevice.ID,
+			Summary:    fmt.Sprintf("Device enrolled: %s (%s)", newDevice.Hostname, newDevice.VirtualIP),
+			Details:    map[string]any{"hostname": newDevice.Hostname, "virtual_ip": newDevice.VirtualIP, "platform": newDevice.Platform},
+		}))
+		return recErr
 	})
 	if err != nil {
 		_ = manager.DeleteDeviceBundle(newDevice.ID)
@@ -182,14 +199,7 @@ func (h *ResourcesHandler) CreateDevice(c *gin.Context) {
 		return
 	}
 	realtime.DefaultBroker.Broadcast("device_created", map[string]any{"device_id": newDevice.ID})
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "device.created",
-		Severity:   audit.SeverityInfo,
-		TargetType: "device",
-		TargetID:   newDevice.ID,
-		Summary:    fmt.Sprintf("Device enrolled: %s (%s)", newDevice.Hostname, newDevice.VirtualIP),
-		Details:    map[string]any{"hostname": newDevice.Hostname, "virtual_ip": newDevice.VirtualIP, "platform": newDevice.Platform},
-	})
+	audit.NotifyCommitted(createDevAudit)
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		slog.Error("Device enrolled but runtime cannot be enforced", "id", newDevice.ID, "error", err)
 		c.JSON(http.StatusAccepted, gin.H{"device": newDevice, "runtime_status": "pending", "message": "Identity persisted but gateway policy application failed"})
@@ -299,6 +309,9 @@ func (h *ResourcesHandler) DownloadDeviceConfig(c *gin.Context) {
 }
 
 func applyRevocation(ctx context.Context, dev *db.Device) error {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
 	if dev.CertSerial == "" {
 		return errors.New("issued certificate serial is missing")
 	}
@@ -356,7 +369,16 @@ func applyRevocation(ctx context.Context, dev *db.Device) error {
 	} else if err := manager.DeleteDeviceBundle(dev.ID); err != nil {
 		failures = append(failures, fmt.Errorf("remove exported device identity: %w", err))
 	}
-	return errors.Join(failures...)
+	if len(failures) > 0 {
+		joined := errors.Join(failures...)
+		// Ensure RuntimeApplyState is never left as "applied" when CRL/SA/firewall revocation failed.
+		_ = db.DB.Model(&db.RuntimeApplyState{}).Where("id = ?", 1).Updates(map[string]any{
+			"status":     "failed",
+			"last_error": joined.Error(),
+		}).Error
+		return joined
+	}
+	return nil
 }
 
 func publishRevocationLedger(ctx context.Context) error {
@@ -387,7 +409,7 @@ func (h *ResourcesHandler) RevokeDevice(c *gin.Context) {
 	}
 	if err := applyRevocation(c.Request.Context(), &dev); err != nil {
 		slog.Error("Device revoked in database; enforcement reconciliation pending", "id", dev.ID, "error", err)
-		audit.RecordFromContext(c, audit.EntryInput{
+		_ = audit.RecordFromContext(c, audit.EntryInput{
 			Action:     "device.revoked",
 			Severity:   audit.SeverityCritical,
 			TargetType: "device",
@@ -399,14 +421,17 @@ func (h *ResourcesHandler) RevokeDevice(c *gin.Context) {
 		return
 	}
 	realtime.DefaultBroker.Broadcast("device_revoked", map[string]any{"device_id": dev.ID})
-	audit.RecordFromContext(c, audit.EntryInput{
+	if err := audit.RecordFromContext(c, audit.EntryInput{
 		Action:     "device.revoked",
 		Severity:   audit.SeverityCritical,
 		TargetType: "device",
 		TargetID:   dev.ID,
 		Summary:    "Device certificate revoked: " + dev.Hostname,
 		Details:    map[string]any{"hostname": dev.Hostname, "cert_serial": dev.CertSerial},
-	})
+	}); err != nil {
+		c.JSON(503, gin.H{"error": "Device revoked, but audit persistence failed"})
+		return
+	}
 	c.JSON(200, gin.H{"message": "Device certificate revoked and active sessions terminated"})
 }
 
@@ -420,18 +445,26 @@ func (h *ResourcesHandler) DeleteDevice(c *gin.Context) {
 		c.JSON(503, gin.H{"error": "Cannot delete a device until certificate revocation is enforced"})
 		return
 	}
-	if err := db.DB.Delete(&dev).Error; err != nil {
+	var delDevAudit db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&dev).Error; err != nil {
+			return err
+		}
+		var recErr error
+		delDevAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "device.deleted",
+			Severity:   audit.SeverityWarning,
+			TargetType: "device",
+			TargetID:   dev.ID,
+			Summary:    "Device revoked and deleted: " + dev.Hostname,
+			Details:    map[string]any{"hostname": dev.Hostname, "cert_serial": dev.CertSerial},
+		}))
+		return recErr
+	}); err != nil {
 		c.JSON(500, gin.H{"error": "Failed to delete device"})
 		return
 	}
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "device.deleted",
-		Severity:   audit.SeverityWarning,
-		TargetType: "device",
-		TargetID:   dev.ID,
-		Summary:    "Device revoked and deleted: " + dev.Hostname,
-		Details:    map[string]any{"hostname": dev.Hostname, "cert_serial": dev.CertSerial},
-	})
+	audit.NotifyCommitted(delDevAudit)
 	c.JSON(200, gin.H{"message": "Device revoked and deleted"})
 }
 
@@ -505,6 +538,10 @@ func (h *ResourcesHandler) CreateResourceGroup(c *gin.Context) {
 	}
 	// Serialize the overlap check with INSERT on the same SQLite writer.
 	// A competing request must not pass a stale check and create a collision.
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var createRGAudit db.AuditLog
 	err = db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var existing []db.ResourceGroup
 		if err := tx.Find(&existing).Error; err != nil {
@@ -516,7 +553,19 @@ func (h *ResourcesHandler) CreateResourceGroup(c *gin.Context) {
 				return errSubnetOverlap
 			}
 		}
-		return tx.Create(&rg).Error
+		if err := tx.Create(&rg).Error; err != nil {
+			return err
+		}
+		var recErr error
+		createRGAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "resource_group.created",
+			Severity:   audit.SeverityInfo,
+			TargetType: "resource_group",
+			TargetID:   rg.ID,
+			Summary:    fmt.Sprintf("Subnet created: %s (%s)", rg.Name, rg.CIDRBlock),
+			Details:    map[string]any{"cidr_block": rg.CIDRBlock},
+		}))
+		return recErr
 	})
 	if errors.Is(err, errSubnetOverlap) {
 		c.JSON(http.StatusConflict, gin.H{"error": "This VPN subnet overlaps an existing resource group"})
@@ -529,14 +578,7 @@ func (h *ResourcesHandler) CreateResourceGroup(c *gin.Context) {
 	}
 
 	slog.Info("Resource group created", "id", rg.ID, "name", rg.Name, "cidr", rg.CIDRBlock)
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "resource_group.created",
-		Severity:   audit.SeverityInfo,
-		TargetType: "resource_group",
-		TargetID:   rg.ID,
-		Summary:    fmt.Sprintf("Subnet created: %s (%s)", rg.Name, rg.CIDRBlock),
-		Details:    map[string]any{"cidr_block": rg.CIDRBlock},
-	})
+	audit.NotifyCommitted(createRGAudit)
 	c.JSON(http.StatusCreated, gin.H{"resource_group": rg})
 }
 
@@ -545,6 +587,10 @@ func (h *ResourcesHandler) CreateResourceGroup(c *gin.Context) {
 // use transactions; the shared SQLite writer serializes conflicting writes.
 func (h *ResourcesHandler) DeleteResourceGroup(c *gin.Context) {
 	id := c.Param("id")
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var delRGAudit db.AuditLog
 	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var group db.ResourceGroup
 		if err := tx.Where("id = ?", id).First(&group).Error; err != nil {
@@ -566,7 +612,18 @@ func (h *ResourcesHandler) DeleteResourceGroup(c *gin.Context) {
 		if ruleCount > 0 {
 			return errResourceGroupHasRules
 		}
-		return tx.Delete(&group).Error
+		if err := tx.Delete(&group).Error; err != nil {
+			return err
+		}
+		var recErr error
+		delRGAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "resource_group.deleted",
+			Severity:   audit.SeverityInfo,
+			TargetType: "resource_group",
+			TargetID:   id,
+			Summary:    "Subnet deleted: " + id,
+		}))
+		return recErr
 	})
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -580,13 +637,7 @@ func (h *ResourcesHandler) DeleteResourceGroup(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Resource group deletion failed; no changes committed"})
 	default:
 		slog.Info("Resource group deleted", "id", id)
-		audit.RecordFromContext(c, audit.EntryInput{
-			Action:     "resource_group.deleted",
-			Severity:   audit.SeverityInfo,
-			TargetType: "resource_group",
-			TargetID:   id,
-			Summary:    "Subnet deleted: " + id,
-		})
+		audit.NotifyCommitted(delRGAudit)
 		c.JSON(http.StatusOK, gin.H{"message": "Resource group deleted successfully"})
 	}
 }

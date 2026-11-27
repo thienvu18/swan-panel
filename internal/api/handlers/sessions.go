@@ -78,12 +78,15 @@ func (h *SessionsHandler) TerminateSession(c *gin.Context) {
 		return
 	}
 	realtime.DefaultBroker.Broadcast("session_terminated", map[string]any{"ike_name": req.IKEName})
-	audit.RecordFromContext(c, audit.EntryInput{
+	if err := audit.RecordFromContext(c, audit.EntryInput{
 		Action:     "session.terminated",
 		Severity:   audit.SeverityWarning,
 		TargetType: "session",
 		TargetID:   req.IKEName,
 		Summary:    "Active IKE session terminated: " + req.IKEName,
-	})
+	}); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Session terminated, but audit trail failed"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "Session terminated successfully", "ike_name": req.IKEName})
 }

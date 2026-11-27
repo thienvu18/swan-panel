@@ -15,23 +15,28 @@ import (
 	"github.com/swan-panel/swan-panel/internal/backup"
 	"github.com/swan-panel/swan-panel/internal/config"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
+	"github.com/swan-panel/swan-panel/internal/mfa"
 	"github.com/swan-panel/swan-panel/internal/pki"
 	"github.com/swan-panel/swan-panel/internal/policy"
 )
 
-const maxRestoreUploadBytes = 64 * 1024 * 1024
-
-// BackupHandler manages encrypted backup creation and disaster recovery restore.
+// BackupHandler manages encrypted backup creation and crash-safe disaster recovery restore.
 type BackupHandler struct {
-	cfg *config.Config
+	cfg              *config.Config
+	onRequestRestart func()
 }
 
 // NewBackupHandler creates a new BackupHandler.
-func NewBackupHandler(cfg *config.Config) *BackupHandler {
-	return &BackupHandler{cfg: cfg}
+func NewBackupHandler(cfg *config.Config, onRequestRestart ...func()) *BackupHandler {
+	var hook func()
+	if len(onRequestRestart) > 0 {
+		hook = onRequestRestart[0]
+	}
+	return &BackupHandler{cfg: cfg, onRequestRestart: hook}
 }
 
-// CreateBackup exports an AES-256-GCM encrypted .tar.enc archive of SQLite and PKI state.
+// CreateBackup exports an AES-256-GCM encrypted .tar.enc archive of SQLite, PKI, and MFA key state.
 func (h *BackupHandler) CreateBackup(c *gin.Context) {
 	var req struct {
 		Passphrase string `json:"passphrase" binding:"required"`
@@ -49,8 +54,13 @@ func (h *BackupHandler) CreateBackup(c *gin.Context) {
 
 	archive, manifest, err := backup.CreateEncryptedBackup(c.Request.Context(), db.DB, manager.DataDir(), req.Passphrase)
 	if err != nil {
-		if errors.Is(err, backup.ErrInvalidPassphrase) {
+		if errors.Is(err, backup.ErrInvalidPassphrase) || errors.Is(err, backup.ErrBackupLimitExceeded) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, backup.ErrBackupBusy) {
+			c.Header("Retry-After", "5")
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error(), "retry_after_seconds": 5})
 			return
 		}
 		slog.Error("Encrypted backup creation failed", "error", err)
@@ -58,14 +68,18 @@ func (h *BackupHandler) CreateBackup(c *gin.Context) {
 		return
 	}
 
-	audit.RecordFromContext(c, audit.EntryInput{
+	if err := audit.RecordFromContext(c, audit.EntryInput{
 		Action:     "backup.created",
 		Severity:   audit.SeverityWarning,
 		TargetType: "backup",
 		TargetID:   manifest.DBSHA256[:12],
 		Summary:    fmt.Sprintf("Encrypted backup exported (%d PKI files)", len(manifest.PKIFiles)),
-		Details:    map[string]any{"pki_files": len(manifest.PKIFiles), "size_bytes": len(archive)},
-	})
+		Details:    map[string]any{"pki_files": len(manifest.PKIFiles), "size_bytes": len(archive), "format_version": manifest.FormatVersion},
+	}); err != nil {
+		slog.Error("Backup audit persistence failed; failing closed", "error", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Unable to record mandatory backup audit trail"})
+		return
+	}
 
 	filename := fmt.Sprintf("swanpanel-backup-%s.tar.enc", time.Now().UTC().Format("2006-01-02"))
 	c.Header("Cache-Control", "no-store, private")
@@ -74,11 +88,12 @@ func (h *BackupHandler) CreateBackup(c *gin.Context) {
 	c.Data(http.StatusOK, "application/octet-stream", archive)
 }
 
-// RestoreBackup decrypts, validates, and atomically restores database and PKI state.
+// RestoreBackup decrypts, pre-validates, persists a crash-safe restore transaction,
+// enters maintenance mode, and triggers controlled restart (or synchronous activation in tests).
 func (h *BackupHandler) RestoreBackup(c *gin.Context) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRestoreUploadBytes+1024*1024)
-	if err := c.Request.ParseMultipartForm(maxRestoreUploadBytes); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid backup upload payload"})
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, backup.MaxBackupCipherBytes+1024*1024)
+	if err := c.Request.ParseMultipartForm(backup.MaxBackupCipherBytes); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid backup upload payload or size exceeds 64 MiB limit"})
 		return
 	}
 
@@ -101,9 +116,9 @@ func (h *BackupHandler) RestoreBackup(c *gin.Context) {
 	}
 	defer func() { _ = file.Close() }()
 
-	encrypted, err := io.ReadAll(io.LimitReader(file, maxRestoreUploadBytes+1))
-	if err != nil || len(encrypted) > maxRestoreUploadBytes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Backup file exceeds maximum allowed size"})
+	encrypted, err := io.ReadAll(io.LimitReader(file, backup.MaxBackupCipherBytes+1))
+	if err != nil || len(encrypted) > backup.MaxBackupCipherBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Backup file exceeds maximum allowed 64 MiB limit"})
 		return
 	}
 
@@ -113,34 +128,84 @@ func (h *BackupHandler) RestoreBackup(c *gin.Context) {
 		return
 	}
 
-	manifest, err := backup.RestoreEncryptedBackup(
-		c.Request.Context(),
-		encrypted,
-		passphrase,
-		h.cfg.DBPath,
-		manager.DataDir(),
-		manager,
-	)
+	releaseRestore, ok := maintenance.DefaultCoordinator.TryLockRestore()
+	if !ok {
+		c.Header("Retry-After", "5")
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Another restore operation is already in progress", "maintenance": true, "retry_after_seconds": 5})
+		return
+	}
+	defer releaseRestore()
+
+	mfaPath := h.cfg.MFAKeyFile
+	if mfaPath == "" {
+		mfaPath = mfa.ResolveKeyFilePath(h.cfg.DBPath)
+	}
+	enriched := audit.EnrichFromContext(c, audit.EntryInput{})
+	journal, err := backup.PrepareRestore(c.Request.Context(), encrypted, passphrase, h.cfg.DBPath, manager.DataDir(), backup.RestoreMetadata{
+		ActorID:    enriched.ActorID,
+		ActorEmail: enriched.ActorEmail,
+		ActorRole:  enriched.ActorRole,
+		SourceIP:   enriched.SourceIP,
+		MFAKeyPath: mfaPath,
+	})
 	if err != nil {
-		if errors.Is(err, backup.ErrInvalidPassphrase) || errors.Is(err, backup.ErrInvalidArchive) {
+		switch {
+		case errors.Is(err, backup.ErrInvalidPassphrase),
+			errors.Is(err, backup.ErrInvalidArchive),
+			errors.Is(err, backup.ErrBackupLimitExceeded),
+			errors.Is(err, backup.ErrIncompatibleMFAArchive):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
+		case errors.Is(err, backup.ErrBackupBusy):
+			c.Header("Retry-After", "5")
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error(), "retry_after_seconds": 5})
+		case errors.Is(err, backup.ErrRestoreJournalConflict):
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error(), "code": "RECOVERY_FAILED_CLOSED"})
+		default:
+			slog.Error("Backup preflight staging failed", "error", err)
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Backup restore staging failed: " + err.Error()})
 		}
-		slog.Error("Backup restore failed", "error", err)
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Backup restore failed: " + err.Error()})
 		return
 	}
 
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "backup.restored",
-		Severity:   audit.SeverityCritical,
-		TargetType: "backup",
-		TargetID:   manifest.DBSHA256[:12],
-		Summary:    fmt.Sprintf("System restored from encrypted backup (%s)", manifest.CreatedAt),
-		Details:    map[string]any{"backup_created_at": manifest.CreatedAt, "pki_files": len(manifest.PKIFiles)},
-	})
+	// Release this request's own in-flight counter BEFORE draining all other requests.
+	if rel, exists := c.Get("maintenance_release"); exists {
+		if fn, isFn := rel.(func()); isFn {
+			fn()
+		}
+	}
+	if drainErr := maintenance.DefaultCoordinator.EnterMaintenance("Restoring encrypted backup", 5*time.Second); drainErr != nil {
+		slog.Warn("Entering maintenance mode after drain deadline", "error", drainErr)
+	}
 
-	// Redeploy server certificates, signed CRL, and gateway policies after restore.
+	// Production controlled-restart path: respond 202 restarting, flush HTTP, then
+	// signal graceful shutdown so service/container supervision restarts cleanly into startup recovery.
+	if h.onRequestRestart != nil {
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusAccepted, gin.H{
+			"restore_id":          journal.RestoreID,
+			"runtime_status":      "restarting",
+			"maintenance":         true,
+			"retry_after_seconds": 5,
+			"manifest":            journal.Manifest,
+			"message":             "Backup validated and staged; control plane is restarting to apply restored state",
+		})
+		c.Writer.Flush()
+		go h.onRequestRestart()
+		return
+	}
+
+	// Test/in-process synchronous path when no process supervisor restart hook is attached.
+	defer maintenance.DefaultCoordinator.ExitMaintenance()
+	manifest, err := backup.RecoverOrApplyPendingRestore(h.cfg.DBPath, manager.DataDir(), manager, nil)
+	if err != nil {
+		slog.Error("In-process backup restore activation failed", "error", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"restore_id": journal.RestoreID,
+			"error":      "Backup restore failed: " + err.Error(),
+		})
+		return
+	}
+
 	var sw db.StrongswanSettings
 	if err := db.DB.WithContext(c.Request.Context()).First(&sw, 1).Error; err != nil {
 		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "manifest": manifest, "message": "Backup restored; gateway settings unavailable"})

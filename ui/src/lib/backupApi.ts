@@ -2,7 +2,10 @@ import { ApiError } from './api.ts';
 import { downloadFilename } from './transportSecurity.ts';
 
 export interface RestoreBackupResponse {
-  runtime_status: string;
+  restore_id?: string;
+  runtime_status: 'applied' | 'pending' | 'restarting' | string;
+  maintenance?: boolean;
+  retry_after_seconds?: number;
   message: string;
   manifest?: {
     format_version: number;
@@ -10,6 +13,16 @@ export interface RestoreBackupResponse {
     db_sha256: string;
     pki_files?: string[];
   };
+}
+
+export class RestoreOutcomeError extends Error {
+  outcome: 'rolled_back' | 'failed_closed' | 'timeout' | 'unverified';
+
+  constructor(outcome: 'rolled_back' | 'failed_closed' | 'timeout' | 'unverified', message: string) {
+    super(message);
+    this.name = 'RestoreOutcomeError';
+    this.outcome = outcome;
+  }
 }
 
 function getAuthToken(): string {
@@ -92,4 +105,67 @@ export async function uploadRestoreBackup(
     throw new ApiError(await readErrorMessage(response, 'Backup restore failed'), response.status);
   }
   return response.json() as Promise<RestoreBackupResponse>;
+}
+
+/**
+ * Bounded wait-and-reconnect probe invoked strictly after an initiated controlled restore
+ * restart until /api/health returns healthy HTTP 200 and correlates the restore outcome.
+ */
+export async function waitForControlPlaneRestart(
+  maxAttempts = 30,
+  delayMs = 2000,
+  fetchImpl: typeof fetch = fetch,
+  restoreId?: string,
+): Promise<'applied'> {
+  const healthURL = restoreId
+    ? `/api/health?restore_id=${encodeURIComponent(restoreId)}`
+    : '/api/health';
+
+  let sawUnverifiedHealthy = false;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+    try {
+      const resp = await fetchImpl(healthURL, { cache: 'no-store' });
+      const body = (await resp.json().catch(() => null)) as {
+        status?: string;
+        mode?: string;
+        maintenance?: boolean;
+        restore_status?: string;
+        restore_error?: string;
+      } | null;
+
+      if (body?.mode === 'failed_closed' || body?.restore_status === 'failed_closed') {
+        throw new RestoreOutcomeError(
+          'failed_closed',
+          body.restore_error || 'Backup restore and rollback both failed; manual operator inspection required',
+        );
+      }
+
+      if (resp.ok && body && body.status === 'healthy' && !body.maintenance) {
+        if (body.restore_status === 'rolled_back') {
+          throw new RestoreOutcomeError(
+            'rolled_back',
+            body.restore_error || 'Backup restore failed during activation and rolled back to the prior state',
+          );
+        }
+        // Never assume applied when restoreId correlation was requested unless explicitly confirmed.
+        if (!restoreId || body.restore_status === 'applied') {
+          return 'applied';
+        }
+        sawUnverifiedHealthy = true;
+      }
+    } catch (err) {
+      if (err instanceof RestoreOutcomeError) {
+        throw err;
+      }
+      // Expected while the control-plane process shuts down and restarts cleanly.
+    }
+  }
+  if (sawUnverifiedHealthy) {
+    throw new RestoreOutcomeError(
+      'unverified',
+      'Control plane became healthy, but restore outcome confirmation for this operation was unavailable',
+    );
+  }
+  throw new RestoreOutcomeError('timeout', 'Control plane did not become ready within timeout after restore restart');
 }

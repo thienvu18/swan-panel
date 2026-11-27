@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { downloadEncryptedBackup, uploadRestoreBackup } from '../src/lib/backupApi.ts';
+import { downloadEncryptedBackup, RestoreOutcomeError, uploadRestoreBackup, waitForControlPlaneRestart } from '../src/lib/backupApi.ts';
 
 const uiRoot = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 
@@ -103,7 +103,73 @@ test('ServerSettingsPage exposes Backup & Restore tab with typed confirmation an
   assert.match(page, /'backup'/);
   assert.match(page, /RESTORE BACKUP/);
   assert.match(page, /confirm\.restore_backup_title/);
+  assert.match(page, /restore_restarting/);
+  assert.match(page, /waitForControlPlaneRestart/);
   assert.match(page, /aria-describedby/);
   assert.match(page, /aria-invalid/);
   assert.doesNotMatch(page, /dangerouslySetInnerHTML/);
+});
+
+test('waitForControlPlaneRestart waits across 503 maintenance and resolves when healthy', async () => {
+  let calls = 0;
+  await waitForControlPlaneRestart(5, 1, async () => {
+    calls++;
+    if (calls === 1) {
+      throw new TypeError('connection refused during restart');
+    }
+    if (calls < 3) {
+      return new Response(JSON.stringify({ status: 'maintenance', maintenance: true }), { status: 503 });
+    }
+    return new Response(JSON.stringify({ status: 'healthy', maintenance: false }), { status: 200 });
+  });
+  assert.equal(calls, 3);
+});
+
+test('waitForControlPlaneRestart rejects clearly on timeout', async () => {
+  await assert.rejects(
+    () => waitForControlPlaneRestart(2, 1, async () => new Response('', { status: 503 })),
+    err => err instanceof RestoreOutcomeError && err.outcome === 'timeout',
+  );
+});
+
+test('waitForControlPlaneRestart distinguishes rolled_back and failed_closed outcomes from applied healthy restarts', async () => {
+  const seenUrls = [];
+  await assert.rejects(
+    () => waitForControlPlaneRestart(3, 1, async url => {
+      seenUrls.push(url);
+      return new Response(JSON.stringify({
+        status: 'healthy',
+        maintenance: false,
+        restore_status: 'rolled_back',
+        restore_error: 'checksum mismatch',
+      }), { status: 200 });
+    }, 'restore-123'),
+    err => err instanceof RestoreOutcomeError && err.outcome === 'rolled_back' && /checksum mismatch/.test(err.message),
+  );
+  assert.equal(seenUrls[0], '/api/health?restore_id=restore-123');
+
+  await assert.rejects(
+    () => waitForControlPlaneRestart(3, 1, async () => new Response(JSON.stringify({
+      status: 'maintenance',
+      mode: 'failed_closed',
+      restore_status: 'failed_closed',
+      restore_error: 'disk failure',
+    }), { status: 503 }), 'restore-456'),
+    err => err instanceof RestoreOutcomeError && err.outcome === 'failed_closed' && /disk failure/.test(err.message),
+  );
+
+  const outcome = await waitForControlPlaneRestart(3, 1, async () => new Response(JSON.stringify({
+    status: 'healthy',
+    maintenance: false,
+    restore_status: 'applied',
+  }), { status: 200 }), 'restore-789');
+  assert.equal(outcome, 'applied');
+
+  await assert.rejects(
+    () => waitForControlPlaneRestart(3, 1, async () => new Response(JSON.stringify({
+      status: 'healthy',
+      maintenance: false,
+    }), { status: 200 }), 'restore-missing-correlation'),
+    err => err instanceof RestoreOutcomeError && err.outcome === 'unverified',
+  );
 });

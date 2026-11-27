@@ -502,20 +502,20 @@ vpn.yourcompany.com {
         <figure class="doc-figure">
           <img src="assets/images/user-guide/en/dark/17d_server_settings_backup.png" class="dark-only" alt="Encrypted Backup & Restore" loading="lazy">
           <img src="assets/images/user-guide/en/light/17d_server_settings_backup.png" class="light-only" alt="Encrypted Backup & Restore" loading="lazy">
-          <figcaption data-i18n="guide.caption_backup">Figure 2.15e: Encrypted disaster recovery backup and restore tab protected by Argon2id and AES-256-GCM.</figcaption>
+          <figcaption data-i18n="guide.caption_backup">Figure 2.15e: Encrypted backup and restore tab (64 MiB encrypted / 256 MiB uncompressed limit) bundling DB, PKI, and independent MFA keystore.</figcaption>
         </figure>
 
         <figure class="doc-figure">
           <img src="assets/images/user-guide/en/dark/26_confirm_restore_backup.png" class="dark-only" alt="Confirm Restore Backup Dialog" loading="lazy">
           <img src="assets/images/user-guide/en/light/26_confirm_restore_backup.png" class="light-only" alt="Confirm Restore Backup Dialog" loading="lazy">
-          <figcaption data-i18n="guide.caption_restore_confirm">Figure 2.15f: Safety confirmation modal requiring explicit confirmation before restoring encrypted database and PKI archives.</figcaption>
+          <figcaption data-i18n="guide.caption_restore_confirm">Figure 2.15f: Confirmation modal initiating HTTP 503 maintenance mode and controlled control-plane restart restoration.</figcaption>
         </figure>
       </section>
 
       <section id="admin-audit" tabindex="-1">
         <h2 data-i18n="guide.admin_audit_title">Immutable Audit Trail & Webhook Alerts</h2>
         <p data-i18n="guide.admin_audit_desc">
-          Maintain compliance-grade observability with an append-only cryptographic ledger (SHA-256 hash chaining) and real-time security alerts dispatched to Slack, Telegram, Microsoft Teams, and SIEM webhooks.
+          Inspect an append-only SHA-256 hash-chained SQLite audit ledger (restoring a backup replaces newer audit entries; hash verification checks the restored history) and dispatch at-least-once alerts over a persistent retry outbox with fail-safe public HTTPS SSRF protection.
         </p>
 
         <figure class="doc-figure">
@@ -705,7 +705,7 @@ sudo nmcli connection up SwanPanel</code></pre>
       <a href="https://github.com/thienvu18/swan-panel/blob/main/docs/ADMIN_USER_GUIDE.md" target="_blank" rel="noopener" data-i18n="footer.admin_guide">Admin Guide</a>
       <a href="https://github.com/thienvu18/swan-panel/blob/main/docs/END_USER_GUIDE.md" target="_blank" rel="noopener" data-i18n="footer.enduser_guide">End-User Guide</a>
       <a href="https://github.com/thienvu18/swan-panel" target="_blank" rel="noopener" data-i18n="footer.github">GitHub</a>
-      <a href="https://github.com/thienvu18/swan-panel/releases/tag/v1.0.1" target="_blank" rel="noopener" data-i18n="footer.releases">Release v1.0.1</a>
+      <a href="https://github.com/thienvu18/swan-panel/releases/tag/v1.1.0" target="_blank" rel="noopener" data-i18n="footer.releases">Release v1.1.0</a>
       <a href="https://github.com/thienvu18/swan-panel/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="footer.license">AGPL-3.0 License</a>
     </div>
     <p data-i18n="footer.credit">SwanPanel is open-source software created by Thái Thiên Vũ. Licensed under GNU AGPL-3.0.</p>

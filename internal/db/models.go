@@ -234,3 +234,32 @@ type AlertWebhook struct {
 	CreatedAt       time.Time  `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt       time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }
+
+// SystemState persists control-plane security epochs and restore sequence across restarts.
+type SystemState struct {
+	ID                uint      `gorm:"primaryKey;default:1"`
+	SessionEpoch      string    `gorm:"size:64;not null"`
+	RestoreGeneration uint64    `gorm:"default:0"`
+	UpdatedAt         time.Time `gorm:"autoUpdateTime"`
+}
+
+// WebhookDelivery represents a durable outbox delivery item for an alert webhook destination.
+type WebhookDelivery struct {
+	ID             string     `gorm:"primaryKey;size:64" json:"id"`
+	EventID        string     `gorm:"size:64;index;not null" json:"event_id"`
+	WebhookID      string     `gorm:"size:64;index;not null" json:"webhook_id"`
+	Status         string     `gorm:"size:16;index;not null" json:"status"` // pending, retrying, delivered, failed, cancelled
+	AttemptCount   int        `gorm:"default:0" json:"attempt_count"`
+	MaxAttempts    int        `gorm:"default:5" json:"max_attempts"`
+	NextAttemptAt  time.Time  `gorm:"index;not null" json:"next_attempt_at"`
+	ClaimedBy      string     `gorm:"size:64" json:"-"`
+	LeaseUntil     *time.Time `gorm:"index" json:"-"`
+	LastStatusCode int        `json:"last_status_code,omitempty"`
+	LastError      string     `gorm:"size:256" json:"last_error,omitempty"`
+	Action         string     `gorm:"size:64;not null" json:"action"`
+	Severity       string     `gorm:"size:16;not null" json:"severity"`
+	EventJSON      string     `gorm:"type:text;not null" json:"-"`
+	CreatedAt      time.Time  `gorm:"autoCreateTime;index" json:"created_at"`
+	UpdatedAt      time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+}

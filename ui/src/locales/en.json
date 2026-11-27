@@ -589,6 +589,7 @@
       "export_title": "Export encrypted backup",
       "export_description": "Download an encrypted snapshot of panel configuration, identity records, and VPN certificates.",
       "export_includes_hint": "Includes user accounts, access rules, DNS overrides, gateway settings, webhook settings, audit records, and Certificate Authority keys.",
+      "limits_hint": "Archive limits: maximum 64 MiB encrypted upload, 256 MiB uncompressed, and 4,096 files.",
       "passphrase_label": "Encryption passphrase",
       "confirm_passphrase_label": "Confirm passphrase",
       "toggle_passphrase": "Show or hide passphrase",
@@ -610,7 +611,14 @@
       "restore_action": "Restore backup",
       "restoring": "Restoring backup…",
       "restore_applied": "Backup verified, restored, and synchronized to the VPN gateway.",
-      "restore_pending": "Backup restored cleanly, but gateway synchronization is pending: {{reason}}"
+      "restore_pending": "Backup restored cleanly, but gateway synchronization is pending: {{reason}}",
+      "restore_restarting": "Backup verified and staged. Control plane is entering maintenance mode and restarting to activate restored state…",
+      "restore_restarting_btn": "Restarting control plane…",
+      "restore_restarted_reauth": "Control plane restarted cleanly. Existing sessions were invalidated—redirecting to sign in again.",
+      "restore_rolled_back": "Restore failed and safely rolled back to the prior server state: {{reason}}",
+      "restore_failed_closed": "Restore and rollback both failed. The server is locked in fail-closed recovery mode; inspect the restore journal on the host.",
+      "restore_outcome_unverified": "Control plane recovered, but the restore outcome could not be verified automatically. Sign in and check the Audit Trail before proceeding.",
+      "restore_restart_timeout": "Control plane is taking longer than expected to restart. Refresh the page and sign in again."
     }
   },
   "logs": {
@@ -704,6 +712,9 @@
     "telegram_chat_label": "Chat ID",
     "delivery_ok": "Delivered (HTTP {{code}})",
     "delivery_never": "Not delivered yet",
+    "outbox_pending": "{{count}} pending",
+    "outbox_retrying": "{{count}} retrying",
+    "outbox_failed": "{{count}} failed",
     "webhook_test_ok": "Test alert delivered (HTTP {{status}}).",
     "field_name": "Webhook name",
     "field_name_placeholder": "Security Ops Slack",

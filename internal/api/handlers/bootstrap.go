@@ -40,7 +40,7 @@ func SetupAdmin(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
-	audit.RecordFromContext(c, audit.EntryInput{
+	if err := audit.RecordFromContext(c, audit.EntryInput{
 		ActorID:    user.ID,
 		ActorEmail: user.Email,
 		ActorRole:  "admin",
@@ -49,6 +49,9 @@ func SetupAdmin(c *gin.Context) {
 		TargetType: "user",
 		TargetID:   user.ID,
 		Summary:    "Initial administrator setup completed for " + user.Email,
-	})
+	}); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Setup audit trail unavailable"})
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{"message": "Administrator created. Sign in to continue.", "user": gin.H{"id": user.ID, "email": user.Email, "name": user.Name}})
 }

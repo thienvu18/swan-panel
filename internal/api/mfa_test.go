@@ -270,3 +270,65 @@ func TestMFAChallengeLocksOutAfterMaxAttemptsAndAdminReset(t *testing.T) {
 		t.Fatalf("expected direct login after admin MFA reset, got %s", afterReset.Body.String())
 	}
 }
+
+func TestMFAValidationBranchesAndDisabledFlows(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+	admin := getAdminToken(t, router)
+
+	// Unauthenticated / bad payload / invalid MFA challenge token cases.
+	mustStatus(t, router, "GET", "/api/auth/mfa/status", "", nil, http.StatusUnauthorized)
+	statusBody := mustStatus(t, router, "GET", "/api/auth/mfa/status", admin, nil, http.StatusOK)
+	if !strings.Contains(statusBody, `"mfa_enabled":false`) {
+		t.Fatalf("unexpected mfa status body: %s", statusBody)
+	}
+
+	// Missing password or wrong password on setup, enable without setup, wrong password on disable/regen, missing user reset.
+	mustStatus(t, router, "POST", "/api/auth/mfa/setup", admin, map[string]any{"current_password": "wrong"}, http.StatusUnauthorized)
+	mustStatus(t, router, "POST", "/api/auth/mfa/enable", admin, map[string]any{"code": "123456"}, http.StatusBadRequest)
+	mustStatus(t, router, "POST", "/api/auth/mfa/disable", admin, map[string]any{"current_password": "wrong", "code": "123456"}, http.StatusUnauthorized)
+	mustStatus(t, router, "POST", "/api/auth/mfa/backup-codes", admin, map[string]any{"current_password": "wrong", "code": "123456"}, http.StatusUnauthorized)
+	mustStatus(t, router, "POST", "/api/users/usr_missing/mfa/reset", admin, nil, http.StatusNotFound)
+	mustStatus(t, router, "POST", "/api/auth/mfa/verify", "", map[string]any{"mfa_token": "bogus", "code": "123456"}, http.StatusUnauthorized)
+
+	// Create local user with known password and exercise wrong-code branches.
+	password := "MFAErrorPathPass!2026"
+	created := requestJSON(t, router, "POST", "/api/users", admin, map[string]any{
+		"name":     "MFA Edge User",
+		"email":    "mfa-edge@example.com",
+		"password": password,
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create user failed: %s", created.Body.String())
+	}
+	userID := responseID(t, created, "user")
+	loginResp := requestJSON(t, router, "POST", "/api/auth/login", "", map[string]any{
+		"email":    "mfa-edge@example.com",
+		"password": password,
+	})
+	var loginData struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(loginResp.Body.Bytes(), &loginData)
+
+	setupResp := requestJSON(t, router, "POST", "/api/auth/mfa/setup", loginData.Token, map[string]any{"current_password": password})
+	var setupData struct {
+		Secret string `json:"secret"`
+	}
+	_ = json.Unmarshal(setupResp.Body.Bytes(), &setupData)
+	// Wrong TOTP on enable rejected (401); valid code succeeds.
+	mustStatus(t, router, "POST", "/api/auth/mfa/enable", loginData.Token, map[string]any{"code": "000000"}, http.StatusUnauthorized)
+	code, _ := mfa.GenerateCode(setupData.Secret, time.Now().UTC())
+	mustStatus(t, router, "POST", "/api/auth/mfa/enable", loginData.Token, map[string]any{"code": code}, http.StatusOK)
+
+	// Wrong password / wrong TOTP on regen and disable fail cleanly.
+	mustStatus(t, router, "POST", "/api/auth/mfa/backup-codes", loginData.Token, map[string]any{"current_password": "wrong", "code": "123456"}, http.StatusUnauthorized)
+	mustStatus(t, router, "POST", "/api/auth/mfa/backup-codes", loginData.Token, map[string]any{"current_password": password, "code": "000000"}, http.StatusUnauthorized)
+	mustStatus(t, router, "POST", "/api/auth/mfa/disable", loginData.Token, map[string]any{"current_password": "wrong", "code": "123456"}, http.StatusUnauthorized)
+	mustStatus(t, router, "POST", "/api/auth/mfa/disable", loginData.Token, map[string]any{"current_password": password, "code": "000000"}, http.StatusUnauthorized)
+
+	// Reset for clean admin audit logging check on userID, then verify disable/backup-codes return 400 when MFA is disabled.
+	mustStatus(t, router, "POST", "/api/users/"+userID+"/mfa/reset", admin, nil, http.StatusOK)
+	mustStatus(t, router, "POST", "/api/auth/mfa/disable", loginData.Token, map[string]any{"current_password": password, "code": "123456"}, http.StatusBadRequest)
+	mustStatus(t, router, "POST", "/api/auth/mfa/backup-codes", loginData.Token, map[string]any{"current_password": password, "code": "123456"}, http.StatusBadRequest)
+}

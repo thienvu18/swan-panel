@@ -180,3 +180,121 @@ func TestAlertWebhookCRUDValidationAndTestDelivery(t *testing.T) {
 	mustStatus(t, router, "DELETE", "/api/webhooks/"+hookID, admin, nil, http.StatusOK)
 	mustStatus(t, router, "DELETE", "/api/webhooks/"+hookID, admin, nil, http.StatusNotFound)
 }
+
+func TestAuditFilteringChainVerificationAndWebhookUpdateLifecycle(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+	admin := getAdminToken(t, router)
+
+	// Record diverse audit entries to exercise category, severity, search, and pagination queries.
+	for _, entry := range []audit.EntryInput{
+		{ActorEmail: "sec@example.com", ActorRole: "admin", Action: "auth.login.failed", Severity: audit.SeverityWarning, Summary: "Bad login filtertarget"},
+		{ActorEmail: "sec@example.com", ActorRole: "admin", Action: "device.created", Severity: audit.SeverityInfo, Summary: "Created endpoint filtertarget"},
+		{ActorEmail: "sec@example.com", ActorRole: "admin", Action: "access_rule.deleted", Severity: audit.SeverityCritical, Summary: "Removed policy"},
+		{ActorEmail: "sec@example.com", ActorRole: "admin", Action: "dns.override.created", Severity: audit.SeverityInfo, Summary: "DNS override added"},
+	} {
+		if _, err := audit.Record(t.Context(), db.DB, entry); err != nil {
+			t.Fatalf("seed audit entry %s: %v", entry.Action, err)
+		}
+	}
+
+	for _, query := range []string{
+		"/api/audit-logs?severity=warning&action=auth.login.failed&search=filtertarget&limit=5&offset=0",
+		"/api/audit-logs?action=device.*&target_type=device&actor=sec&search=endpoint&from=2020-01-01T00:00:00Z&to=2099-01-01T00:00:00Z&limit=999",
+		"/api/audit-logs/export?format=jsonl&severity=critical",
+	} {
+		mustStatus(t, router, "GET", query, admin, nil, http.StatusOK)
+	}
+
+	// VerifyAuditChain detects tampered entries when SQLite update trigger is dropped.
+	_ = db.DB.Exec("DROP TRIGGER IF EXISTS trg_audit_logs_no_update").Error
+	_ = db.DB.Exec("UPDATE audit_logs SET summary = 'tampered via SQL' WHERE sequence = 1").Error
+	verifyTampered := mustStatus(t, router, "GET", "/api/audit-logs/verify", admin, nil, http.StatusOK)
+	if !strings.Contains(verifyTampered, `"valid":false`) {
+		t.Fatalf("expected VerifyAuditChain to report valid=false on tampered ledger, got %s", verifyTampered)
+	}
+
+	// Create valid Telegram webhook too and exercise CreateWebhook error branches.
+	mustStatus(t, router, "POST", "/api/webhooks", admin, map[string]any{}, http.StatusBadRequest)
+	mustStatus(t, router, "POST", "/api/webhooks", admin, map[string]any{
+		"name":             "TG Alert Bot",
+		"provider_type":    "telegram",
+		"webhook_url":      "https://api.telegram.org/bot123456:ABC-DEF/sendMessage",
+		"telegram_chat_id": "-100123456",
+		"events":           []string{"severity:critical"},
+		"is_active":        true,
+	}, http.StatusCreated)
+
+	// Empty webhook list, then create and list + update across URL/secret/Telegram/disabled fields.
+	emptyHooks := mustStatus(t, router, "GET", "/api/webhooks", admin, nil, http.StatusOK)
+	if !strings.Contains(emptyHooks, `"webhooks"`) {
+		t.Fatalf("unexpected empty webhooks response: %s", emptyHooks)
+	}
+
+	created := requestJSON(t, router, "POST", "/api/webhooks", admin, map[string]any{
+		"name":             "Slack Hook",
+		"provider_type":    "slack",
+		"webhook_url":      "https://hooks.slack.com/services/T000/B000/SECRETTOKEN",
+		"events":           []string{"device.*"},
+		"min_severity":     "warning",
+		"include_metadata": true,
+		"is_active":        true,
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create slack hook: %s", created.Body.String())
+	}
+	hookID := responseID(t, created, "webhook")
+
+	listed := mustStatus(t, router, "GET", "/api/webhooks", admin, nil, http.StatusOK)
+	if !strings.Contains(listed, hookID) || strings.Contains(listed, "SECRETTOKEN") {
+		t.Fatalf("listed webhooks unexpected or leaked URL token: %s", listed)
+	}
+
+	mustStatus(t, router, "PUT", "/api/webhooks/wh_missing", admin, map[string]any{"name": "Ghost"}, http.StatusNotFound)
+	mustStatus(t, router, "PUT", "/api/webhooks/"+hookID, admin, map[string]any{
+		"webhook_url": "http://insecure.example.com/hook",
+	}, http.StatusBadRequest)
+	mustStatus(t, router, "PUT", "/api/webhooks/"+hookID, admin, map[string]any{
+		"provider_type": "telegram",
+		"webhook_url":   "https://api.telegram.org/bot999/sendMessage",
+	}, http.StatusBadRequest)
+	mustStatus(t, router, "PUT", "/api/webhooks/"+hookID, admin, map[string]any{
+		"name":             "Teams Hook",
+		"provider_type":    "teams",
+		"webhook_url":      "https://outlook.office.com/webhook/abc",
+		"signing_secret":   "new-secret-123",
+		"events":           []string{"*"},
+		"min_severity":     "critical",
+		"include_metadata": false,
+		"is_active":        false,
+	}, http.StatusOK)
+	restore := audit.SetWebhookClientForTest(&http.Client{
+		Transport: stubTransport(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+		}),
+	})
+	defer restore()
+	mustStatus(t, router, "POST", "/api/webhooks/"+hookID+"/test", admin, map[string]any{}, http.StatusOK)
+	mustStatus(t, router, "POST", "/api/webhooks/wh_missing/test", admin, map[string]any{}, http.StatusNotFound)
+	mustStatus(t, router, "POST", "/api/webhooks", admin, map[string]any{
+		"name":          "Empty Events",
+		"provider_type": "generic",
+		"webhook_url":   "https://siem.example.com/hook",
+		"events":        []string{},
+	}, http.StatusBadRequest)
+	mustStatus(t, router, "GET", "/api/webhooks/deliveries?webhook_id="+hookID+"&status=delivered&limit=10", admin, nil, http.StatusOK)
+	mustStatus(t, router, "DELETE", "/api/webhooks/"+hookID, admin, nil, http.StatusOK)
+
+	// Verify /api/audit-logs/verify fails gracefully if ledger table is unavailable, and flags tampering.
+	_ = db.DB.Exec("DROP TRIGGER IF EXISTS trg_audit_logs_no_update").Error
+	_ = db.DB.Exec("UPDATE audit_logs SET summary = 'tampered-via-sql' WHERE sequence = 1").Error
+	verifyRes := mustStatus(t, router, "GET", "/api/audit-logs/verify", admin, nil, http.StatusOK)
+	if !strings.Contains(verifyRes, `"valid":false`) {
+		t.Fatalf("expected VerifyAuditChain to report valid=false on tampered ledger, got %s", verifyRes)
+	}
+	_ = db.DB.Migrator().DropTable(&db.AuditLog{}, &db.WebhookDelivery{})
+	mustStatus(t, router, "GET", "/api/audit-logs/verify", admin, nil, http.StatusInternalServerError)
+	mustStatus(t, router, "GET", "/api/audit-logs", admin, nil, http.StatusInternalServerError)
+	mustStatus(t, router, "GET", "/api/audit-logs/export?format=csv", admin, nil, http.StatusInternalServerError)
+	mustStatus(t, router, "GET", "/api/webhooks/deliveries", admin, nil, http.StatusInternalServerError)
+}

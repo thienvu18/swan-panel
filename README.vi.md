@@ -238,6 +238,8 @@ Cấu hình SwanPanel qua biến môi trường hoặc tệp `/etc/swan-panel/sw
 | `ENABLE_DNS` | `true` | Kích hoạt máy chủ Split-DNS nội bộ |
 | `DNS_PORT` | `5353` | Cổng của DNS server (`53` nếu chạy quyền root ở production) |
 | `APP_ENV` | `development` | Chế độ môi trường (`development` hoặc `production`) |
+| `MFA_KEY_FILE` | `DB_PATH + ".mfa-key"` | Tệp khóa bền vững quyền `0600` dùng mã hóa TOTP MFA độc lập với `JWT_SECRET` |
+| `WEBHOOK_ALLOWED_DESTINATIONS` | *(Rỗng — chỉ public HTTPS)* | Danh sách đích HTTPS nội bộ được phép (CIDR, hostname hoặc `host:port`, phân cách dấu phẩy) |
 
 ### Tiêu chuẩn Kỹ thuật & Bảo mật Nghiêm ngặt
 * **Không có SQL Injection:** 100% truy vấn tham số hóa qua GORM ORM; tuyệt đối nghiêm cấm nối chuỗi raw SQL.
@@ -251,10 +253,10 @@ Cấu hình SwanPanel qua biến môi trường hoặc tệp `/etc/swan-panel/sw
 
 SwanPanel được duy trì và phát triển liên tục. Dưới đây là lộ trình kỹ thuật ưu tiên:
 
-* **Đang phát triển (`dev`):**
-  * **Sao lưu & Khôi phục Dữ liệu Mã hóa 1-Click:** Xuất gói `.tar.enc` mã hóa AES-256-GCM (khóa dẫn xuất Argon2id) đóng gói ảnh chụp SQLite nhất quán và toàn bộ CA / chứng chỉ PKI, hỗ trợ khôi phục nguyên vẹn, kiểm tra toàn vẹn có rollback khi lỗi và đồng bộ lại VPN gateway tại mục Cài đặt Máy chủ.
-  * **Nhật ký Kiểm toán Bất biến & Webhook Cảnh báo:** Bảng `audit_logs` chỉ nối thêm (append-only) liên kết chuỗi mã băm SHA-256 được bảo vệ bằng trigger SQLite, kiểm tra toàn vẹn, xuất CSV/JSONL, phát hiện đăng nhập sai liên tiếp và gửi cảnh báo tức thì qua Slack, Telegram, Microsoft Teams hoặc HTTP webhook ký HMAC.
-  * **Xác thực Đa Yếu tố (MFA / TOTP) cho Tài khoản Cục bộ:** Xác thực hai bước chuẩn RFC 6238 với khóa TOTP mã hóa AES-256-GCM, chống replay cùng khung 30 giây, 8 mã khôi phục dùng một lần, tự cấu hình trong Tài khoản và nút đặt lại 2FA cho quản trị viên.
+* **Phiên bản v1.1.0:**
+  * **Sao lưu & Khôi phục Dữ liệu Mã hóa 1-Click:** Xuất gói `.tar.enc` mã hóa AES-256-GCM (khóa dẫn xuất Argon2id) đóng gói ảnh chụp SQLite nhất quán, toàn bộ CA / chứng chỉ PKI và khóa mã hóa MFA (`secrets/mfa.key`), hỗ trợ khôi phục qua nhật ký giao dịch, hoàn nguyên tự động khi lỗi, đối chiếu kết quả sau khởi động lại và đồng bộ lại VPN gateway tại mục Cài đặt Máy chủ.
+  * **Nhật ký Kiểm toán Bất biến & Webhook Cảnh báo:** Bảng `audit_logs` chỉ nối thêm (append-only) liên kết chuỗi mã băm SHA-256 được bảo vệ bằng trigger SQLite, kiểm tra toàn vẹn, xuất CSV/JSONL, phát hiện đăng nhập sai liên tiếp và hàng đợi gửi cảnh báo bền vững qua Slack, Telegram, Microsoft Teams hoặc HTTP webhook ký HMAC có bảo vệ chống SSRF.
+  * **Xác thực Đa Yếu tố (MFA / TOTP) cho Tài khoản Cục bộ:** Xác thực hai bước chuẩn RFC 6238 với khóa TOTP mã hóa AES-256-GCM bằng kho khóa `0600` độc lập (`MFA_KEY_FILE`), chống replay cùng khung 30 giây, 8 mã khôi phục, tự cấu hình trong Tài khoản và nút đặt lại 2FA cho quản trị viên. Xem [nhật ký thay đổi](CHANGELOG.md).
 
 * **Bản ổn định v1.0.1:** Bảng và biểu mẫu dễ đọc hơn, thiết lập nâng cao gọn hơn, thao tác rõ ràng hơn. Trạng thái Gateway phân biệt Online, Degraded, Offline và Unknown, được kiểm tra lại mỗi 15 giây và tự hết hiệu lực sau 45 giây. Trên điện thoại, trạng thái luôn hiện ở thanh đầu trang. Xem [nhật ký thay đổi](CHANGELOG.md).
 

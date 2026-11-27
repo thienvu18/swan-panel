@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
+	"gorm.io/gorm"
 )
 
 // DNSHandler manages Split-DNS, MagicDNS settings, and Custom Overrides
@@ -60,21 +62,32 @@ func (h *DNSHandler) UpdateSettings(c *gin.Context) {
 		settings.IsMagicDNSEnabled = *req.IsMagicDNSEnabled
 	}
 
-	if err := db.DB.Save(&settings).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var auditEntry db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&settings).Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "dns.settings.updated",
+			Severity:   audit.SeverityInfo,
+			TargetType: "dns_settings",
+			TargetID:   "1",
+			Summary:    "DNS settings updated (suffix=" + settings.MagicDNSSuffix + ")",
+			Details:    map[string]any{"magic_dns_suffix": settings.MagicDNSSuffix, "enabled": settings.IsMagicDNSEnabled},
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to update DNS settings", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update settings"})
 		return
 	}
 
 	slog.Info("DNS engine settings updated", "magic_suffix", settings.MagicDNSSuffix, "upstreams", settings.UpstreamResolvers)
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "dns.settings.updated",
-		Severity:   audit.SeverityInfo,
-		TargetType: "dns_settings",
-		TargetID:   "1",
-		Summary:    "DNS settings updated (suffix=" + settings.MagicDNSSuffix + ")",
-		Details:    map[string]any{"magic_dns_suffix": settings.MagicDNSSuffix, "enabled": settings.IsMagicDNSEnabled},
-	})
+	audit.NotifyCommitted(auditEntry)
 	c.JSON(http.StatusOK, gin.H{"dns_settings": settings, "message": "DNS settings updated successfully"})
 }
 
@@ -146,40 +159,62 @@ func (h *DNSHandler) CreateOverride(c *gin.Context) {
 		TargetAddress: req.TargetAddress,
 	}
 
-	if err := db.DB.Create(&override).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var auditEntry db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&override).Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "dns.override.created",
+			Severity:   audit.SeverityInfo,
+			TargetType: "dns_override",
+			TargetID:   override.ID,
+			Summary:    "DNS override created: " + override.Hostname + " -> " + override.TargetAddress,
+			Details:    map[string]any{"record_type": override.RecordType, "target": override.TargetAddress},
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to create DNS override", "hostname", req.Hostname, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create DNS override"})
 		return
 	}
 
 	slog.Info("Custom DNS override created", "id", override.ID, "hostname", override.Hostname, "target", override.TargetAddress)
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "dns.override.created",
-		Severity:   audit.SeverityInfo,
-		TargetType: "dns_override",
-		TargetID:   override.ID,
-		Summary:    "DNS override created: " + override.Hostname + " -> " + override.TargetAddress,
-		Details:    map[string]any{"record_type": override.RecordType, "target": override.TargetAddress},
-	})
+	audit.NotifyCommitted(auditEntry)
 	c.JSON(http.StatusCreated, gin.H{"dns_override": override})
 }
 
 // DeleteOverride deletes a DNS override
 func (h *DNSHandler) DeleteOverride(c *gin.Context) {
 	id := c.Param("id")
-	if err := db.DB.Where("id = ?", id).Delete(&db.DNSOverride{}).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var auditEntry db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ?", id).Delete(&db.DNSOverride{}).Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "dns.override.deleted",
+			Severity:   audit.SeverityInfo,
+			TargetType: "dns_override",
+			TargetID:   id,
+			Summary:    "DNS override deleted: " + id,
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to delete DNS override", "id", id, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete override"})
 		return
 	}
 
 	slog.Info("DNS override deleted", "id", id)
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "dns.override.deleted",
-		Severity:   audit.SeverityInfo,
-		TargetType: "dns_override",
-		TargetID:   id,
-		Summary:    "DNS override deleted: " + id,
-	})
+	audit.NotifyCommitted(auditEntry)
 	c.JSON(http.StatusOK, gin.H{"message": "DNS override deleted successfully"})
 }

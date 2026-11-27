@@ -163,8 +163,11 @@ func TestWebhookURLValidationAndSSRFProtection(t *testing.T) {
 	}
 
 	masked := audit.MaskWebhookURL("https://hooks.slack.com/services/T00/B00/SECRET")
-	if strings.Contains(masked, "SECRET") || !strings.HasPrefix(masked, "https://hooks.slack.com/services/") {
+	if masked != "https://hooks.slack.com/••••" {
 		t.Fatalf("unexpected masked URL: %s", masked)
+	}
+	if tgMasked := audit.MaskWebhookURL("https://api.telegram.org/bot123456:SECRET/sendMessage"); tgMasked != "https://api.telegram.org/••••" {
+		t.Fatalf("Telegram bot token segment leaked in masked URL: %s", tgMasked)
 	}
 }
 
@@ -190,7 +193,7 @@ func TestWebhookPayloadFormattingSigningAndDelivery(t *testing.T) {
 	tgPayload, err := audit.BuildWebhookPayload(db.AlertWebhook{
 		ProviderType:   "telegram",
 		TelegramChatID: "-100999",
-	}, entry)
+	}, entry, "whd_test")
 	if err != nil {
 		t.Fatalf("build telegram payload: %v", err)
 	}
@@ -199,11 +202,11 @@ func TestWebhookPayloadFormattingSigningAndDelivery(t *testing.T) {
 	}
 
 	// Verify Slack and Teams formats.
-	slackPayload, err := audit.BuildWebhookPayload(db.AlertWebhook{ProviderType: "slack"}, entry)
+	slackPayload, err := audit.BuildWebhookPayload(db.AlertWebhook{ProviderType: "slack"}, entry, "whd_test")
 	if err != nil || !strings.Contains(string(slackPayload), "blocks") {
 		t.Fatalf("unexpected slack payload: %v %s", err, string(slackPayload))
 	}
-	teamsPayload, err := audit.BuildWebhookPayload(db.AlertWebhook{ProviderType: "teams"}, entry)
+	teamsPayload, err := audit.BuildWebhookPayload(db.AlertWebhook{ProviderType: "teams"}, entry, "whd_test")
 	if err != nil || !strings.Contains(string(teamsPayload), "AdaptiveCard") {
 		t.Fatalf("unexpected teams payload: %v %s", err, string(teamsPayload))
 	}
@@ -281,5 +284,54 @@ func TestWebhookPayloadFormattingSigningAndDelivery(t *testing.T) {
 	}
 	if updated.LastStatusCode != http.StatusBadGateway || updated.LastError != "HTTP 502" || updated.LastDeliveredAt == nil {
 		t.Fatalf("unexpected persisted delivery failure status: %+v", updated)
+	}
+}
+
+func TestVerifyChainEmptySequenceGapAndLongSummaryTruncation(t *testing.T) {
+	database := setupAuditDB(t)
+	ctx := context.Background()
+
+	// Empty chain must verify cleanly with Total == 0.
+	emptyRes, err := audit.VerifyChain(ctx, database)
+	if err != nil || !emptyRes.Valid || emptyRes.Total != 0 {
+		t.Fatalf("expected valid empty audit chain, got %+v err=%v", emptyRes, err)
+	}
+
+	// Oversized fields are safely truncated without splitting UTF-8 characters.
+	longSummary := strings.Repeat("á", 600)
+	for i := 0; i < 3; i++ {
+		e, err := audit.Record(ctx, database, audit.EntryInput{
+			ActorEmail: "ops@example.com",
+			ActorRole:  "admin",
+			Action:     "audit.long_summary",
+			Severity:   audit.SeverityInfo,
+			Summary:    longSummary,
+		})
+		if err != nil {
+			t.Fatalf("record entry %d: %v", i+1, err)
+		}
+		if len(e.Summary) > 512 {
+			t.Fatalf("expected truncated summary <= 512 bytes, got %d", len(e.Summary))
+		}
+	}
+
+	// Simulate sequence gap by dropping delete trigger and deleting sequence #2.
+	if err := database.Exec("DROP TRIGGER IF EXISTS trg_audit_logs_no_delete").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Exec("DELETE FROM audit_logs WHERE sequence = 2").Error; err != nil {
+		t.Fatal(err)
+	}
+	gapRes, err := audit.VerifyChain(ctx, database)
+	if err != nil {
+		t.Fatalf("verify gap chain: %v", err)
+	}
+	if gapRes.Valid {
+		t.Fatal("expected VerifyChain to flag missing sequence #2")
+	}
+
+	// Corrupt events JSON returns nil from DecodeEvents safely.
+	if evs := audit.DecodeEvents("{not-json"); evs != nil {
+		t.Fatalf("expected nil on bad events JSON, got %v", evs)
 	}
 }

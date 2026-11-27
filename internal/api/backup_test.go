@@ -138,8 +138,67 @@ func TestBackupAndRestoreAPIRBACValidationAndRoundTrip(t *testing.T) {
 		t.Fatalf("expected database state reverted to snapshot (pre=%d post=%d)", preCount, postCount)
 	}
 
-	restoredLogs := mustStatus(t, router, "GET", "/api/audit-logs?action=backup.restored", admin, nil, http.StatusOK)
+	// Pre-restore JWT must be invalidated across restore (B01 / B04 SessionEpoch rotation).
+	mustStatus(t, router, "GET", "/api/audit-logs?action=backup.restored", admin, nil, http.StatusUnauthorized)
+
+	// Sign in again with restored administrator credentials and verify audit trail.
+	relogin := requestJSON(t, router, "POST", "/api/auth/login", "", map[string]any{
+		"email":    "admin@swanpanel.internal",
+		"password": "admin123456789!",
+	})
+	if relogin.Code != http.StatusOK {
+		t.Fatalf("post-restore login failed: %d %s", relogin.Code, relogin.Body.String())
+	}
+	var reloginBody struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(relogin.Body.Bytes(), &reloginBody); err != nil || reloginBody.Token == "" {
+		t.Fatalf("missing post-restore token: %s", relogin.Body.String())
+	}
+
+	restoredLogs := mustStatus(t, router, "GET", "/api/audit-logs?action=backup.restored", reloginBody.Token, nil, http.StatusOK)
 	if !strings.Contains(restoredLogs, `"backup.restored"`) {
 		t.Fatalf("expected backup.restored audit log entry, got: %s", restoredLogs)
+	}
+}
+
+func TestBackupAndRestoreRejectUnauthorizedUsersAndMalformedUploads(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+	admin := getAdminToken(t, router)
+
+	// Non-admin user cannot export or restore backups.
+	memberResp := requestJSON(t, router, "POST", "/api/users", admin, map[string]any{
+		"name":     "Member User",
+		"email":    "member-backup@example.com",
+		"password": "StrongMemberPassword!2026",
+		"is_admin": false,
+	})
+	if memberResp.Code != http.StatusCreated {
+		t.Fatalf("create user failed: %s", memberResp.Body.String())
+	}
+	loginResp := requestJSON(t, router, "POST", "/api/auth/login", "", map[string]any{
+		"email":    "member-backup@example.com",
+		"password": "StrongMemberPassword!2026",
+	})
+	var loginData struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(loginResp.Body.Bytes(), &loginData)
+	mustStatus(t, router, "POST", "/api/system/backup", loginData.Token, map[string]any{"passphrase": "valid-passphrase-123"}, http.StatusForbidden)
+	if resp := postMultipartRestore(t, router, loginData.Token, "b.tar.enc", []byte("x"), "valid-passphrase-123", "RESTORE BACKUP"); resp.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-admin restore, got %d", resp.Code)
+	}
+
+	// Missing/invalid JSON on backup and restore without file/invalid payload/passphrase reject cleanly with 400.
+	mustStatus(t, router, "POST", "/api/system/backup", admin, map[string]any{}, http.StatusBadRequest)
+	mustStatus(t, router, "POST", "/api/system/restore", admin, map[string]any{}, http.StatusBadRequest)
+	shortPass := postMultipartRestore(t, router, admin, "b.tar.enc", []byte("x"), "short", "RESTORE BACKUP")
+	if shortPass.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for short passphrase on restore, got %d", shortPass.Code)
+	}
+	badMagic := postMultipartRestore(t, router, admin, "b.tar.enc", []byte("NOT-AN-ENCRYPTED-ARCHIVE"), "valid-passphrase-123", "RESTORE BACKUP")
+	if badMagic.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for corrupt archive payload, got %d", badMagic.Code)
 	}
 }

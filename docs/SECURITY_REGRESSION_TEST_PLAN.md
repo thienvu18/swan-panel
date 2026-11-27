@@ -69,18 +69,18 @@ Go tests use native CGO SQLite on isolated SQLite files and test-mode offline da
 | UI-01 | SSE frames including multiline/CRLF; corrupted JSON/comment ignored | `ui/tests/transportSecurity.test.mjs` |
 | UI-02 | OIDC provider IDs encoded in URL; JWT not placed in URL | Same |
 | UI-03 | Profile download filename cannot inject directories/control characters | Same |
-| BAK-01 | Encrypted backup archive with Argon2id KDF and AES-256-GCM | `internal/api/backup_test.go:TestBackupAndRestoreRoundTrip` |
-| BAK-02 | Corrupted backup, wrong passphrase, invalid magic header fail closed with rollback | `internal/api/backup_test.go:TestBackupRestoreWrongPassphraseFails`, `TestBackupRestoreCorruptedArchiveRollback` |
-| BAK-03 | Restoring snapshot replaces SQLite state and resyncs VICI pools | `internal/backup/backup_test.go:TestRestoreArchive` |
-| AUD-01 | Append-only SHA-256 hash chaining with deterministic GenesisHash | `internal/audit/audit_test.go:TestAuditHashChainingAndVerification` |
-| AUD-02 | SQLite BEFORE UPDATE and BEFORE DELETE triggers prevent ledger tampering | `internal/audit/audit_test.go:TestAuditImmutabilityTriggers` |
-| AUD-03 | Brute-force threshold detection escalates warning/critical audit events | `internal/audit/audit_test.go:TestAuditBruteForceDetection` |
-| AUD-04 | Outbound webhook dispatcher enforces SSRF validation and blocks private IP targets | `internal/api/audit_webhook_test.go:TestWebhookSSRFValidation` |
-| AUD-05 | Generic webhook payloads signed with HMAC-SHA256 and ISO-8601 timestamps | `internal/api/audit_webhook_test.go:TestWebhookHMACSignature` |
-| MFA-01 | RFC 6238 TOTP verification with window drift (+/-1) and single-use step replay protection | `internal/mfa/mfa_test.go:TestTOTPReplayProtection` |
-| MFA-02 | AES-256-GCM encryption at rest for TOTP secret seeds and recovery codes | `internal/mfa/mfa_test.go:TestEncryptedMFASecretAtRest` |
-| MFA-03 | Single-use emergency recovery codes consumed and hashed | `internal/mfa/mfa_test.go:TestRecoveryCodeSingleUseConsumption` |
-| MFA-04 | Admin MFA reset safety clearance with audit logging | `internal/api/mfa_test.go:TestAdminResetMFA` |
+| BAK-01 | Encrypted v2 backup archive (Argon2id + AES-256-GCM + independent `mfa.key`) and enforced pre-read size/count limits (`64 MiB`/`256 MiB`/`4,096`) | `internal/api/backup_test.go:TestBackupAndRestoreAPIRBACValidationAndRoundTrip`, `internal/backup/hardening_test.go:TestBackupRejectsLegacyV1WithMFAAndEnforcesResourceLimits`, `TestRollbackRetainsPostPrepareAcknowledgedWritesJournalFaultsAndMFAExportGuard` |
+| BAK-02 | Wrong passphrase, tampered archive, unsafe tar entries, corrupt/unknown restore journals, journal/fsync commit faults, and rollback faults fail closed | `internal/backup/backup_test.go:TestRestoreRejectsWrongPassphraseAndTamperedCiphertext`, `TestRestoreRejectsUnsafeTarEntries`, `TestRestoreRollbackFaultFailClosedAndJournalRecovery`, `internal/backup/hardening_test.go:TestRollbackRetainsPostPrepareAcknowledgedWritesJournalFaultsAndMFAExportGuard`, `cmd/server/main_test.go:TestControlPlaneStartupHelpersVersionFlagAndFailClosedListener` |
+| BAK-03 | Restore stages before drain, captures rollback only post-drain, rotates session epochs, reports correlated outcome via `restore_id`, keeps recovery codes per policy, and cancels stale outbox rows | `internal/api/hardening_integration_test.go:TestControlledRestartMaintenanceModeAndConcurrentBackupSafety`, `internal/backup/hardening_test.go:TestRollbackRetainsPostPrepareAcknowledgedWritesJournalFaultsAndMFAExportGuard` |
+| AUD-01 | Append-only SHA-256 hash chaining with deterministic GenesisHash and fail-closed mutation transactions | `internal/audit/audit_test.go:TestAuditLogChainIsAppendOnlyAndDetectsTampering`, `internal/api/hardening_integration_test.go:TestAuditInsertFailureRollsBackSecurityMutationsFailClosed` |
+| AUD-02 | SQLite BEFORE UPDATE and BEFORE DELETE triggers prevent ledger tampering | `internal/audit/audit_test.go:TestAuditLogChainIsAppendOnlyAndDetectsTampering` |
+| AUD-03 | Brute-force threshold detection escalates warning/critical audit events | `internal/audit/audit_test.go:TestFailedLoginTrackingEscalatesToBruteforceAlert` |
+| AUD-04 | Fail-safe public HTTPS webhook SSRF policy (blocking reserved/metadata ranges even when allowlisted), full path masking, `WEBHOOK_ALLOWED_DESTINATIONS` allowlist, and credential error sanitization | `internal/audit/webhook_security_test.go:TestWebhookSSRFPolicyAllowlistAndDialValidation`, `TestWebhookCredentialSanitizationAcrossFailureModes`, `TestWebhookHardeningMaskingReservedIPBlockingAndClaimOwnership`, `internal/api/hardening_integration_test.go:TestWebhookAPISanitizedErrorsAndDeliveriesEndpoint` |
+| AUD-05 | Persistent webhook outbox (`webhook_deliveries`) with bounded claim batches, claim-ownership guards, backoff retries, transient DB resilience, and HMAC-SHA256 signatures | `internal/audit/webhook_security_test.go:TestWebhookOutboxReliabilityRetryLeaseAndRestoreCancellation`, `TestWebhookHardeningMaskingReservedIPBlockingAndClaimOwnership`, `internal/audit/audit_test.go:TestWebhookPayloadFormattingSigningAndDelivery` |
+| MFA-01 | RFC 6238 TOTP verification with window drift (+/-1) and single-use step replay protection | `internal/mfa/totp_test.go:TestTOTPGenerationRFC6238VectorsAndReplayProtection` |
+| MFA-02 | AES-256-GCM encryption at rest with independent `0600` keystore (`MFA_KEY_FILE`) and legacy `JWT_SECRET` migration | `internal/mfa/totp_test.go:TestSecretEncryptionRoundTripAndWrongKeyRejection`, `internal/mfa/keystore_test.go:TestInitActiveKeyMigratesLegacyJWTSecretAndFailsClosedWithoutKey` |
+| MFA-03 | Single-use emergency recovery codes consumed and hashed | `internal/mfa/totp_test.go:TestBackupCodesGenerationAndSingleUseConsumption` |
+| MFA-04 | Two-step challenge lockout and admin MFA reset with audit logging | `internal/api/mfa_test.go:TestLocalAccountMFALifecycleAndChallengeEnforcement`, `TestMFAChallengeLocksOutAfterMaxAttemptsAndAdminReset` |
 
 ## Manual integration cases (must run on a disposable Linux VM)
 

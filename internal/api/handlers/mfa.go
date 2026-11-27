@@ -8,7 +8,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -27,10 +26,7 @@ const (
 )
 
 func (h *AuthHandler) mfaRootSecret() string {
-	if override := strings.TrimSpace(os.Getenv("MFA_ENCRYPTION_KEY")); override != "" {
-		return override
-	}
-	return h.cfg.JWTSecret
+	return mfa.ActiveKey(h.cfg.JWTSecret)
 }
 
 func hashMFAToken(raw string) string {
@@ -179,7 +175,7 @@ func (h *AuthHandler) VerifyMFALogin(c *gin.Context) {
 	if user.IsAdmin {
 		role = "admin"
 	}
-	audit.RecordFromContext(c, audit.EntryInput{
+	if auditErr := audit.RecordFromContext(c, audit.EntryInput{
 		ActorID:    user.ID,
 		ActorEmail: user.Email,
 		ActorRole:  role,
@@ -189,7 +185,9 @@ func (h *AuthHandler) VerifyMFALogin(c *gin.Context) {
 		TargetID:   user.ID,
 		Summary:    "User signed in with two-factor authentication: " + user.Email,
 		Details:    map[string]any{"mfa": true, "method": methodUsed},
-	})
+	}); auditErr != nil {
+		slog.Warn("Failed to record MFA login audit event", "user_id", user.ID, "error", auditErr)
+	}
 
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, gin.H{
@@ -312,6 +310,7 @@ func (h *AuthHandler) EnableMFA(c *gin.Context) {
 
 	rootSecret := h.mfaRootSecret()
 	var plaintextCodes []string
+	var auditEntry db.AuditLog
 	var errCode int
 	var errText string
 	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
@@ -359,6 +358,17 @@ func (h *AuthHandler) EnableMFA(c *gin.Context) {
 			errCode, errText = http.StatusConflict, "Two-factor authentication is already enabled"
 			return nil
 		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "auth.mfa.enabled",
+			Severity:   audit.SeverityInfo,
+			TargetType: "user",
+			TargetID:   user.ID,
+			Summary:    "Two-factor authentication enabled for " + user.Email,
+		}))
+		if recErr != nil {
+			return recErr
+		}
 		plaintextCodes = codes
 		return nil
 	})
@@ -371,13 +381,7 @@ func (h *AuthHandler) EnableMFA(c *gin.Context) {
 		return
 	}
 
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "auth.mfa.enabled",
-		Severity:   audit.SeverityInfo,
-		TargetType: "user",
-		TargetID:   user.ID,
-		Summary:    "Two-factor authentication enabled for " + user.Email,
-	})
+	audit.NotifyCommitted(auditEntry)
 
 	c.Header("Cache-Control", "no-store, private")
 	c.Header("Pragma", "no-cache")
@@ -420,6 +424,7 @@ func (h *AuthHandler) DisableMFA(c *gin.Context) {
 		return
 	}
 
+	var disableAudit db.AuditLog
 	err = db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(user).Updates(map[string]any{
 			"mfa_enabled":        false,
@@ -430,20 +435,25 @@ func (h *AuthHandler) DisableMFA(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Where("user_id = ?", user.ID).Delete(&db.MFAChallenge{}).Error
+		if err := tx.Where("user_id = ?", user.ID).Delete(&db.MFAChallenge{}).Error; err != nil {
+			return err
+		}
+		var recErr error
+		disableAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "auth.mfa.disabled",
+			Severity:   audit.SeverityWarning,
+			TargetType: "user",
+			TargetID:   user.ID,
+			Summary:    "Two-factor authentication disabled for " + user.Email,
+		}))
+		return recErr
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to disable two-factor authentication"})
 		return
 	}
 
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "auth.mfa.disabled",
-		Severity:   audit.SeverityWarning,
-		TargetType: "user",
-		TargetID:   user.ID,
-		Summary:    "Two-factor authentication disabled for " + user.Email,
-	})
+	audit.NotifyCommitted(disableAudit)
 	c.JSON(http.StatusOK, gin.H{"mfa_enabled": false})
 }
 
@@ -471,6 +481,7 @@ func (h *AuthHandler) RegenerateBackupCodes(c *gin.Context) {
 	var plaintextCodes []string
 	var errCode int
 	var errText string
+	var regenAudit db.AuditLog
 	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var current db.User
 		if err := tx.Where("id = ?", user.ID).First(&current).Error; err != nil {
@@ -509,6 +520,17 @@ func (h *AuthHandler) RegenerateBackupCodes(c *gin.Context) {
 			errCode, errText = http.StatusUnauthorized, "Invalid TOTP verification code"
 			return nil
 		}
+		var recErr error
+		regenAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "auth.mfa.backup_regenerated",
+			Severity:   audit.SeverityInfo,
+			TargetType: "user",
+			TargetID:   user.ID,
+			Summary:    "Two-factor recovery codes regenerated for " + user.Email,
+		}))
+		if recErr != nil {
+			return recErr
+		}
 		plaintextCodes = codes
 		return nil
 	})
@@ -521,13 +543,7 @@ func (h *AuthHandler) RegenerateBackupCodes(c *gin.Context) {
 		return
 	}
 
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "auth.mfa.backup_regenerated",
-		Severity:   audit.SeverityInfo,
-		TargetType: "user",
-		TargetID:   user.ID,
-		Summary:    "Two-factor recovery codes regenerated for " + user.Email,
-	})
+	audit.NotifyCommitted(regenAudit)
 
 	c.Header("Cache-Control", "no-store, private")
 	c.Header("Pragma", "no-cache")
@@ -538,6 +554,7 @@ func (h *AuthHandler) RegenerateBackupCodes(c *gin.Context) {
 func (h *UsersHandler) ResetUserMFA(c *gin.Context) {
 	id := c.Param("id")
 	var user db.User
+	var resetAudit db.AuditLog
 	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
 			return err
@@ -554,7 +571,18 @@ func (h *UsersHandler) ResetUserMFA(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Where("user_id = ?", user.ID).Delete(&db.MFAChallenge{}).Error
+		if err := tx.Where("user_id = ?", user.ID).Delete(&db.MFAChallenge{}).Error; err != nil {
+			return err
+		}
+		var recErr error
+		resetAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "user.mfa.reset",
+			Severity:   audit.SeverityWarning,
+			TargetType: "user",
+			TargetID:   user.ID,
+			Summary:    "Administrator reset two-factor authentication for " + user.Email,
+		}))
+		return recErr
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
@@ -565,12 +593,6 @@ func (h *UsersHandler) ResetUserMFA(c *gin.Context) {
 		return
 	}
 
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "user.mfa.reset",
-		Severity:   audit.SeverityWarning,
-		TargetType: "user",
-		TargetID:   user.ID,
-		Summary:    "Administrator reset two-factor authentication for " + user.Email,
-	})
+	audit.NotifyCommitted(resetAudit)
 	c.JSON(http.StatusOK, gin.H{"message": "Two-factor authentication reset", "mfa_enabled": false})
 }

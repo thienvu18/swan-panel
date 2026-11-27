@@ -26,7 +26,7 @@ import { TableActionLegend } from '../components/TableActionLegend';
 import { QueryErrorBanner } from '../components/QueryErrorBanner';
 import { useToast } from '../components/ToastProvider';
 import { apiJSON } from '../lib/api';
-import { downloadFilename } from '../lib/transportSecurity';
+import { exportAuditLogs } from '../lib/auditApi';
 
 interface AuditLogEntry {
   id: string;
@@ -68,6 +68,10 @@ interface WebhookItem {
   last_delivered_at?: string;
   last_status_code?: number;
   last_error?: string;
+  pending_count?: number;
+  retrying_count?: number;
+  delivered_count?: number;
+  failed_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -238,42 +242,17 @@ export const AuditTrailPage: React.FC<AuditTrailPageProps> = ({ onRegisterHeader
   }, [onRegisterHeaderAction, section, verifyChainMutation.isPending, t]);
 
   const handleExport = async (format: 'csv' | 'jsonl') => {
-    const token = localStorage.getItem('token');
-    if (!token) {
+    if (!localStorage.getItem('token')) {
       toast.error(t('common.error_occurred'));
       return;
     }
     setExportingFormat(format);
     try {
-      const params = new URLSearchParams({ format });
-      if (severityFilter !== 'all') params.set('severity', severityFilter);
-      if (categoryFilter !== 'all') params.set('action', categoryFilter);
-      if (deferredSearch) params.set('search', deferredSearch);
-
-      const response = await fetch(`/api/audit-logs/export?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
+      await exportAuditLogs(format, {
+        severity: severityFilter,
+        action: categoryFilter,
+        search: deferredSearch,
       });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || t('common.error_occurred'));
-      }
-      const blob = await response.blob();
-      const filename = downloadFilename(
-        response.headers.get('Content-Disposition'),
-        `swanpanel-audit.${format}`,
-      );
-      const url = URL.createObjectURL(blob);
-      try {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      } finally {
-        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      }
       toast.success(t('audit.export_ready'));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('common.error_occurred'));
@@ -781,10 +760,10 @@ export const AuditTrailPage: React.FC<AuditTrailPageProps> = ({ onRegisterHeader
                         <td className="px-4 py-3 whitespace-nowrap text-xs font-medium">
                           {t(`audit.provider_${hook.provider_type}`)}
                         </td>
-                        <td className="px-4 py-3 font-mono text-[11px] text-subtle">
-                          <div>{hook.webhook_url_preview}</div>
+                        <td className="px-4 py-3 font-mono text-[11px] text-subtle max-w-[240px]">
+                          <div className="truncate" title={hook.webhook_url_preview}>{hook.webhook_url_preview}</div>
                           {hook.telegram_chat_id && (
-                            <div className="text-dim mt-0.5">{t('audit.telegram_chat_label')}: {hook.telegram_chat_id}</div>
+                            <div className="text-dim mt-0.5 truncate">{t('audit.telegram_chat_label')}: {hook.telegram_chat_id}</div>
                           )}
                         </td>
                         <td className="px-4 py-3">
@@ -819,6 +798,25 @@ export const AuditTrailPage: React.FC<AuditTrailPageProps> = ({ onRegisterHeader
                             </div>
                           ) : (
                             <span className="text-dim">{t('audit.delivery_never')}</span>
+                          )}
+                          {((hook.pending_count ?? 0) > 0 || (hook.retrying_count ?? 0) > 0 || (hook.failed_count ?? 0) > 0) && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {(hook.pending_count ?? 0) > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-accent border border-blue-500/20 text-[10px]">
+                                  {t('audit.outbox_pending', { count: hook.pending_count })}
+                                </span>
+                              )}
+                              {(hook.retrying_count ?? 0) > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-status-warning border border-amber-500/30 text-[10px]">
+                                  {t('audit.outbox_retrying', { count: hook.retrying_count })}
+                                </span>
+                              )}
+                              {(hook.failed_count ?? 0) > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-rose-500/10 text-status-danger border border-rose-500/30 text-[10px]">
+                                  {t('audit.outbox_failed', { count: hook.failed_count })}
+                                </span>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">

@@ -125,3 +125,19 @@ func TestBufferedHandlerIncludesPersistentWithAttrsContext(t *testing.T) {
 		t.Fatalf("persistent path was missing from scope: %s", entries[0].Scope)
 	}
 }
+
+func TestSetLogEventPublisherNotifiesSubscribersOnEntry(t *testing.T) {
+	called := 0
+	SetLogEventPublisher(func() { called++ })
+	t.Cleanup(func() { SetLogEventPublisher(nil) })
+
+	AddLogEntry(LogEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Level:     "INFO",
+		Scope:     "test",
+		Message:   "publisher probe",
+	})
+	if called != 1 {
+		t.Fatalf("expected publisher called once, got %d", called)
+	}
+}

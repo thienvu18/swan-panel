@@ -139,7 +139,7 @@ func TestEncryptedBackupAndRestoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateEncryptedBackup failed: %v", err)
 	}
-	if len(archive) <= headerSize || manifest.FormatVersion != 1 || len(manifest.PKIFiles) < 3 {
+	if len(archive) <= headerSize || manifest.FormatVersion != CurrentBackupFormatVersion || len(manifest.PKIFiles) < 3 {
 		t.Fatalf("unexpected backup manifest/size: len=%d manifest=%+v", len(archive), manifest)
 	}
 

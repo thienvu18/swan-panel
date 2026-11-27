@@ -10,7 +10,9 @@ import (
 	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/config"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type LoginRequest struct {
@@ -88,7 +90,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if user.IsAdmin {
 		role = "admin"
 	}
-	audit.RecordFromContext(c, audit.EntryInput{
+	if auditErr := audit.RecordFromContext(c, audit.EntryInput{
 		ActorID:    user.ID,
 		ActorEmail: user.Email,
 		ActorRole:  role,
@@ -97,7 +99,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		TargetType: "user",
 		TargetID:   user.ID,
 		Summary:    "User signed in via local credentials: " + user.Email,
-	})
+	}); auditErr != nil {
+		slog.Warn("Failed to record login audit event", "user_id", user.ID, "error", auditErr)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
@@ -176,22 +180,33 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if err := db.DB.Model(&user).Updates(map[string]any{
-		"password_hash":    string(newHash),
-		"pending_totp_enc": "",
-	}).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var auditEntry db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&user).Updates(map[string]any{
+			"password_hash":    string(newHash),
+			"pending_totp_enc": "",
+		}).Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "auth.password.changed",
+			Severity:   audit.SeverityInfo,
+			TargetType: "user",
+			TargetID:   user.ID,
+			Summary:    "Password changed for account " + user.Email,
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to persist updated password", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to persist password change"})
 		return
 	}
 
 	slog.Info("User password updated successfully", "user_id", user.ID, "email", user.Email)
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "auth.password.changed",
-		Severity:   audit.SeverityInfo,
-		TargetType: "user",
-		TargetID:   user.ID,
-		Summary:    "Password changed for account " + user.Email,
-	})
+	audit.NotifyCommitted(auditEntry)
 	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
 }

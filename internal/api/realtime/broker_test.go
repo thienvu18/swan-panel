@@ -21,3 +21,20 @@ func TestSSEPrivilegedPayloadNeverLeaksToOrdinarySubscriber(t *testing.T) {
 		t.Fatal("administrator no longer receives original session information")
 	}
 }
+
+func TestBrokerCloseAllClosesSubscribersCleanly(t *testing.T) {
+	b := NewBroker()
+	sub := make(chan Event, 2)
+	b.newClients <- sub
+	b.Broadcast("session_update", nil)
+	b.CloseAll()
+	// Calling CloseAll twice or broadcasting afterward should remain safe.
+	b.CloseAll()
+	var nilBroker *Broker
+	nilBroker.CloseAll()
+	for {
+		if _, ok := <-sub; !ok {
+			break
+		}
+	}
+}

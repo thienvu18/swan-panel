@@ -20,6 +20,7 @@
    * Dynamic in-memory configuration reload and session teardown via UNIX socket `/var/run/charon.vici`.
 5. **Enterprise Security Practices:**
    * 100% parameterized queries (prevent SQL injection), OWASP security headers (CSP, HSTS, X-Frame-Options), token-bucket rate limiting, timing attack mitigation (`crypto/subtle.ConstantTimeCompare`), bcrypt password hashing.
+   * Disaster recovery runs via a two-phase persistent restore journal (`journal.json`): HTTP upload stages and preflight-checks archives before entering HTTP `503` maintenance mode (`Retry-After: 5`) to drain active requests and workers; startup recovery (`RecoverOrApplyPendingRestore`) snapshots post-drain rollback copies, transitions durably through `applying` -> `committed`, verifies DB/PKI/MFA integrity, rotates session epochs, persists a correlated `restore_id` outcome for `/api/health`, locks fail-closed on corrupt/unrecoverable states, and keeps control-plane startup resilient when VICI reconciliation is temporarily pending.
 6. **Multi-Language (i18n):**
    * English (`en`) and Vietnamese (`vi`) out of the box, easily extensible via `ui/src/locales/*.json`.
 7. **Live Dashboard via Server-Sent Events (SSE):**
@@ -27,7 +28,7 @@
 
 ---
 
-## 2. DATABASE SCHEMA (18 TABLES)
+## 2. DATABASE SCHEMA (19 TABLES)
 
 Stored in single file `swanpanel.db` (SQLite WAL mode, `PRAGMA foreign_keys = ON`):
 1. `bootstrap_states`: One-time installer setup token SHA-256 digest.
@@ -35,16 +36,17 @@ Stored in single file `swanpanel.db` (SQLite WAL mode, `PRAGMA foreign_keys = ON
 3. `oidc_login_attempts`: Short-lived single-use OIDC PKCE/state/nonce records.
 4. `oidc_login_tickets`: Short-lived single-use post-callback session exchange tickets.
 5. `mfa_challenges`: Short-lived single-use TOTP/recovery login challenges with attempt limits.
-6. `users`: Identity directory (OIDC SSO + Local Admin/User accounts with bcrypt hashes and encrypted TOTP MFA state).
-6. `user_groups`: Role & user grouping (DevOps, Backend, Sales).
-7. `user_group_members`: Many-to-many join table mapping users to user groups.
-8. `resource_groups`: Subnet CIDR allocation (Production VPC, Engineering Subnet).
-9. `devices`: Company Nodes (headless servers) and User Devices with static or dynamic Virtual IP.
-10. `certificate_revocations`: Persistent X.509 serial revocation ledger retained across device deletions for CRL generation.
-11. `access_rules`: Zero-Trust policies (`ALLOW` group/direct policies, `DENY` exclusions).
-12. `dns_settings`: MagicDNS suffix, enablement flag, and upstream DNS forwarders.
-13. `dns_overrides`: Internal custom DNS override records (`A`, `CNAME`, etc.).
-14. `strongswan_settings`: Data plane configuration (Re-auth lifetime, MOBIKE, NAT-T encap, DPD, Ciphers, TCP MSS clamping, advanced VICI options).
-15. `runtime_apply_states`: Durable desired vs. applied gateway configuration generation and daemon boot identity tracking.
-16. `audit_logs`: Append-only, SHA-256 hash-chained administrative and security audit trail protected by SQLite `BEFORE UPDATE` / `BEFORE DELETE` immutability triggers.
-17. `alert_webhooks`: Outbound alert webhook destinations (Slack, Telegram, Microsoft Teams, or HMAC-signed generic HTTP) with delivery telemetry and SSRF validation.
+6. `users`: Identity directory (OIDC SSO + Local Admin/User accounts with bcrypt hashes and AES-256-GCM TOTP MFA state encrypted using a persistent independent MFA key in `MFA_KEY_FILE`).
+7. `user_groups`: Role & user grouping (DevOps, Backend, Sales).
+8. `user_group_members`: Many-to-many join table mapping users to user groups.
+9. `resource_groups`: Subnet CIDR allocation (Production VPC, Engineering Subnet).
+10. `devices`: Company Nodes (headless servers) and User Devices with static or dynamic Virtual IP.
+11. `certificate_revocations`: Persistent X.509 serial revocation ledger retained across device deletions for CRL generation.
+12. `access_rules`: Zero-Trust policies (`ALLOW` group/direct policies, `DENY` exclusions).
+13. `dns_settings`: MagicDNS suffix, enablement flag, and upstream DNS forwarders.
+14. `dns_overrides`: Internal custom DNS override records (`A`, `CNAME`, etc.).
+15. `strongswan_settings`: Data plane configuration (Re-auth lifetime, MOBIKE, NAT-T encap, DPD, Ciphers, TCP MSS clamping, advanced VICI options).
+16. `runtime_apply_states`: Durable desired vs. applied gateway configuration generation and daemon boot identity tracking.
+17. `audit_logs`: Append-only, SHA-256 hash-chained administrative and security audit trail protected by SQLite `BEFORE UPDATE` / `BEFORE DELETE` immutability triggers.
+18. `alert_webhooks`: Outbound alert webhook destinations (Slack, Telegram, Microsoft Teams, or HMAC-signed generic HTTP) with delivery telemetry and fail-safe public HTTPS SSRF validation (plus explicit `WEBHOOK_ALLOWED_DESTINATIONS`).
+19. `system_states` & `webhook_deliveries`: Control-plane `session_epoch` / `restore_generation` state for post-restore JWT invalidation, and a persistent leased retry outbox with bounded exponential backoff for alert webhooks (cancelled safely across backup restores).

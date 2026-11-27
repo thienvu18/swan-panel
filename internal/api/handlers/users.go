@@ -12,6 +12,7 @@ import (
 	"github.com/swan-panel/swan-panel/internal/api/realtime"
 	"github.com/swan-panel/swan-panel/internal/audit"
 	"github.com/swan-panel/swan-panel/internal/db"
+	"github.com/swan-panel/swan-panel/internal/maintenance"
 	"github.com/swan-panel/swan-panel/internal/policy"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -108,21 +109,32 @@ func (h *UsersHandler) CreateLocalUser(c *gin.Context) {
 		UserGroups:   groups,
 	}
 
-	if err := db.DB.Create(&newUser).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var auditEntry db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&newUser).Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "user.created",
+			Severity:   audit.SeverityInfo,
+			TargetType: "user",
+			TargetID:   newUser.ID,
+			Summary:    "Local user created: " + newUser.Email,
+			Details:    map[string]any{"is_admin": newUser.IsAdmin},
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to save local user", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}
 
 	slog.Info("Local user account created successfully", "id", newUser.ID, "email", newUser.Email, "is_admin", newUser.IsAdmin)
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "user.created",
-		Severity:   audit.SeverityInfo,
-		TargetType: "user",
-		TargetID:   newUser.ID,
-		Summary:    "Local user created: " + newUser.Email,
-		Details:    map[string]any{"is_admin": newUser.IsAdmin},
-	})
+	audit.NotifyCommitted(auditEntry)
 	c.JSON(http.StatusCreated, gin.H{"user": newUser})
 }
 
@@ -130,7 +142,11 @@ func (h *UsersHandler) CreateLocalUser(c *gin.Context) {
 // SQLite write transaction, preventing concurrent demotions from bypassing it.
 func (h *UsersHandler) ToggleAdminRole(c *gin.Context) {
 	id := c.Param("id")
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
 	var user db.User
+	var auditEntry db.AuditLog
 	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
 			return err
@@ -145,7 +161,19 @@ func (h *UsersHandler) ToggleAdminRole(c *gin.Context) {
 			}
 		}
 		user.IsAdmin = !user.IsAdmin
-		return tx.Save(&user).Error
+		if err := tx.Save(&user).Error; err != nil {
+			return err
+		}
+		var recErr error
+		auditEntry, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "user.role.updated",
+			Severity:   audit.SeverityWarning,
+			TargetType: "user",
+			TargetID:   user.ID,
+			Summary:    fmt.Sprintf("Administrator privilege updated for %s (is_admin=%t)", user.Email, user.IsAdmin),
+			Details:    map[string]any{"email": user.Email, "is_admin": user.IsAdmin},
+		}))
+		return recErr
 	})
 	if errors.Is(err, errLastAdministrator) {
 		c.JSON(http.StatusConflict, gin.H{"error": "Cannot demote the last administrator"})
@@ -161,14 +189,7 @@ func (h *UsersHandler) ToggleAdminRole(c *gin.Context) {
 		return
 	}
 	slog.Info("User admin privilege updated", "id", id, "email", user.Email, "is_admin", user.IsAdmin)
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "user.role.updated",
-		Severity:   audit.SeverityWarning,
-		TargetType: "user",
-		TargetID:   user.ID,
-		Summary:    fmt.Sprintf("Administrator privilege updated for %s (is_admin=%t)", user.Email, user.IsAdmin),
-		Details:    map[string]any{"email": user.Email, "is_admin": user.IsAdmin},
-	})
+	audit.NotifyCommitted(auditEntry)
 	c.JSON(http.StatusOK, gin.H{"user": user, "is_admin": user.IsAdmin})
 }
 
@@ -197,7 +218,11 @@ func (h *UsersHandler) ApproveUser(c *gin.Context) {
 			return
 		}
 	}
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
 	var user db.User
+	var approveAudit db.AuditLog
 	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
 			return err
@@ -218,20 +243,25 @@ func (h *UsersHandler) ApproveUser(c *gin.Context) {
 			}
 		}
 		user.Status = "ACTIVE"
-		return tx.Save(&user).Error
+		if err := tx.Save(&user).Error; err != nil {
+			return err
+		}
+		var recErr error
+		approveAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "user.approved",
+			Severity:   audit.SeverityInfo,
+			TargetType: "user",
+			TargetID:   user.ID,
+			Summary:    "User approved: " + user.Email,
+		}))
+		return recErr
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Could not approve user: " + err.Error()})
 		return
 	}
 	realtime.DefaultBroker.Broadcast("user_approved", map[string]any{"user_id": user.ID, "status": user.Status})
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "user.approved",
-		Severity:   audit.SeverityInfo,
-		TargetType: "user",
-		TargetID:   user.ID,
-		Summary:    "User approved: " + user.Email,
-	})
+	audit.NotifyCommitted(approveAudit)
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		slog.Error("Approved user policy update pending", "user_id", user.ID, "error", err)
 		c.JSON(http.StatusAccepted, gin.H{"user": user, "runtime_status": "pending", "message": "User approved, gateway update pending"})
@@ -243,7 +273,24 @@ func (h *UsersHandler) ApproveUser(c *gin.Context) {
 // RejectUser removes a pending candidate from the queue (US-02)
 func (h *UsersHandler) RejectUser(c *gin.Context) {
 	id := c.Param("id")
-	if err := db.DB.Where("id = ? AND status = ?", id, "PENDING").Delete(&db.User{}).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var rejectAudit db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ? AND status = ?", id, "PENDING").Delete(&db.User{}).Error; err != nil {
+			return err
+		}
+		var recErr error
+		rejectAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "user.rejected",
+			Severity:   audit.SeverityInfo,
+			TargetType: "user",
+			TargetID:   id,
+			Summary:    "Pending user candidate rejected: " + id,
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to reject candidate", "id", id, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reject candidate"})
 		return
@@ -251,13 +298,7 @@ func (h *UsersHandler) RejectUser(c *gin.Context) {
 
 	slog.Info("Candidate rejected from approval queue", "id", id)
 	realtime.DefaultBroker.Broadcast("approval_queue_update", map[string]interface{}{"rejected_id": id})
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "user.rejected",
-		Severity:   audit.SeverityInfo,
-		TargetType: "user",
-		TargetID:   id,
-		Summary:    "Pending user candidate rejected: " + id,
-	})
+	audit.NotifyCommitted(rejectAudit)
 	c.JSON(http.StatusOK, gin.H{"message": "Candidate rejected"})
 }
 
@@ -266,8 +307,12 @@ func (h *UsersHandler) RejectUser(c *gin.Context) {
 // after the transaction, without ever leaving an active deleted user's cert.
 func (h *UsersHandler) DeleteUser(c *gin.Context) {
 	id := c.Param("id")
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
 	var user db.User
 	var devices []db.Device
+	var deleteAudit db.AuditLog
 	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id = ?", id).First(&user).Error; err != nil {
 			return err
@@ -307,7 +352,19 @@ func (h *UsersHandler) DeleteUser(c *gin.Context) {
 		if err := tx.Model(&db.Device{}).Where("user_id = ?", id).Update("user_id", nil).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&user).Error
+		if err := tx.Delete(&user).Error; err != nil {
+			return err
+		}
+		var recErr error
+		deleteAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "user.deleted",
+			Severity:   audit.SeverityWarning,
+			TargetType: "user",
+			TargetID:   id,
+			Summary:    "User deleted and certificates revoked: " + user.Email,
+			Details:    map[string]any{"email": user.Email, "revoked_devices": len(devices)},
+		}))
+		return recErr
 	})
 	switch {
 	case errors.Is(err, errLastAdministrator):
@@ -321,6 +378,7 @@ func (h *UsersHandler) DeleteUser(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "User deletion failed; no changes committed"})
 		return
 	}
+	audit.NotifyCommitted(deleteAudit)
 	var enforcementErrors []error
 	for _, device := range devices {
 		if device.CertSerial == "" {
@@ -333,14 +391,6 @@ func (h *UsersHandler) DeleteUser(c *gin.Context) {
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		enforcementErrors = append(enforcementErrors, err)
 	}
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "user.deleted",
-		Severity:   audit.SeverityWarning,
-		TargetType: "user",
-		TargetID:   id,
-		Summary:    "User deleted and certificates revoked: " + user.Email,
-		Details:    map[string]any{"email": user.Email, "revoked_devices": len(devices)},
-	})
 	if len(enforcementErrors) != 0 {
 		slog.Error("Deleted user revocations pending enforcement", "id", id, "error", errors.Join(enforcementErrors...))
 		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "message": "User deleted and revocations recorded; gateway enforcement pending"})
@@ -398,26 +448,41 @@ func (h *UsersHandler) CreateUserGroup(c *gin.Context) {
 		Description: req.Description,
 	}
 
-	if err := db.DB.Create(&grp).Error; err != nil {
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var createGrpAudit db.AuditLog
+	if err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&grp).Error; err != nil {
+			return err
+		}
+		var recErr error
+		createGrpAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "user_group.created",
+			Severity:   audit.SeverityInfo,
+			TargetType: "user_group",
+			TargetID:   grp.ID,
+			Summary:    "User group created: " + grp.Name,
+		}))
+		return recErr
+	}); err != nil {
 		slog.Error("Failed to create user group", "name", req.Name, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create group"})
 		return
 	}
 
 	slog.Info("User group created", "id", grp.ID, "name", grp.Name)
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "user_group.created",
-		Severity:   audit.SeverityInfo,
-		TargetType: "user_group",
-		TargetID:   grp.ID,
-		Summary:    "User group created: " + grp.Name,
-	})
+	audit.NotifyCommitted(createGrpAudit)
 	c.JSON(http.StatusCreated, gin.H{"user_group": grp})
 }
 
 // DeleteUserGroup deletes a user group
 func (h *UsersHandler) DeleteUserGroup(c *gin.Context) {
 	id := c.Param("id")
+	releaseMut := maintenance.DefaultCoordinator.BeginMutation()
+	defer releaseMut()
+
+	var delGrpAudit db.AuditLog
 	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var grp db.UserGroup
 		if err := tx.First(&grp, "id = ?", id).Error; err != nil {
@@ -433,19 +498,24 @@ func (h *UsersHandler) DeleteUserGroup(c *gin.Context) {
 		if err := tx.Model(&grp).Association("Users").Clear(); err != nil {
 			return err
 		}
-		return tx.Delete(&grp).Error
+		if err := tx.Delete(&grp).Error; err != nil {
+			return err
+		}
+		var recErr error
+		delGrpAudit, recErr = audit.RecordTx(tx, audit.EnrichFromContext(c, audit.EntryInput{
+			Action:     "user_group.deleted",
+			Severity:   audit.SeverityInfo,
+			TargetType: "user_group",
+			TargetID:   id,
+			Summary:    "User group deleted: " + id,
+		}))
+		return recErr
 	})
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-	audit.RecordFromContext(c, audit.EntryInput{
-		Action:     "user_group.deleted",
-		Severity:   audit.SeverityInfo,
-		TargetType: "user_group",
-		TargetID:   id,
-		Summary:    "User group deleted: " + id,
-	})
+	audit.NotifyCommitted(delGrpAudit)
 	if err := policy.Reconcile(c.Request.Context(), db.DB); err != nil {
 		c.JSON(http.StatusAccepted, gin.H{"runtime_status": "pending", "error": "Group deleted but gateway policy is pending"})
 		return

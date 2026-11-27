@@ -48,6 +48,11 @@ SwanPanel compiles into a single, self-contained binary containing:
    ```
    Keep `.env` across restarts and upgrades; do not overwrite an existing signing secret.
 
+   Optional hardening variables for production deployments:
+   * `MFA_KEY_FILE`: Explicit path to the `0600` persistent TOTP encryption key file (defaults to `DB_PATH + ".mfa-key"` inside `/var/lib/swan-panel`). Legacy installs that encrypted TOTP secrets with `JWT_SECRET` migrate automatically on startup; the active key is bundled inside encrypted backups (`secrets/mfa.key`) so fresh-host restores preserve MFA without exporting `JWT_SECRET`.
+   * `WEBHOOK_ALLOWED_DESTINATIONS`: Outbound webhooks default strictly to public HTTPS endpoints with dial-time IP validation and proxy/redirect blocking. To allow an internal SIEM receiver, specify comma-separated IPv4/IPv6 CIDRs, hostnames, or `host:port` HTTPS entries (no wildcards; loopback, link-local metadata, multicast, and unspecified addresses remain blocked).
+   * **Supervisor Restart Prerequisite:** Both `docker-compose.yml` (`restart: unless-stopped`) and `deploy/systemd/swan-panel.service` (`Restart=always`) must remain enabled because encrypted disaster-recovery restore persists a journal, enters HTTP 503 maintenance mode, and triggers a clean self-exit so the next process activates restored database/PKI/MFA files before opening listeners.
+
 3. Start the container in background:
    ```bash
    docker compose up -d
